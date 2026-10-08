@@ -145,7 +145,7 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`). Same digits and unit but no decimal point on the label (`15 L` read for `1.5 L`) → NEAR MATCH, never a silent match |
 | `warning_locate` | 75 | Similarity needed to recognise the "GOVERNMENT WARNING" line |
 | `warning_near` | 97 | Warning wording at or above this (but not exact) → NEEDS REVIEW with a diff; below → FAIL |
-| `bold_ratio` | 1.45 | Heading stroke width ÷ body stroke width at or above this → "looks bold" (measured: bold headings 1.5-2.4, regular 0.95-1.38) |
+| `bold_ratio` | 1.30 | Heading stroke width ÷ body stroke width at or above this → "looks bold" (measured: bold headings 1.46-2.12, regular 0.99-1.14) |
 | `bold_min_text_px` | 14 | Below this text height the stroke measurement is not attempted |
 | `bold_failure_is_fail` | false | A "does not look bold" result asks for review instead of failing the label |
 
@@ -173,13 +173,15 @@ Four separate results are shown so the agent sees exactly what is wrong:
    anything larger (missing sentence, paraphrase) **fails**.
 3. **Heading in capitals**: the OCR text of the heading must read `GOVERNMENT WARNING:`; title case fails, a missing
    colon asks for review.
-4. **Heading bold (heuristic)**: from the word boxes, we crop the heading words and the body words of the statement,
-   measure the median length of ink runs (horizontal and vertical, long runs excluded), i.e. the stroke width, and
-   normalize by text height. If the heading's strokes are at least `bold_ratio` (1.45×) thicker than the body's it
-   "looks bold". Measured on the bundled fonts the ratio is 1.5-2.1 for bold and 0.95-1.06 for regular weight, so
-   there is margin, but it is still a heuristic that assumes the body is set in regular weight at a similar size,
-   which is how the statement is printed in practice. Doubtful results ask for a look rather than failing the label.
-   With the cloud reader the model answers the bold question directly.
+4. **Heading bold (heuristic)**: from the word boxes, we take the heading words and the body words of the statement
+   and estimate each group's mean stroke width as 2 × ink area ÷ ink perimeter on the binarized image (for a stroke
+   of width w and length L the area is wL and the perimeter about 2L, so the estimate does not depend on stroke
+   orientation or letter case), normalized by cap height. If the heading's strokes are at least `bold_ratio`
+   (1.30×) thicker than the body's it "looks bold". Calibrated with `scripts/calibrate_bold.py` on 240 rendered
+   statements (both font families, with and without blur): bold headings measure 1.46-2.12, regular ones
+   0.99-1.14. It is still a heuristic that assumes the body is set in regular weight at a similar size, which is
+   how the statement is printed in practice; doubtful results ask for a look rather than failing the label. With
+   the cloud reader the model answers the bold question directly.
 
 ## Batch mode
 
@@ -264,8 +266,8 @@ Of the 9 misses with the default reader, 7 are conservative: the tool asked for 
 generator marked clean, because Tesseract dropped the decimal point in a litre volume ("1.5 L" read as "15L") or
 misread a capital in the brand line and matched the title-case bottler mention instead. One is a genuine OCR error
 ("750 mL" read as "790 mL", reported as a MISMATCH an agent would resolve from the image). One was a regular-weight
-warning heading that measured 1.38× and passed the earlier 1.25 bold threshold; the threshold is now 1.45 (bold
-headings measure 1.5-2.4, regular ones 0.95-1.38 on this data). No clean label was failed for a wrong reason and,
+warning heading that an earlier run-length stroke estimator scored as bold; the estimator was replaced by the
+area/perimeter measure described above, which separates the two cleanly. No clean label was failed for a wrong reason and,
 more importantly, no planted defect was reported as a PASS.
 
 Throughput: the 250-label sample batch completes in about 90 s through the UI with four workers, i.e. 0.35 s per

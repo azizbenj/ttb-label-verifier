@@ -229,14 +229,22 @@ _MANGLED_VOLUME_RE = re.compile(
 _LOOKALIKE_DIGITS = str.maketrans({"L": "1", "l": "1", "I": "1", "O": "0", "o": "0", "S": "5", "s": "5", "B": "8"})
 
 
+_ADDRESS_CONTEXT_RE = re.compile(r",\s*$")
+_ZIP_AFTER_RE = re.compile(r"^\s*\d{5}\b")
+
+
 def _repair_mangled_volumes(t: str) -> str:
     def fix(m: re.Match) -> str:
         number, unit = m.group(1), m.group(2)
         glued = m.group(0)[len(number):len(number) + 1] != " "
         if not any(ch.isalpha() for ch in number):
             return m.group(0)                       # an ordinary number: nothing to repair
-        if not any(ch.isdigit() for ch in number) and not (glued and len(number) <= 3):
-            return m.group(0)                       # a real word ("BOLS L"), not a mangled number
+        if not any(ch.isdigit() for ch in number):
+            if not (glued and len(number) <= 3):
+                return m.group(0)                   # a real word ("BOLS L"), not a mangled number
+            # "..., IL 60607": a state code in an address, not a volume
+            if _ADDRESS_CONTEXT_RE.search(t[:m.start()]) or _ZIP_AFTER_RE.match(t[m.end():]):
+                return m.group(0)
         return number.translate(_LOOKALIKE_DIGITS) + " " + unit
     return _MANGLED_VOLUME_RE.sub(fix, t)
 

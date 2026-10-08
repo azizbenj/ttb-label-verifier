@@ -123,36 +123,39 @@ def check_heading_caps(heading_line_text: str | None) -> tuple[Status, str]:
 
 
 # --- heading boldness (heuristic) --------------------------------------------------------------
-def _run_lengths(mask: np.ndarray) -> np.ndarray:
-    """Lengths of consecutive True runs along axis 1, for every row."""
-    if mask.size == 0:
-        return np.empty(0, dtype=int)
-    padded = np.pad(mask.astype(np.int8), ((0, 0), (1, 1)))
-    d = np.diff(padded, axis=1)
-    starts = np.argwhere(d == 1)
-    ends = np.argwhere(d == -1)
-    if len(starts) != len(ends):
-        return np.empty(0, dtype=int)
-    return ends[:, 1] - starts[:, 1]
-
-
-def stroke_width(ink: np.ndarray, word: OCRWord) -> float | None:
-    """Median ink run length inside a word box, measured both horizontally and vertically.
-
-    Short runs are the thickness of letter strokes; long runs (stems, bars) are excluded.
-    """
+def _ink_area_and_boundary(ink: np.ndarray, word: OCRWord) -> tuple[int, int] | None:
+    """Ink pixel count and boundary pixel count inside a word box (boundary = ink with a background 4-neighbour)."""
     h, w = ink.shape
     x0, y0 = max(0, word.left - 1), max(0, word.top - 1)
     x1, y1 = min(w, word.right + 1), min(h, word.bottom + 1)
     if x1 - x0 < 3 or y1 - y0 < 3:
         return None
-    crop = ink[y0:y1, x0:x1]
-    runs = np.concatenate([_run_lengths(crop), _run_lengths(crop.T)])
-    limit = max(2.0, 0.5 * word.height)
-    runs = runs[(runs >= 1) & (runs <= limit)]
-    if len(runs) < 10:
+    crop = np.pad(ink[y0:y1, x0:x1], 1)
+    inner = crop[1:-1, 1:-1]
+    bg_neighbour = (~crop[:-2, 1:-1]) | (~crop[2:, 1:-1]) | (~crop[1:-1, :-2]) | (~crop[1:-1, 2:])
+    area = int(inner.sum())
+    boundary = int((inner & bg_neighbour).sum())
+    if area < 20 or boundary == 0:
         return None
-    return float(np.median(runs))
+    return area, boundary
+
+
+def stroke_width(ink: np.ndarray, words: list[OCRWord]) -> float | None:
+    """Mean stroke width over a set of words: 2 x ink area / ink perimeter.
+
+    For a stroke of width w and length L the area is w*L and the perimeter about 2L, so the
+    estimate is orientation independent (diagonals and curves do not inflate it, unlike run
+    lengths) and insensitive to letter case. Aggregating over all words makes it stable.
+    """
+    area = boundary = 0
+    for w in words:
+        ab = _ink_area_and_boundary(ink, w)
+        if ab:
+            area += ab[0]
+            boundary += ab[1]
+    if boundary == 0:
+        return None
+    return 2.0 * area / boundary
 
 
 def _reference_height(words: list[OCRWord]) -> float | None:
@@ -169,18 +172,18 @@ def estimate_heading_bold(ink: np.ndarray, heading_words: list[OCRWord], body_wo
     """Compare stroke width of the heading with the body text of the statement.
 
     Returns (status, ratio, note). ratio > 1 means the heading strokes are thicker than the
-    body's after normalizing for text size. This is a heuristic: it assumes the body is set in
-    regular weight at a similar size, which is how the statement is printed in practice.
+    body's after normalizing for text size (cap height of words without descenders). This is a
+    heuristic: it assumes the body is set in regular weight at a similar size, which is how the
+    statement is printed in practice.
     """
-    head_sw = [s for s in (stroke_width(ink, w) for w in heading_words) if s]
-    body_sw = [s for s in (stroke_width(ink, w) for w in body_words) if s]
+    head_sw = stroke_width(ink, heading_words)
+    body_sw = stroke_width(ink, body_words)
     head_h, body_h = _reference_height(heading_words), _reference_height(body_words)
-    if len(head_sw) < 1 or len(body_sw) < 3 or not head_h or not body_h:
+    if not head_sw or not body_sw or len(body_words) < 3 or not head_h or not body_h:
         return Status.REVIEW, None, "Could not measure the heading's weight. Please check it by eye."
     if min(head_h, body_h) < th.bold_min_text_px:
         return Status.REVIEW, None, "The statement is printed too small to measure its weight. Please check it by eye."
-    ratio = (statistics.median(head_sw) / head_h) / (statistics.median(body_sw) / body_h)
-    ratio = round(ratio, 2)
+    ratio = round((head_sw / head_h) / (body_sw / body_h), 2)
     if ratio >= th.bold_ratio:
         return Status.PASS, ratio, f"Heading looks bold (strokes {ratio:.2f}x thicker than the text)."
     status = Status.FAIL if th.bold_failure_is_fail else Status.REVIEW

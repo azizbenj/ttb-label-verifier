@@ -104,3 +104,9 @@ def test_mangled_volume_letters_are_repaired_only_as_a_fallback():
     assert parse_net_contents("750 mL").ml == 750.0
     assert parse_net_contents("MILLERS LITERS CLUB") is None
     assert parse_net_contents("BOLS L") is None  # a word in front of a unit is not a number
+
+
+def test_state_codes_in_addresses_are_not_volumes():
+    assert parse_net_contents("Imported by Great Lakes Beverage Imports, Chicago, IL 60607") is None
+    assert parse_net_contents("Bottled in Springfield, IL") is None
+    assert parse_net_contents("50% ALC./VOL. (100 PROOF) LL").ml == 1000.0

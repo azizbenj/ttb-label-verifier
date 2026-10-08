@@ -94,8 +94,12 @@ def draw_lines(draw, lines, fnt, y, fill, align="center", x=0, max_w=W, spacing=
     return y
 
 
-def draw_warning(draw, spec: Spec, x: int, y: int, max_w: int, size: int, fill, frame: bool) -> int:
-    """Flow the statement word by word; heading words in bold (or not), body words regular."""
+def draw_warning(draw, spec: Spec, x: int, y: int, max_w: int, size: int, fill, frame: bool,
+                 boxes: list | None = None) -> int:
+    """Flow the statement word by word; heading words in bold (or not), body words regular.
+
+    When ``boxes`` is given, (text, (l, t, r, b), is_heading) is appended for every word drawn.
+    """
     if not spec.warning_text:
         return y
     reg, bold = font(spec.family, False, size), font(spec.family, True, size)
@@ -108,11 +112,13 @@ def draw_warning(draw, spec: Spec, x: int, y: int, max_w: int, size: int, fill, 
     lh = int(size * 1.4)
     cx, cy = x + pad, y + pad
     top = y
-    for text, fnt in tokens:
+    for i, (text, fnt) in enumerate(tokens):
         tw = draw.textlength(text + " ", font=fnt)
         if cx + tw > x + max_w - pad and cx > x + pad:
             cx, cy = x + pad, cy + lh
         draw.text((cx, cy), text, font=fnt, fill=fill)
+        if boxes is not None:
+            boxes.append((text, draw.textbbox((cx, cy), text, font=fnt), i < 2))
         cx += tw
     bottom = cy + lh + pad
     if frame:
@@ -121,7 +127,7 @@ def draw_warning(draw, spec: Spec, x: int, y: int, max_w: int, size: int, fill, 
 
 
 # --- templates -----------------------------------------------------------------------------------
-def render(spec: Spec) -> Image.Image:
+def render(spec: Spec, boxes: list | None = None) -> Image.Image:
     bg, ink = PALETTES[spec.palette % len(PALETTES)]
     img = Image.new("RGB", (W, H), bg)
     d = ImageDraw.Draw(img)
@@ -146,7 +152,7 @@ def render(spec: Spec) -> Image.Image:
             y = draw_lines(d, [spec.origin], font(fam, False, 38), y + 10, ink) + 10
         bfnt = font(fam, False, 30)
         y = draw_lines(d, wrap(d, spec.bottler, bfnt, W - 260), bfnt, y + 30, ink)
-        draw_warning(d, spec, 110, 1150, W - 220, 28, ink, frame=True)
+        draw_warning(d, spec, 110, 1150, W - 220, 28, ink, frame=True, boxes=boxes)
     elif spec.template == "modern":
         x = 90
         y = 140
@@ -162,7 +168,7 @@ def render(spec: Spec) -> Image.Image:
         bfnt = font(fam, False, 30)
         y = draw_lines(d, wrap(d, spec.bottler, bfnt, W - 180), bfnt, y, ink, align="left", x=x)
         d.line([x, 1130, W - x, 1130], fill=ink, width=2)
-        draw_warning(d, spec, x, 1160, W - 2 * x, 28, ink, frame=False)
+        draw_warning(d, spec, x, 1160, W - 2 * x, 28, ink, frame=False, boxes=boxes)
     else:  # compact
         d.rectangle([30, 30, W - 30, H - 30], outline=ink, width=6)
         y = 120
@@ -182,7 +188,7 @@ def render(spec: Spec) -> Image.Image:
             y = draw_lines(d, [spec.origin], font(fam, False, 36), y, ink) + 20
         bfnt = font(fam, False, 30)
         y = draw_lines(d, wrap(d, spec.bottler, bfnt, W - 260), bfnt, y + 20, ink)
-        draw_warning(d, spec, 100, 1170, W - 200, 28, ink, frame=True)
+        draw_warning(d, spec, 100, 1170, W - 200, 28, ink, frame=True, boxes=boxes)
     if spec.blur:
         img = img.filter(ImageFilter.GaussianBlur(spec.blur))
     return img

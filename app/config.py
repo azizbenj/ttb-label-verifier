@@ -54,7 +54,7 @@ class Thresholds:
     # Government warning.
     warning_locate: int = 75      # similarity needed to recognise the "GOVERNMENT WARNING" line
     warning_near: int = 97        # wording similarity >= this (but not exact) -> NEEDS REVIEW, else FAIL
-    bold_ratio: float = 1.45      # heading stroke width / body stroke width -> "likely bold" (bold measured 1.5-2.4, regular 0.95-1.38)
+    bold_ratio: float = 1.30      # heading stroke width / body stroke width -> "likely bold" (measured: bold 1.46-2.12, regular 0.99-1.14)
     bold_min_text_px: int = 14    # below this text height the stroke measurement is unreliable
     bold_failure_is_fail: bool = False  # the bold check is a heuristic, so by default it only asks for review
     # Fields where a capitalization/punctuation-only difference is flagged for human review
