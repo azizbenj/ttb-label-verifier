@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label Check · TTB</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap bar">
+    <div class="brand">
+      <span class="seal" aria-hidden="true">TTB</span>
+      <div><h1>Label Check</h1><p>Compare a label with its application in seconds.</p></div>
+    </div>
+    <span class="muted small">{{ reader_info }}</span>
+  </div>
+</header>
+<main class="wrap">{% block content %}{% endblock %}</main>
+<footer class="wrap muted small">Prototype for the TTB Compliance Division · nothing you upload is stored ·
+  <a href="/healthz">service status</a></footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

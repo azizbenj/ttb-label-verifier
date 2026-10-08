@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="tabs" role="tablist">
+  <button class="tab active" role="tab" data-tab="single" aria-selected="true">Check one label</button>
+  <button class="tab" role="tab" data-tab="batch" aria-selected="false">Check a batch</button>
+  <button class="tab" role="tab" data-tab="help" aria-selected="false">How it works</button>
+</nav>
+
+<section id="tab-single" class="panel active">
+  <div class="cols">
+    <form id="single-form" class="card form" method="post" action="/verify" enctype="multipart/form-data" novalidate>
+      <h2>1. What the application says</h2>
+      <label class="field">
+        <span>Try a sample</span>
+        <select id="sample-picker" name="sample">
+          <option value="">— pick a sample label, or fill in your own below —</option>
+          {% for s in samples %}<option value="{{ s.name }}">{{ s.title }}</option>{% endfor %}
+        </select>
+      </label>
+      {% for f in fields %}
+      <label class="field">
+        <span>{{ f.label }}{% if f.required %} <b class="req" title="required">*</b>{% else %} <em class="muted">(optional)</em>{% endif %}</span>
+        <input type="text" name="{{ f.key }}" placeholder="{{ f.hint }}" autocomplete="off">
+      </label>
+      {% endfor %}
+      <input type="hidden" name="application_id" value="">
+      <h2>2. The label image</h2>
+      <label class="field file">
+        <span>Label image <b class="req">*</b> <em class="muted">PNG, JPG, TIFF or WEBP</em></span>
+        <input type="file" name="image" id="image-input" accept="image/*">
+      </label>
+      <div id="preview" class="preview" hidden><img alt="Label preview"><button type="button" class="link" id="clear-image">Remove</button></div>
+      {% if cloud %}
+      <fieldset class="field">
+        <legend>Reader</legend>
+        <label class="radio"><input type="radio" name="reader" value="tesseract" {% if default_reader != 'claude' %}checked{% endif %}> Local OCR <em class="muted">(runs inside your network)</em></label>
+        <label class="radio"><input type="radio" name="reader" value="claude" {% if default_reader == 'claude' %}checked{% endif %}> Claude Vision <em class="muted">(cloud, more accurate on unusual fonts)</em></label>
+      </fieldset>
+      {% endif %}
+      <button type="submit" class="primary big" id="single-submit">Check label</button>
+    </form>
+    <div id="result" class="result-slot" aria-live="polite">
+      <div class="card placeholder">
+        <p><strong>Results will appear here.</strong></p>
+        <p>Each field is compared with the application and marked <span class="chip ok">MATCH</span>
+          <span class="chip warn">NEAR MATCH</span> <span class="chip bad">MISMATCH</span> or <span class="chip missing">NOT FOUND</span>.
+          The government warning is checked word for word.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tab-batch" class="panel">
+  <div class="cols">
+    <form id="batch-form" class="card form" method="post" action="/batch" enctype="multipart/form-data" novalidate>
+      <h2>Check many labels at once</h2>
+      <p class="muted">Upload a CSV with one row per application and the label images (select them all, or a zip).
+        Images are matched to rows by file name. <a href="/batch/template.csv">Download the CSV template</a>.</p>
+      <label class="field file"><span>Application data (CSV) <b class="req">*</b></span>
+        <input type="file" name="csv_file" accept=".csv,text/csv"></label>
+      <label class="field file"><span>Label images <b class="req">*</b> <em class="muted">up to 500 images, or a zip</em></span>
+        <input type="file" name="files" multiple accept="image/*,.zip,application/zip"></label>
+      {% if cloud %}
+      <fieldset class="field">
+        <legend>Reader</legend>
+        <label class="radio"><input type="radio" name="reader" value="tesseract" checked> Local OCR</label>
+        <label class="radio"><input type="radio" name="reader" value="claude"> Claude Vision (cloud)</label>
+      </fieldset>
+      {% endif %}
+      <div class="actions">
+        <button type="submit" class="primary big">Check batch</button>
+        {% if batch_sample %}
+        <button type="button" class="secondary big" id="sample-batch">Try the sample batch (250 labels)</button>
+        <a class="link" href="/batch/sample.zip">Download the sample batch to upload it yourself</a>
+        {% endif %}
+      </div>
+    </form>
+    <div id="batch-result" class="result-slot" aria-live="polite">
+      <div class="card placeholder"><p><strong>Batch results will appear here</strong> with filters and a CSV export.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="tab-help" class="panel">
+  <div class="card prose">
+    <h2>How a label is checked</h2>
+    <ol>
+      <li><strong>Read.</strong> The label image is read with local OCR (Tesseract). Nothing leaves this server.
+        {% if cloud %}A cloud reader (Claude Vision) can be selected for comparison.{% endif %}</li>
+      <li><strong>Find each field.</strong> For every value on the application we look for the best-matching text on the label.</li>
+      <li><strong>Compare.</strong> Capitalization, punctuation, spacing and unit spelling are ignored
+        ("Alc./Vol." = "ABV", "750 mL" = "750ml", 90 proof = 45%). Alcohol content and net contents are compared as numbers.</li>
+      <li><strong>Government warning.</strong> The statement must be present, word for word, with "GOVERNMENT WARNING:" in capitals and bold.</li>
+    </ol>
+    <h3>What the results mean</h3>
+    <table class="legend">
+      <tr><td><span class="chip ok">MATCH</span></td><td>Identical after normalization.</td></tr>
+      <tr><td><span class="chip warn">NEAR MATCH</span></td><td>Same words with different capitalization or punctuation (for the brand name), or at least {{ thresholds.near_match }}% similar. An agent should confirm.</td></tr>
+      <tr><td><span class="chip bad">MISMATCH</span></td><td>The label says something different from the application.</td></tr>
+      <tr><td><span class="chip missing">NOT FOUND</span></td><td>Nothing on the label resembles the application value.</td></tr>
+    </table>
+    <h3>Government warning checks</h3>
+    <ul>
+      <li><strong>Present</strong>: the statement was found on the label.</li>
+      <li><strong>Wording</strong>: compared word for word with the required text. Differences are listed. A small difference ({{ thresholds.warning_near }}% similar or more) is flagged for review because it may be a reading error; anything bigger fails.</li>
+      <li><strong>Heading in capitals</strong>: "GOVERNMENT WARNING:" must be printed in capitals.</li>
+      <li><strong>Heading bold</strong>: estimated by comparing the thickness of the heading's letter strokes with the rest of the statement
+        (bold when at least {{ thresholds.bold_ratio }}× thicker). This is a heuristic, so a doubtful result asks for a look rather than failing the label.</li>
+    </ul>
+    <p class="muted">Required text: “{{ warning_text }}”</p>
+    <h3>Good to know</h3>
+    <ul>
+      <li>Works best with flat, straight-on label images (artwork files or scans). Photos taken at an angle, with glare or poor lighting are out of scope for this prototype.</li>
+      <li>Images up to 20 MB; batches up to 500 labels. Nothing is stored after the check.</li>
+      <li>Every threshold lives in one configuration file and is documented in the project README.</li>
+    </ul>
+  </div>
+</section>
+
+<script id="samples-data" type="application/json">{{ samples|tojson }}</script>
+{% endblock %}

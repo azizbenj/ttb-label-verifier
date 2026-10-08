@@ -1,0 +1,54 @@
+{% set r = result %}
+<div class="card result">
+  <div class="banner {{ r.overall|chip }}">
+    <div class="banner-text">
+      <strong>{{ r.overall|headline }}</strong>
+      <p>{{ r.summary }}</p>
+    </div>
+    <div class="timing" title="Reading the image took {{ r.timings.read_ms|seconds }}, comparing took {{ r.timings.match_ms|seconds }}">
+      Checked in <b>{{ r.timings.total_ms|seconds }}</b>
+      <small>reading {{ r.timings.read_ms|seconds }} · comparing {{ r.timings.match_ms|seconds }}</small>
+    </div>
+  </div>
+  {% if r.image_name and not compact %}<p class="muted small">Label: {{ r.image_name }}{% if r.application_id %} · Application {{ r.application_id }}{% endif %}</p>{% endif %}
+  <table class="fields">
+    <thead><tr><th>Field</th><th>On the application</th><th>On the label</th><th>Result</th></tr></thead>
+    <tbody>
+    {% for f in r.fields %}
+      <tr class="{{ f.verdict|chip }}">
+        <td class="fname">{{ f.label }}</td>
+        <td>{{ f.expected if f.expected else '—' }}</td>
+        <td>{{ f.found if f.found else '—' }}</td>
+        <td><span class="chip {{ f.verdict|chip }}">{{ f.verdict.value }}</span><div class="note">{{ f.note }}</div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% set w = r.warning %}
+  <section class="warning-box {{ w.overall|chip }}">
+    <h3>Government warning <span class="chip {{ w.overall|chip }}">{{ w.overall.value }}</span></h3>
+    {% if not w.present %}
+      <p class="note">{{ w.wording_note }}</p>
+    {% else %}
+      <ul class="checks">
+        <li><span class="chip ok">PRESENT</span> The statement was found on the label.</li>
+        <li><span class="chip {{ w.wording|chip }}">WORDING</span> {{ w.wording_note }}</li>
+        <li><span class="chip {{ w.heading_caps|chip }}">CAPITALS</span> {{ w.heading_caps_note }}</li>
+        <li><span class="chip {{ w.heading_bold|chip }}">BOLD</span> {{ w.heading_bold_note }}</li>
+      </ul>
+      {% if w.diff %}
+      <table class="diff">
+        <thead><tr><th>Required text says</th><th>Label says</th></tr></thead>
+        <tbody>{% for d in w.diff %}<tr><td>{{ d.expected or '(nothing)' }}</td><td>{{ d.found or '(nothing)' }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% endif %}
+      <details><summary>Statement as read from the label</summary><blockquote>{{ w.found_text }}</blockquote></details>
+    {% endif %}
+  </section>
+
+  <details class="ocr">
+    <summary>All text we read on the label <span class="muted small">({{ r.reader }})</span></summary>
+    <pre>{{ r.ocr_text }}</pre>
+  </details>
+</div>

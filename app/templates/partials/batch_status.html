@@ -1,0 +1,55 @@
+{% if not job.is_done %}
+<div class="card progress" data-job="{{ job.id }}" data-status="running">
+  <strong>Checking {{ job.total }} labels…</strong>
+  <div class="bar"><div class="fill" style="width: {{ (100 * job.done / job.total) if job.total else 100 }}%"></div></div>
+  <p class="muted">{{ job.done }} of {{ job.total }} done · {{ job.elapsed_ms|seconds }} elapsed</p>
+</div>
+{% else %}
+{% set c = job.counts() %}
+<div class="card batch" data-job="{{ job.id }}" data-status="done">
+  <div class="batch-head">
+    <div>
+      <strong>{{ job.total }} labels checked</strong>
+      <span class="muted">in {{ job.elapsed_ms|seconds }}{% if job.total %} · {{ (job.elapsed_ms / job.total)|seconds }} per label{% endif %}</span>
+    </div>
+    <a class="secondary" href="/batch/{{ job.id }}/export.csv" download>Download results (CSV)</a>
+  </div>
+  <div class="filters" role="group" aria-label="Filter results">
+    <button class="filter active" data-filter="">All <b>{{ job.total }}</b></button>
+    <button class="filter ok" data-filter="PASS">Pass <b>{{ c.PASS }}</b></button>
+    <button class="filter warn" data-filter="REVIEW">Review <b>{{ c.REVIEW }}</b></button>
+    <button class="filter bad" data-filter="FAIL">Fail <b>{{ c.FAIL }}</b></button>
+    {% if c.ERROR %}<button class="filter bad" data-filter="ERROR">Error <b>{{ c.ERROR }}</b></button>{% endif %}
+    <input type="search" class="search" placeholder="Search brand or file name…" aria-label="Search results">
+  </div>
+  {% if job.issues %}
+  <details class="issues" open><summary>{{ job.issues|length }} file issue{{ 's' if job.issues|length != 1 }}</summary>
+    <ul>{% for i in job.issues %}<li>{{ i }}</li>{% endfor %}</ul></details>
+  {% endif %}
+  <div class="table-wrap">
+  <table class="batch-table">
+    <thead><tr><th>Application</th><th>Label file</th><th>Result</th>
+      {% for f in fields %}<th>{{ f.label }}</th>{% endfor %}<th>Warning</th><th>Time</th></tr></thead>
+    <tbody>
+    {% for it in job.items %}
+      {% set r = it.result %}
+      <tr class="row {{ it.status|lower }}" data-status="{{ it.status }}" data-index="{{ loop.index0 }}"
+          data-text="{{ (it.application_id ~ ' ' ~ it.image_name ~ ' ' ~ (it.application.brand_name if it.application else ''))|lower }}" tabindex="0">
+        <td>{{ it.application_id }}</td>
+        <td class="file">{{ it.image_name or '—' }}</td>
+        <td><span class="chip {{ 'bad' if it.status in ('FAIL','ERROR') else 'warn' if it.status == 'REVIEW' else 'ok' }}">{{ it.status }}</span></td>
+        {% if r %}
+          {% for f in r.fields %}<td><span class="chip mini {{ f.verdict|chip }}" title="{{ f.note }}">{{ f.verdict|short }}</span></td>{% endfor %}
+          <td><span class="chip mini {{ r.warning.overall|chip }}">{{ r.warning.overall|short }}</span></td>
+          <td class="num">{{ r.timings.total_ms|seconds }}</td>
+        {% else %}
+          <td colspan="{{ fields|length + 2 }}" class="muted">{{ it.error }}</td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small">Click a row to see the full comparison.</p>
+</div>
+{% endif %}
