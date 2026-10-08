@@ -33,10 +33,15 @@ def run_remote(url: str, rows, image_dir, psm=None):
     with httpx.Client(timeout=60) as c:
         for r in rows:
             data = {k: r[k] for k in FIELDS}
-            data["sample"] = Path(r["image"]).stem
             if psm is not None:
                 data["psm"] = str(psm)
-            resp = c.post(f"{url.rstrip('/')}/api/verify", data=data)
+            path = image_dir / r["image"]
+            if image_dir.name == "samples":
+                data["sample"] = path.stem
+                resp = c.post(f"{url.rstrip('/')}/api/verify", data=data)
+            else:
+                with open(path, "rb") as f:
+                    resp = c.post(f"{url.rstrip('/')}/api/verify", data=data, files={"image": (path.name, f, "image/png")})
             out.append(resp.json())
     return out
 
