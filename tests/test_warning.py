@@ -123,3 +123,10 @@ def test_bold_heuristic_unmeasurable():
     ink = np.zeros((10, 10), dtype=bool)
     status, ratio, _ = estimate_heading_bold(ink, [], [])
     assert status == Status.REVIEW and ratio is None
+
+
+def test_locate_ignores_short_noise_lines():
+    lines = LABEL_LINES + ["a", "—"] + WARNING_LINES
+    span = locate_warning(lines)
+    assert span.heading_line == 6 and lines[span.start].startswith("GOVERNMENT")
+    assert check_warning(lines, bold_hint=True).overall == Status.PASS

@@ -54,8 +54,10 @@ class UserError(Exception):
 _readers: dict[str, LabelReader] = {}
 
 
-def get_reader(name: str | None) -> LabelReader:
+def get_reader(name: str | None, psm: int | None = None) -> LabelReader:
     name = (name or OCR_ENGINE).strip().lower()
+    if psm is not None and name != "claude":  # benchmarking knob, JSON API only
+        return TesseractReader(psm=psm)
     if name == "claude":
         if not CLOUD_READER_AVAILABLE:
             raise UserError("The cloud reader is not enabled on this server. Using local OCR is the default.")
@@ -177,12 +179,12 @@ def sample_image(name: str):
 
 # --- single label ---------------------------------------------------------------------------------
 async def _verify_from_form(brand_name, class_type, alcohol_content, net_contents, bottler_name_address,
-                            country_of_origin, application_id, sample, reader, image):
+                            country_of_origin, application_id, sample, reader, image, psm: int | None = None):
     app_data = build_application(brand_name=brand_name, class_type=class_type, alcohol_content=alcohol_content,
                                  net_contents=net_contents, bottler_name_address=bottler_name_address,
                                  country_of_origin=country_of_origin, application_id=application_id)
     img, name = await read_image(image, sample.strip())
-    return verify(app_data, img, get_reader(reader), image_name=name)
+    return verify(app_data, img, get_reader(reader, psm), image_name=name)
 
 
 @app.post("/verify", response_class=HTMLResponse)
@@ -206,10 +208,10 @@ async def verify_html(request: Request, brand_name: str = Form(""), class_type: 
 async def verify_json(brand_name: str = Form(""), class_type: str = Form(""), alcohol_content: str = Form(""),
                       net_contents: str = Form(""), bottler_name_address: str = Form(""),
                       country_of_origin: str = Form(""), application_id: str = Form(""), sample: str = Form(""),
-                      reader: str = Form(""), image: UploadFile | None = File(None)):
+                      reader: str = Form(""), image: UploadFile | None = File(None), psm: int | None = Form(None)):
     try:
         result = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents, bottler_name_address,
-                                         country_of_origin, application_id, sample, reader, image)
+                                         country_of_origin, application_id, sample, reader, image, psm)
     except UserError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     return JSONResponse(result.model_dump(mode="json"))

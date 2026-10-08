@@ -47,8 +47,10 @@ def locate_text(expected: str, lines: list[str], *, max_window: int = 3,
 
     raw_tokens: list[list[str]] = [normalize_strict(line).split() for line in lines]
     loose_tokens: list[list[str]] = [[normalize_loose(t) for t in toks] for toks in raw_tokens]
+    exp_strict = normalize_strict(expected).strip(_EDGE_PUNCT)
 
     best: Located | None = None
+    best_strict = False
     for i in range(len(lines)):
         raw: list[str] = []
         loose: list[str] = []
@@ -72,9 +74,14 @@ def locate_text(expected: str, lines: list[str], *, max_window: int = 3,
                     if not cand:
                         continue
                     score = int(round(fuzz.ratio(exp_loose, cand)))
-                    if best is None or score > best.score:
-                        text = " ".join(raw[a:b]).strip(_EDGE_PUNCT)
-                        best = Located(text=text, score=score, line_start=i, line_end=j)
+                    if best is not None and score < best.score:
+                        continue
+                    text = " ".join(raw[a:b]).strip(_EDGE_PUNCT)
+                    strict = text == exp_strict
+                    # Ties go to the span that also matches case and punctuation (the brand line
+                    # rather than the brand's mention inside the bottler statement).
+                    if best is None or score > best.score or (strict and not best_strict):
+                        best, best_strict = Located(text=text, score=score, line_start=i, line_end=j), strict
     if best is None or best.score < floor:
         return None
     return best
@@ -103,7 +110,7 @@ def compare_text(key: str, expected: str, found: str | None, *, th: Thresholds =
     label = _spec(key).label
     if found is None:
         return not_found(key, expected)
-    if normalize_strict(expected) == normalize_strict(found):
+    if normalize_strict(expected).strip(_EDGE_PUNCT) == normalize_strict(found).strip(_EDGE_PUNCT):
         return FieldResult(key=key, label=label, expected=expected, found=found, verdict=Verdict.MATCH,
                            score=100, note="Exact match.")
     exp_loose, found_loose = normalize_loose(expected), normalize_loose(found)

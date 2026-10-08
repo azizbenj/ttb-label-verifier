@@ -39,6 +39,13 @@ class WarningSpan:
     heading_line: int | None  # line holding "GOVERNMENT WARNING", if recognised
 
 
+def _contains_score(query: str, line: str) -> float:
+    """How well ``query`` appears inside ``line``. Short OCR fragments ("a", "—") must not score high."""
+    if len(line) < 0.8 * len(query):
+        return fuzz.ratio(query, line)
+    return fuzz.partial_ratio(query, line)
+
+
 def locate_warning(lines: list[str], *, th: Thresholds = THRESHOLDS) -> WarningSpan | None:
     if not lines:
         return None
@@ -47,13 +54,13 @@ def locate_warning(lines: list[str], *, th: Thresholds = THRESHOLDS) -> WarningS
     for i, l in enumerate(loose):
         if not l:
             continue
-        s = fuzz.partial_ratio("government warning", l)
+        s = _contains_score("government warning", l)
         if s > best and s >= th.warning_locate:
             heading_line, best = i, s
     start = heading_line
     if start is None:  # heading unreadable or missing: look for the body of the statement
         for i, l in enumerate(loose):
-            if fuzz.partial_ratio("according to the surgeon general", l) >= th.warning_locate:
+            if _contains_score("according to the surgeon general", l) >= th.warning_locate:
                 start = i
                 break
     if start is None:

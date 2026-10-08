@@ -150,3 +150,13 @@ def test_country_different_origin_statement_is_mismatch():
 def test_country_match_shows_full_statement():
     r = compare_country("Scotland", LINES + ["Product of Scotland"])
     assert r.verdict == Verdict.MATCH and r.found == "Product of Scotland"
+
+
+def test_trailing_period_does_not_break_exact_match():
+    assert compare_text("brand_name", "RIVER BEND BREWING CO.", "RIVER BEND BREWING CO").verdict == Verdict.MATCH
+
+
+def test_locate_prefers_case_exact_span_on_tie():
+    lines = ["Distilled and bottled by Old Tom Distillery, Bardstown, KY", "OLD TOM DISTILLERY"]
+    loc = locate_text("OLD TOM DISTILLERY", lines)
+    assert loc.text == "OLD TOM DISTILLERY"
