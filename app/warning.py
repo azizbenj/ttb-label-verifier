@@ -170,6 +170,8 @@ def estimate_heading_bold(ink: np.ndarray, heading_words: list[OCRWord], body_wo
     head_h, body_h = _reference_height(heading_words), _reference_height(body_words)
     if len(head_sw) < 1 or len(body_sw) < 3 or not head_h or not body_h:
         return Status.REVIEW, None, "Could not measure the heading's weight. Please check it by eye."
+    if min(head_h, body_h) < th.bold_min_text_px:
+        return Status.REVIEW, None, "The statement is printed too small to measure its weight. Please check it by eye."
     ratio = (statistics.median(head_sw) / head_h) / (statistics.median(body_sw) / body_h)
     ratio = round(ratio, 2)
     if ratio >= th.bold_ratio:
