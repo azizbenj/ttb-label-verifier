@@ -9,8 +9,8 @@ from ..models import Application, FieldResult
 from .base import OCRResult
 
 
-def prominent_line(ocr: OCRResult) -> str | None:
-    """The line printed in the largest type, which on a label is almost always the brand name."""
+def prominent_line_index(ocr: OCRResult) -> int | None:
+    """Index of the line printed in the largest type: on a label, almost always the brand name."""
     by_line: dict[int, list[int]] = {}
     for w in ocr.words:
         if len(w.text) >= 2 and any(ch.isalpha() for ch in w.text):
@@ -18,13 +18,20 @@ def prominent_line(ocr: OCRResult) -> str | None:
     if not by_line:
         return None
     best = max(by_line, key=lambda i: statistics.median(by_line[i]))
-    return ocr.lines[best] if best < len(ocr.lines) else None
+    return best if best < len(ocr.lines) else None
+
+
+def prominent_line(ocr: OCRResult) -> str | None:
+    idx = prominent_line_index(ocr)
+    return ocr.lines[idx] if idx is not None else None
 
 
 def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
     lines, text = ocr.lines, ocr.text
+    brand_line = prominent_line_index(ocr)
     return [
-        locate_and_compare("brand_name", app.brand_name, lines, fallback_found=prominent_line(ocr)),
+        locate_and_compare("brand_name", app.brand_name, lines, fallback_found=prominent_line(ocr),
+                           preferred_line=brand_line),
         locate_and_compare("class_type", app.class_type, lines),
         compare_alcohol(app.alcohol_content, text),
         compare_volume(app.net_contents, text),

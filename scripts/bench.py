@@ -56,8 +56,9 @@ def run_local(rows, image_dir, psm):
     from PIL import Image
     from app.models import Application
     from app.pipeline import verify
-    from app.readers.tesseract import TesseractReader
-    reader = TesseractReader(psm=psm)
+    from app.readers.tesseract import TesseractReader, parse_psm
+    first, extra = parse_psm(psm)
+    reader = TesseractReader(psm=first, extra_psm=extra)
     out = []
     for r in rows:
         app = Application(**{k: r[k] for k in FIELDS})
@@ -69,14 +70,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--set", default="samples", choices=["samples", "batch"])
     ap.add_argument("--url", default=None)
-    ap.add_argument("--psm", type=int, default=None)
+    ap.add_argument("--psm", default=None, help='e.g. "4", "11" or "4+11" (two merged passes)')
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
     image_dir, rows = rows_for(a.set)
-    if a.psm is not None:
-        import os
-        os.environ["TESSERACT_PSM"] = str(a.psm)
-    results = run_remote(a.url, rows, image_dir, a.psm) if a.url else run_local(rows, image_dir, a.psm or 6)
+    results = run_remote(a.url, rows, image_dir, a.psm) if a.url else run_local(rows, image_dir, a.psm)
     ok, times = 0, []
     for r, res in zip(rows, results):
         if "error" in res:

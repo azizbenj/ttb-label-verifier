@@ -160,3 +160,17 @@ def test_locate_prefers_case_exact_span_on_tie():
     lines = ["Distilled and bottled by Old Tom Distillery, Bardstown, KY", "OLD TOM DISTILLERY"]
     loc = locate_text("OLD TOM DISTILLERY", lines)
     assert loc.text == "OLD TOM DISTILLERY"
+
+
+def test_volume_lost_decimal_point_is_near_match_not_match():
+    r = compare_volume("1.5 L", "ALC. 14.5% BY VOL. L5L")
+    assert r.verdict == Verdict.NEAR_MATCH and "decimal point" in r.note
+    assert compare_volume("1.5 L", "15 L").verdict == Verdict.NEAR_MATCH
+    assert compare_volume("750 mL", "75 mL").verdict == Verdict.MISMATCH
+
+
+def test_locate_prefers_prominent_line_over_case_exact_mention():
+    lines = ["HARBOR LANTERN RUM CO.", "Silver Rum", "Distilled and Bottled by Harbor Lantern Rum Co., Portland, OR"]
+    loc = locate_text("Harbor Lantern Rum Co.", lines, preferred_line=0)
+    assert loc.text == "HARBOR LANTERN RUM CO"  # edge punctuation is trimmed for display
+    assert compare_text("brand_name", "Harbor Lantern Rum Co.", loc.text).verdict == Verdict.NEAR_MATCH

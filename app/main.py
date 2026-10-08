@@ -21,7 +21,7 @@ from .models import Application, Status, Verdict
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
 from .readers.base import LabelReader
-from .readers.tesseract import TesseractReader, tesseract_version
+from .readers.tesseract import TesseractReader, parse_psm, tesseract_version
 
 log = logging.getLogger("labelcheck")
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,10 +54,11 @@ class UserError(Exception):
 _readers: dict[str, LabelReader] = {}
 
 
-def get_reader(name: str | None, psm: int | None = None) -> LabelReader:
+def get_reader(name: str | None, psm: str | None = None) -> LabelReader:
     name = (name or OCR_ENGINE).strip().lower()
-    if psm is not None and name != "claude":  # benchmarking knob, JSON API only
-        return TesseractReader(psm=psm)
+    if psm and name != "claude":  # benchmarking knob, JSON API only: "4" or "4+11"
+        first, extra = parse_psm(psm)
+        return TesseractReader(psm=first, extra_psm=extra)
     if name == "claude":
         if not CLOUD_READER_AVAILABLE:
             raise UserError("The cloud reader is not enabled on this server. Using local OCR is the default.")
@@ -180,7 +181,7 @@ def sample_image(name: str):
 
 # --- single label ---------------------------------------------------------------------------------
 async def _verify_from_form(brand_name, class_type, alcohol_content, net_contents, bottler_name_address,
-                            country_of_origin, application_id, sample, reader, image, psm: int | None = None):
+                            country_of_origin, application_id, sample, reader, image, psm: str | None = None):
     app_data = build_application(brand_name=brand_name, class_type=class_type, alcohol_content=alcohol_content,
                                  net_contents=net_contents, bottler_name_address=bottler_name_address,
                                  country_of_origin=country_of_origin, application_id=application_id)
@@ -209,7 +210,7 @@ async def verify_html(request: Request, brand_name: str = Form(""), class_type: 
 async def verify_json(brand_name: str = Form(""), class_type: str = Form(""), alcohol_content: str = Form(""),
                       net_contents: str = Form(""), bottler_name_address: str = Form(""),
                       country_of_origin: str = Form(""), application_id: str = Form(""), sample: str = Form(""),
-                      reader: str = Form(""), image: UploadFile | None = File(None), psm: int | None = Form(None)):
+                      reader: str = Form(""), image: UploadFile | None = File(None), psm: str | None = Form(None)):
     try:
         result = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents, bottler_name_address,
                                          country_of_origin, application_id, sample, reader, image, psm)

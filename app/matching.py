@@ -31,12 +31,15 @@ class Located:
 
 
 def locate_text(expected: str, lines: list[str], *, max_window: int = 3,
-                floor: int | None = None, th: Thresholds = THRESHOLDS) -> Located | None:
+                floor: int | None = None, preferred_line: int | None = None,
+                th: Thresholds = THRESHOLDS) -> Located | None:
     """Find the span of consecutive label words that best matches ``expected``.
 
     Windows of up to ``max_window`` consecutive OCR lines are joined so that values
     wrapped over several lines (addresses, long class/type names) are still found.
     Returns None when nothing on the label scores at least ``floor``.
+    Ties between equally good spans go to the one on ``preferred_line`` (the most
+    prominent line, for the brand name), then to the one that also matches case.
     """
     floor = th.find_floor if floor is None else floor
     exp_loose = normalize_loose(expected)
@@ -50,7 +53,7 @@ def locate_text(expected: str, lines: list[str], *, max_window: int = 3,
     exp_strict = normalize_strict(expected).strip(_EDGE_PUNCT)
 
     best: Located | None = None
-    best_strict = False
+    best_rank: tuple = ()
     for i in range(len(lines)):
         raw: list[str] = []
         loose: list[str] = []
@@ -77,11 +80,9 @@ def locate_text(expected: str, lines: list[str], *, max_window: int = 3,
                     if best is not None and score < best.score:
                         continue
                     text = " ".join(raw[a:b]).strip(_EDGE_PUNCT)
-                    strict = text == exp_strict
-                    # Ties go to the span that also matches case and punctuation (the brand line
-                    # rather than the brand's mention inside the bottler statement).
-                    if best is None or score > best.score or (strict and not best_strict):
-                        best, best_strict = Located(text=text, score=score, line_start=i, line_end=j), strict
+                    rank = (score, preferred_line is not None and i == j == preferred_line, text == exp_strict)
+                    if best is None or rank > best_rank:
+                        best, best_rank = Located(text=text, score=score, line_start=i, line_end=j), rank
     if best is None or best.score < floor:
         return None
     return best
@@ -129,11 +130,11 @@ def compare_text(key: str, expected: str, found: str | None, *, th: Thresholds =
 
 
 def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_found: str | None = None,
-                       th: Thresholds = THRESHOLDS) -> FieldResult:
+                       preferred_line: int | None = None, th: Thresholds = THRESHOLDS) -> FieldResult:
     spec = _spec(key)
     if not expected.strip():
         return skipped(key) if not spec.required else not_found(key, expected, note="Required on the application.")
-    loc = locate_text(expected, lines, th=th)
+    loc = locate_text(expected, lines, preferred_line=preferred_line, th=th)
     if loc is None:
         return not_found(key, expected, fallback_found=fallback_found)
     return compare_text(key, expected, loc.text, th=th)
@@ -176,6 +177,11 @@ def compare_volume(expected: str, label_text: str, *, th: Thresholds = THRESHOLD
     if abs(got.ml - exp.ml) <= th.volume_tolerance_ml:
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.MATCH,
                            score=100, note=f"{exp.describe()} on both.")
+    if got.unit == exp.unit and got.digits == exp.digits and "." not in got.text:
+        # Same digits and unit, but the label read has no decimal point ("L5L" for "1.5 L"): the
+        # point was probably lost by OCR. Never silently accept it; ask the agent to look.
+        return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.NEAR_MATCH,
+                           score=90, note=f"Reads like {expected} but the decimal point was not read clearly. Please confirm.")
     return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.MISMATCH,
                        score=0, note=f"Label says {got.describe()}, application says {exp.describe()}.")
 

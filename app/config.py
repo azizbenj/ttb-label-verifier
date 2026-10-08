@@ -68,7 +68,9 @@ THRESHOLDS = Thresholds()
 # --- OCR / runtime settings (environment overrides) --------------------------------------------
 OCR_ENGINE = os.getenv("OCR_ENGINE", "tesseract").lower()
 TESSERACT_CMD = os.getenv("TESSERACT_CMD", "")          # empty -> use the one on PATH
-TESSERACT_PSM = int(os.getenv("TESSERACT_PSM", "6"))    # page segmentation mode (see README)
+_psm_spec = os.getenv("TESSERACT_PSM", "4+11").split("+")  # "4+11": block mode, then sparse mode merged (see README)
+TESSERACT_PSM = int(_psm_spec[0])
+TESSERACT_PSM_EXTRA = int(_psm_spec[1]) if len(_psm_spec) > 1 else None
 TESSERACT_MIN_WIDTH = 1600                              # upscale smaller images before OCR
 TESSERACT_MAX_WIDTH = 2400                              # downscale huge images (speed)
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")

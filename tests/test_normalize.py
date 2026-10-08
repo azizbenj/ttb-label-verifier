@@ -79,3 +79,14 @@ def test_parse_net_contents_prefers_metric_when_both():
 
 def test_parse_net_contents_none():
     assert parse_net_contents("OLD TOM DISTILLERY") is None
+
+
+def test_accents_are_folded_in_loose_normalization():
+    assert normalize_loose("Rosé Wine") == normalize_loose("Rose Wine")
+
+
+def test_one_read_as_L_before_decimal_or_litre_unit():
+    assert parse_net_contents("L.75L").ml == 1750.0
+    assert parse_net_contents("LL").ml == 1000.0
+    assert parse_net_contents("L.5 L").ml == 1500.0
+    assert parse_net_contents("LITERS") is None  # a plain word is not a volume

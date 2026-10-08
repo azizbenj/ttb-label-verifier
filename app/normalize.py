@@ -42,6 +42,11 @@ def unify_unicode(text: str) -> str:
     return unicodedata.normalize("NFKC", text or "").translate(_QUOTE_MAP)
 
 
+def fold_accents(text: str) -> str:
+    """Drop diacritics ("Rosé" -> "Rose"): OCR and applications are inconsistent about them."""
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch))
+
+
 def collapse_ws(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
@@ -57,7 +62,7 @@ def unify_abv_phrases(text: str) -> str:
 
 def normalize_loose(text: str) -> str:
     """Lower-case, unify ABV phrases, drop punctuation (except inside numbers), collapse spaces."""
-    t = unify_unicode(text).lower()
+    t = fold_accents(unify_unicode(text)).lower()
     t = unify_abv_phrases(t)
     t = t.replace("_", " ")
     t = _PUNCT_RE.sub(" ", t)
@@ -79,8 +84,17 @@ def _repair_run(m: re.Match) -> str:
     return run.translate(_DIGIT_FIX) if any(ch.isdigit() for ch in run) else run
 
 
+# "1" read as "L" right before a decimal part or a volume unit: "L.75 L" -> "1.75 L", "LL" -> "1 L".
+_L_BEFORE_DECIMAL_RE = re.compile(r"(?<![A-Za-z0-9])L(?=[.,]\d)")
+_L_BEFORE_UNIT_RE = re.compile(r"(?<![A-Za-z0-9])L(?=\s?(?:L|l|ml|mL|ML|liters?|litres?|LITERS?|LITRES?)\b)")
+_L_BEFORE_DIGITS_UNIT_RE = re.compile(r"(?<![A-Za-z0-9])L(?=\d+(?:[.,]\d+)?\s?(?:L|l|ml|mL|ML|liters?|litres?|LITERS?|LITRES?)\b)")
+
+
 def fix_ocr_digits(token: str) -> str:
     """Repair common OCR confusions inside a token that is clearly a number ("75O" -> "750")."""
+    token = _L_BEFORE_DECIMAL_RE.sub("1", token)
+    token = _L_BEFORE_UNIT_RE.sub("1", token)
+    token = _L_BEFORE_DIGITS_UNIT_RE.sub("1", token)
     return _NUMERIC_RUN_RE.sub(_repair_run, token)
 
 
@@ -161,6 +175,7 @@ class VolumeValue:
     ml: float
     unit: str        # canonical unit as written on the source ("mL", "L", "fl oz", "cL")
     text: str        # the phrase we parsed it from
+    digits: str = ""  # the digits as printed, without the decimal separator ("1.75" -> "175")
 
     def describe(self) -> str:
         return f"{self.ml:g} mL"
@@ -209,7 +224,7 @@ def parse_net_contents(text: str) -> VolumeValue | None:
             continue
         value = _to_float(m.group(1))
         candidates.append(VolumeValue(ml=round(value * _UNIT_TO_ML[key], 2), unit=_CANON_UNIT[key],
-                                      text=collapse_ws(m.group(0))))
+                                      text=collapse_ws(m.group(0)), digits=re.sub(r"[.,]", "", m.group(1))))
     if not candidates:
         return None
     metric = [c for c in candidates if c.unit in ("mL", "L", "cL")]
