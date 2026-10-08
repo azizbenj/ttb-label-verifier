@@ -167,9 +167,9 @@ def index(request: Request):
 @app.get("/healthz")
 def healthz():
     v = tesseract_version()
-    version_file = ROOT / "VERSION"
+    import os
     return {"status": "ok" if v else "degraded", "tesseract": v, "cloud_reader": CLOUD_READER_AVAILABLE,
-            "default_reader": OCR_ENGINE, "build": version_file.read_text().strip() if version_file.exists() else None}
+            "default_reader": OCR_ENGINE, "deployment": os.getenv("RAILWAY_DEPLOYMENT_ID")}
 
 
 @app.get("/samples/{name}.png")
