@@ -55,7 +55,7 @@ Railway builds the Dockerfile on its side. Optional environment variables:
 | `ANTHROPIC_API_KEY` | unset | When set, the UI shows a "Reader" toggle and the cloud reader can be selected per request |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Model used by the cloud reader |
 | `BATCH_WORKERS` | `min(4, CPUs)` | Parallel OCR workers for batch jobs |
-| `TESSERACT_PSM` | `6` | Tesseract page-segmentation mode (see "OCR choice") |
+| `TESSERACT_PSM` | `4+11` | Tesseract page-segmentation mode(s); two modes joined with `+` are merged (see "OCR choice") |
 | `TESSERACT_CMD` | unset | Path to the tesseract binary if it is not on PATH |
 
 ## How it works
@@ -68,7 +68,11 @@ application ──────────────────────�
 ```
 
 1. **Read.** The image is converted to grayscale, scaled so the width is at least 1600 px, contrast-stretched and
-   handed to Tesseract 5 (LSTM engine). We keep the word boxes and a binarized copy of the image for the bold check.
+   handed to Tesseract 5 (LSTM engine) twice: once in "single column" mode (PSM 4) and once in "sparse text" mode
+   (PSM 11). No single mode reads every label (block modes drop oversized brand lines, sparse mode occasionally
+   misses short centred lines), so lines the first pass did not produce are appended from the second. The two passes
+   cost about 1 s together on Railway's shared CPU. We keep the word boxes and a binarized copy of the image for the
+   bold check. OCR digit confusions are repaired in context (`75O` → `750`, `L.75 L` → `1.75 L`).
 2. **Find each field.** We know what we are looking for, so instead of parsing an arbitrary label we search for the
    span of consecutive label words (across up to three lines) that best matches each application value. This is far
    more robust than blind extraction: "Bottled by OLD TOM DISTILLERY, Bardstown" still yields "OLD TOM DISTILLERY".
@@ -116,7 +120,8 @@ only option that is both fast on a small container and trivially deployable in a
 application-guided matching compensates for most of its OCR noise. The main cost is weak reading of highly
 stylized brand typography; that is where the cloud reader shines, and why it is one flag away.
 
-Page-segmentation mode: the generated labels were benchmarked with PSM 3, 4, 6 and 11; see "Measured results".
+Page-segmentation mode: the generated labels were benchmarked with PSM 3, 4, 6, 11 and merged pairs; see
+"Measured results". `TESSERACT_PSM=4+11` is the default; a single mode (`TESSERACT_PSM=4`) halves the read time.
 
 ## Matching rules and thresholds
 
@@ -137,7 +142,7 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `near_match` | 88 | rapidfuzz similarity (0-100) at or above this → **NEAR MATCH**, below → **MISMATCH** |
 | `find_floor` | 60 | Best-matching span on the label scores below this → **NOT FOUND** |
 | `abv_tolerance` | 0.05 pp | Alcohol content compared as numbers; any larger difference is a **MISMATCH** |
-| `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`) |
+| `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`). Same digits and unit but no decimal point on the label (`15 L` read for `1.5 L`) → NEAR MATCH, never a silent match |
 | `warning_locate` | 75 | Similarity needed to recognise the "GOVERNMENT WARNING" line |
 | `warning_near` | 97 | Warning wording at or above this (but not exact) → NEEDS REVIEW with a diff; below → FAIL |
 | `bold_ratio` | 1.25 | Heading stroke width ÷ body stroke width at or above this → "looks bold" |
@@ -229,8 +234,11 @@ pytest -q
 - `test_warning.py`: exact/altered/truncated wording with diffs, heading capitalization, the bold heuristic on rendered bold vs regular text in both font families and two sizes
 - `test_e2e.py`: every sample label through the real Tesseract pipeline must produce its expected outcome in under 5 s
 - `test_api.py`: the HTTP surface, friendly errors (missing fields, bad values, non-image files), a small batch with a missing image and a stray file, CSV export
+- `test_batch_flow.py`: the single and batch HTTP flows with a fake reader, so templates and job handling are covered without Tesseract
 
-OCR-dependent tests skip automatically when the Tesseract binary is absent.
+OCR-dependent tests skip automatically when the Tesseract binary is absent. `.github/workflows/ci.yml` runs the whole
+suite on Ubuntu with Tesseract installed and benchmarks the sample set. `scripts/bench.py` reports accuracy and timing
+for the sample or batch set, locally or against a deployed URL (`--url`).
 
 ## Measured results
 
