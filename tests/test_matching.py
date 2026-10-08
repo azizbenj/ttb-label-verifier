@@ -174,3 +174,8 @@ def test_locate_prefers_prominent_line_over_case_exact_mention():
     loc = locate_text("Harbor Lantern Rum Co.", lines, preferred_line=0)
     assert loc.text == "HARBOR LANTERN RUM CO"  # edge punctuation is trimmed for display
     assert compare_text("brand_name", "Harbor Lantern Rum Co.", loc.text).verdict == Verdict.NEAR_MATCH
+
+
+def test_mangled_litre_volume_asks_for_confirmation():
+    r = compare_volume("1.5 L", "ALC. 15% BY VOL. LSL")
+    assert r.verdict == Verdict.NEAR_MATCH and r.found == "15 L"

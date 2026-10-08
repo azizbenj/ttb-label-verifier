@@ -145,7 +145,7 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`). Same digits and unit but no decimal point on the label (`15 L` read for `1.5 L`) → NEAR MATCH, never a silent match |
 | `warning_locate` | 75 | Similarity needed to recognise the "GOVERNMENT WARNING" line |
 | `warning_near` | 97 | Warning wording at or above this (but not exact) → NEEDS REVIEW with a diff; below → FAIL |
-| `bold_ratio` | 1.25 | Heading stroke width ÷ body stroke width at or above this → "looks bold" |
+| `bold_ratio` | 1.45 | Heading stroke width ÷ body stroke width at or above this → "looks bold" (measured: bold headings 1.5-2.4, regular 0.95-1.38) |
 | `bold_min_text_px` | 14 | Below this text height the stroke measurement is not attempted |
 | `bold_failure_is_fail` | false | A "does not look bold" result asks for review instead of failing the label |
 
@@ -175,7 +175,7 @@ Four separate results are shown so the agent sees exactly what is wrong:
    colon asks for review.
 4. **Heading bold (heuristic)**: from the word boxes, we crop the heading words and the body words of the statement,
    measure the median length of ink runs (horizontal and vertical, long runs excluded), i.e. the stroke width, and
-   normalize by text height. If the heading's strokes are at least `bold_ratio` (1.25×) thicker than the body's it
+   normalize by text height. If the heading's strokes are at least `bold_ratio` (1.45×) thicker than the body's it
    "looks bold". Measured on the bundled fonts the ratio is 1.5-2.1 for bold and 0.95-1.06 for regular weight, so
    there is margin, but it is still a heuristic that assumes the body is set in regular weight at a similar size,
    which is how the statement is printed in practice. Doubtful results ask for a look rather than failing the label.

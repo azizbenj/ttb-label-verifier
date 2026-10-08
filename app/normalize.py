@@ -222,6 +222,25 @@ def _canon_unit_key(raw: str) -> str:
     return u
 
 
+# A volume whose digits were read as look-alike letters ("LSL" for "1.5 L", "7S0 mL"): only
+# considered when no ordinary volume is present, and only right in front of a volume unit.
+_MANGLED_VOLUME_RE = re.compile(
+    r"(?<![A-Za-z0-9])([0-9LlIOoSsB][0-9LlIOoSsB.,]{0,5})\s?(L|ml|mL|ML|liters?|litres?|LITERS?|LITRES?)\b", )
+_LOOKALIKE_DIGITS = str.maketrans({"L": "1", "l": "1", "I": "1", "O": "0", "o": "0", "S": "5", "s": "5", "B": "8"})
+
+
+def _repair_mangled_volumes(t: str) -> str:
+    def fix(m: re.Match) -> str:
+        number, unit = m.group(1), m.group(2)
+        glued = m.group(0)[len(number):len(number) + 1] != " "
+        if not any(ch.isalpha() for ch in number):
+            return m.group(0)                       # an ordinary number: nothing to repair
+        if not any(ch.isdigit() for ch in number) and not (glued and len(number) <= 3):
+            return m.group(0)                       # a real word ("BOLS L"), not a mangled number
+        return number.translate(_LOOKALIKE_DIGITS) + " " + unit
+    return _MANGLED_VOLUME_RE.sub(fix, t)
+
+
 def parse_net_contents(text: str) -> VolumeValue | None:
     """Pull a volume out of free text and express it in millilitres.
 
@@ -230,7 +249,7 @@ def parse_net_contents(text: str) -> VolumeValue | None:
     """
     if not text:
         return None
-    t = fix_ocr_digits_in_text(unify_unicode(text))
+    t = _repair_mangled_volumes(fix_ocr_digits_in_text(unify_unicode(text)))
     candidates = []
     for m in _VOLUME_RE.finditer(t):
         key = _canon_unit_key(m.group(2))

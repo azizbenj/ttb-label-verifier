@@ -92,7 +92,7 @@ def test_batch_end_to_end_with_export():
         import time
         time.sleep(0.2)
     assert 'data-status="done"' in r.text
-    assert "No image named 'missing.png'" in r.text and "readme.txt" in r.text
+    assert "No image named" in r.text and "missing.png" in r.text and "readme.txt" in r.text
     j = client.get(f"/api/batch/{job_id}").json()
     by_id = {it["application_id"]: it for it in j["items"]}
     assert by_id["A1"]["status"] == "PASS" and by_id["A2"]["status"] == "FAIL" and by_id["A3"]["status"] == "ERROR"

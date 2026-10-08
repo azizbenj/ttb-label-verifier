@@ -96,3 +96,11 @@ def test_parse_alcohol_text_shows_whole_statement():
     assert parse_alcohol("Fine spirit. 45% Alc./Vol. (90 Proof) 750 mL").text == "45% Alc./Vol. (90 Proof)"
     assert parse_alcohol("ALC. 14.5% BY VOL. 750 mL").text == "ALC. 14.5% BY VOL."
     assert parse_alcohol("7.2% ALC./VOL. 12 FL. OZ.").text == "7.2% ALC./VOL."
+
+
+def test_mangled_volume_letters_are_repaired_only_as_a_fallback():
+    assert parse_net_contents("ALC. 15% BY VOL. LSL").ml == 15000.0  # "15 L": the matcher turns it into a near match
+    assert parse_net_contents("7S0 mL").ml == 750.0
+    assert parse_net_contents("750 mL").ml == 750.0
+    assert parse_net_contents("MILLERS LITERS CLUB") is None
+    assert parse_net_contents("BOLS L") is None  # a word in front of a unit is not a number
