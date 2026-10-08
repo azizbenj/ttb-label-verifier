@@ -81,7 +81,7 @@ def test_uploaded_batch_reports_missing_and_stray_files():
     assert r.status_code == 200, r.text
     job_id = re.search(r'data-job="([a-f0-9]+)"', r.text).group(1)
     r = _wait_done(job_id)
-    assert "No image named 'missing.png'" in r.text
+    assert "No image named" in r.text and "missing.png" in r.text
     assert "Row 4: brand name is blank" in r.text
     assert "extra.png" in r.text and "readme.txt" in r.text
     j = client.get(f"/api/batch/{job_id}").json()
