@@ -36,13 +36,19 @@ def run_remote(url: str, rows, image_dir, psm=None):
             if psm is not None:
                 data["psm"] = str(psm)
             path = image_dir / r["image"]
-            if image_dir.name == "samples":
-                data["sample"] = path.stem
-                resp = c.post(f"{url.rstrip('/')}/api/verify", data=data)
-            else:
-                with open(path, "rb") as f:
-                    resp = c.post(f"{url.rstrip('/')}/api/verify", data=data, files={"image": (path.name, f, "image/png")})
-            out.append(resp.json())
+            for attempt in range(3):  # transient network errors should not void a long run
+                try:
+                    if image_dir.name == "samples":
+                        data["sample"] = path.stem
+                        resp = c.post(f"{url.rstrip('/')}/api/verify", data=data)
+                    else:
+                        resp = c.post(f"{url.rstrip('/')}/api/verify", data=data,
+                                      files={"image": (path.name, path.read_bytes(), "image/png")})
+                    out.append(resp.json())
+                    break
+                except (httpx.HTTPError, ValueError) as e:
+                    if attempt == 2:
+                        out.append({"error": f"request failed: {e}"})
     return out
 
 

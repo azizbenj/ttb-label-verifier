@@ -297,7 +297,7 @@ def batch_json(job_id: str):
     if job is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     return {"id": job.id, "done": job.done, "total": job.total, "finished": job.is_done, "counts": job.counts(),
-            "elapsed_ms": round(job.elapsed_ms(), 1), "issues": job.issues,
+            "elapsed_ms": round(job.elapsed_ms, 1), "issues": job.issues,
             "items": [{"row": it.row, "application_id": it.application_id, "image": it.image_name,
                        "status": it.status, "error": it.error,
                        "result": it.result.model_dump(mode="json") if it.result else None} for it in job.items]}

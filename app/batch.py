@@ -88,6 +88,7 @@ class BatchJob:
                 c[it.status] += 1
         return c
 
+    @property
     def elapsed_ms(self) -> float:
         return self.finished_ms if self.finished_ms is not None else (perf_counter() - self.started) * 1000
 
