@@ -1,0 +1,81 @@
+from app.normalize import (
+    fix_ocr_digits,
+    normalize_loose,
+    normalize_strict,
+    parse_alcohol,
+    parse_net_contents,
+)
+
+
+def test_strict_keeps_case_but_fixes_quotes_and_spaces():
+    assert normalize_strict("STONE’S   THROW ") == "STONE'S THROW"
+
+
+def test_loose_lowercases_and_drops_punctuation():
+    assert normalize_loose("Stone's Throw!") == "stone s throw"
+    assert normalize_loose("STONE’S THROW") == normalize_loose("Stone's Throw")
+
+
+def test_loose_keeps_decimal_numbers():
+    assert normalize_loose("45.5% alc") == "45.5% abv"
+
+
+def test_abv_phrases_unify():
+    for phrase in ("45% Alc./Vol.", "45% ABV", "45% Alcohol by Volume", "45% alc by vol", "45% ALC/VOL"):
+        assert normalize_loose(phrase) == "45% abv", phrase
+
+
+def test_fix_ocr_digits_only_touches_numeric_tokens():
+    assert fix_ocr_digits("75O") == "750"
+    assert fix_ocr_digits("l0") == "10"
+    assert fix_ocr_digits("OLD") == "OLD"
+    assert fix_ocr_digits("Oil") == "Oil"
+
+
+def test_parse_alcohol_percent_and_proof():
+    v = parse_alcohol("45% Alc./Vol. (90 Proof)")
+    assert v.abv == 45.0 and v.proof == 90.0 and not v.abv_from_proof
+
+
+def test_parse_alcohol_proof_only_converts():
+    v = parse_alcohol("90 PROOF")
+    assert v.abv == 45.0 and v.abv_from_proof
+
+
+def test_parse_alcohol_variants():
+    assert parse_alcohol("ALC. 40% BY VOL.").abv == 40.0
+    assert parse_alcohol("13.5% ABV").abv == 13.5
+    assert parse_alcohol("Alcohol 12,5% by volume").abv == 12.5
+    assert parse_alcohol("45").abv == 45.0
+    assert parse_alcohol("4O% alc/vol").abv == 40.0  # OCR letter O
+
+
+def test_parse_alcohol_prefers_percent_near_alc_word():
+    v = parse_alcohol("Aged 100% in oak. 45% Alc./Vol.")
+    assert v.abv == 45.0
+
+
+def test_parse_alcohol_none():
+    assert parse_alcohol("Kentucky Straight Bourbon") is None
+    assert parse_alcohol("") is None
+
+
+def test_parse_net_contents_ml_variants():
+    for s in ("750 mL", "750ml", "750 ML", "750 m l", "75O mL", "750 milliliters"):
+        assert parse_net_contents(s).ml == 750.0, s
+
+
+def test_parse_net_contents_other_units():
+    assert parse_net_contents("1.75 L").ml == 1750.0
+    assert parse_net_contents("1 LITER").ml == 1000.0
+    assert parse_net_contents("70 cl").ml == 700.0
+    assert abs(parse_net_contents("12 FL. OZ.").ml - 354.88) < 0.01
+
+
+def test_parse_net_contents_prefers_metric_when_both():
+    v = parse_net_contents("12 FL OZ (355 mL)")
+    assert v.ml == 355.0 and v.unit == "mL"
+
+
+def test_parse_net_contents_none():
+    assert parse_net_contents("OLD TOM DISTILLERY") is None
