@@ -55,7 +55,7 @@ class Thresholds:
     warning_locate: int = 75      # similarity needed to recognise the "GOVERNMENT WARNING" line
     warning_near: int = 97        # wording similarity >= this (but not exact) -> NEEDS REVIEW, else FAIL
     bold_ratio: float = 1.25      # heading stroke width / body stroke width -> "likely bold"
-    bold_min_text_px: int = 18    # below this text height the stroke measurement is unreliable
+    bold_min_text_px: int = 14    # below this text height the stroke measurement is unreliable
     bold_failure_is_fail: bool = False  # the bold check is a heuristic, so by default it only asks for review
     # Fields where a capitalization/punctuation-only difference is flagged for human review
     # instead of being accepted silently ("STONE'S THROW" vs "Stone's Throw").
@@ -71,7 +71,7 @@ TESSERACT_CMD = os.getenv("TESSERACT_CMD", "")          # empty -> use the one o
 TESSERACT_PSM = int(os.getenv("TESSERACT_PSM", "6"))    # page segmentation mode (see README)
 TESSERACT_MIN_WIDTH = 1600                              # upscale smaller images before OCR
 TESSERACT_MAX_WIDTH = 2400                              # downscale huge images (speed)
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLOUD_READER_AVAILABLE = bool(ANTHROPIC_API_KEY)
 
