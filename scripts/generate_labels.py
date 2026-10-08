@@ -381,9 +381,9 @@ def apply_variant(spec: Spec, variant: str, rng: random.Random) -> Spec:
         spec.app["brand_name"] = f"{rng.choice(ADJ)} {rng.choice(NOUN)} {spec.brand.split()[-1]}".upper()
     elif variant == "warning_text_altered":
         spec.expected_issue, spec.expected_overall = "warning", "REVIEW"
-        spec.warning_text = MANDATED_WARNING.replace(rng.choice(["may cause", "should not", "impairs"]),
-                                                     {"may cause": "can cause", "should not": "must not",
-                                                      "impairs": "impair"}[rng.choice(["may cause"])])
+        old = rng.choice(["may cause", "should not", "impairs"])
+        spec.warning_text = MANDATED_WARNING.replace(old, {"may cause": "can cause", "should not": "must not",
+                                                           "impairs": "impair"}[old])
     elif variant == "missing_net_contents":
         spec.expected_issue, spec.volume_text = "net_contents", None
     return spec

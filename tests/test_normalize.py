@@ -90,3 +90,9 @@ def test_one_read_as_L_before_decimal_or_litre_unit():
     assert parse_net_contents("LL").ml == 1000.0
     assert parse_net_contents("L.5 L").ml == 1500.0
     assert parse_net_contents("LITERS") is None  # a plain word is not a volume
+
+
+def test_parse_alcohol_text_shows_whole_statement():
+    assert parse_alcohol("Fine spirit. 45% Alc./Vol. (90 Proof) 750 mL").text == "45% Alc./Vol. (90 Proof)"
+    assert parse_alcohol("ALC. 14.5% BY VOL. 750 mL").text == "ALC. 14.5% BY VOL."
+    assert parse_alcohol("7.2% ALC./VOL. 12 FL. OZ.").text == "7.2% ALC./VOL."

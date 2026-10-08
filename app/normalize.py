@@ -28,6 +28,7 @@ _ABV_PATTERNS = [
     r"alc(?:ohol)?\.?\s+by\s+vol(?:ume)?\.?",
     r"alc\.?\s*vol\.?",
     r"\babv\b",
+    r"\bby\s+vol(?:ume)?\.?",
     r"\balc\.?(?=\s|$)",
 ]
 _ABV_RE = re.compile("|".join(_ABV_PATTERNS), re.IGNORECASE)
@@ -159,6 +160,19 @@ def parse_alcohol(text: str) -> AlcoholValue | None:
         abv = _to_float(percent_match.group(1))
         start = percent_match.start()
         end = max(percent_match.end(), proofs[0].end()) if proofs else percent_match.end()
+        # Show the whole statement ("45% Alc./Vol.", "ALC. 14.5% BY VOL.") rather than the bare number.
+        left = t[max(0, start - 14):start]
+        m_left = None
+        for m in _ABV_RE.finditer(left):
+            m_left = m
+        if m_left and not left[m_left.end():].strip():
+            start = max(0, start - 14) + m_left.start()
+        right = t[end:end + 25]
+        m_right = _ABV_RE.match(right.lstrip())
+        if m_right:
+            end += (len(right) - len(right.lstrip())) + m_right.end()
+        if t[end:end + 1] == ")" and "(" in t[start:end]:
+            end += 1
         return AlcoholValue(abv=abv, proof=proof_val, abv_from_proof=False, text=collapse_ws(t[start:end]))
     if proof_val is not None:
         return AlcoholValue(abv=proof_val / 2.0, proof=proof_val, abv_from_proof=True,
