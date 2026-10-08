@@ -248,8 +248,8 @@ All numbers from `scripts/bench.py` against the Railway deployment (shared vCPU,
 HTTP overhead; local runs on a laptop are faster. "Expected verdict" means the overall PASS / REVIEW / FAIL the
 generator recorded for that label.
 
-**Sample set (15 labels, one per failure type), reader `4+11`:** 15/15 expected verdicts, median 1.1 s per label,
-p95 1.3 s, max 1.3 s. The README's OLD TOM DISTILLERY label passes every field and the warning in about 1 s.
+**Sample set (15 labels, one per failure type), reader `4+11`:** 15/15 expected verdicts, median 0.8 s per label,
+p95 1.0 s. The README's OLD TOM DISTILLERY label passes every field and the warning in under a second.
 
 **Batch set (250 labels: 202 clean, 48 with a planted defect):**
 
@@ -259,16 +259,20 @@ p95 1.3 s, max 1.3 s. The README's OLD TOM DISTILLERY label passes every field a
 | `3` (auto) | 214/250 | 0.49 s | 0.71 s |
 | `11` (sparse) | 230/250 | 0.57 s | 0.65 s |
 | `4` (single column) | 229/250 | 0.57 s | 0.66 s |
-| `4+11` merged (default) | **241/250 (96%)** | 1.09 s | 1.23 s |
+| `4+11` merged (default) | **242/250 (97%)** | 0.81 s | 0.91 s |
 | `3+11` merged | 241/250 | 1.07 s | 1.24 s |
 
-Of the 9 misses with the default reader, 7 are conservative: the tool asked for a look (REVIEW) on a label the
+(The single-mode and `3+11` rows were measured one build earlier, before the final bold-heuristic and digit-repair
+changes; the default row is the final build. Timings vary with Railway's load: the same default reader measured
+1.09 s median on a busier run.)
+
+Of the 8 misses with the default reader, 7 are conservative: the tool asked for a look (REVIEW) on a label the
 generator marked clean, because Tesseract dropped the decimal point in a litre volume ("1.5 L" read as "15L") or
-misread a capital in the brand line and matched the title-case bottler mention instead. One is a genuine OCR error
-("750 mL" read as "790 mL", reported as a MISMATCH an agent would resolve from the image). One was a regular-weight
-warning heading that an earlier run-length stroke estimator scored as bold; the estimator was replaced by the
-area/perimeter measure described above, which separates the two cleanly. No clean label was failed for a wrong reason and,
-more importantly, no planted defect was reported as a PASS.
+misread a capital in the brand line and matched the title-case bottler mention instead. The remaining one is a
+genuine OCR error ("750 mL" read as "790 mL", reported as a MISMATCH an agent resolves from the image). No clean
+label was failed for a wrong reason and, more importantly, no planted defect was reported as a PASS: every wrong
+ABV, wrong or missing volume, missing or altered warning, non-capital or non-bold heading and wrong brand was
+caught, and every brand-capitalization case was flagged for review.
 
 Throughput: the 250-label sample batch completes in about 90 s through the UI with four workers, i.e. 0.35 s per
 label of wall-clock time.
