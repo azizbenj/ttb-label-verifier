@@ -132,3 +132,19 @@ table.batch-table tr.detail .card { box-shadow: none; }
 .prose ol, .prose ul { padding-left: 22px; }
 .prose li { margin-bottom: 6px; }
 table.legend td { padding: 6px 10px 6px 0; vertical-align: top; }
+
+/* narrow screens: never overflow horizontally, stack the comparison table */
+.cols > * { min-width: 0; }
+.form select, .form input { max-width: 100%; }
+table.fields td, table.diff td { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  html { font-size: 16px; }
+  .banner { flex-direction: column; align-items: flex-start; }
+  .timing { text-align: left; }
+  table.fields thead { display: none; }
+  table.fields tr { display: block; border-bottom: 2px solid var(--line); padding: 8px 0; }
+  table.fields td { display: block; border: none; padding: 3px 4px; }
+  table.fields td[data-th]::before { content: attr(data-th) ": "; font-weight: 600; color: var(--muted); }
+  table.fields td.fname { font-size: 1.05rem; }
+  .checks .chip { display: block; width: max-content; margin-bottom: 4px; }
+}

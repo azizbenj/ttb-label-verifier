@@ -17,9 +17,9 @@
     {% for f in r.fields %}
       <tr class="{{ f.verdict|chip }}">
         <td class="fname">{{ f.label }}</td>
-        <td>{{ f.expected if f.expected else '—' }}</td>
-        <td>{{ f.found if f.found else '—' }}</td>
-        <td><span class="chip {{ f.verdict|chip }}">{{ f.verdict.value }}</span><div class="note">{{ f.note }}</div></td>
+        <td data-th="On the application">{{ f.expected if f.expected else '—' }}</td>
+        <td data-th="On the label">{{ f.found if f.found else '—' }}</td>
+        <td data-th="Result"><span class="chip {{ f.verdict|chip }}">{{ f.verdict.value }}</span><div class="note">{{ f.note }}</div></td>
       </tr>
     {% endfor %}
     </tbody>
