@@ -10,7 +10,7 @@ from app.models import Application, Status, Verdict
 from app.pipeline import verify
 from app.readers.tesseract import TesseractReader
 
-from .conftest import requires_tesseract
+from .conftest import TIMING_BUDGET_MS, requires_tesseract
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLES = ROOT / "data" / "samples"
@@ -34,7 +34,7 @@ def test_old_tom_passes_fast():
     assert {f.verdict for f in result.fields if f.verdict != Verdict.SKIPPED} == {Verdict.MATCH}, result.fields
     assert result.warning.overall == Status.PASS, result.warning
     assert result.overall == Status.PASS
-    assert result.timings.total_ms < 5000, result.timings
+    assert result.timings.total_ms < TIMING_BUDGET_MS, result.timings
 
 
 @requires_tesseract
@@ -48,4 +48,4 @@ def test_sample_matches_expected_outcome(row):
     elif issue:
         fr = next(f for f in result.fields if f.key == issue)
         assert fr.verdict in (Verdict.MISMATCH, Verdict.NOT_FOUND, Verdict.NEAR_MATCH), fr
-    assert result.timings.total_ms < 5000, result.timings
+    assert result.timings.total_ms < TIMING_BUDGET_MS, result.timings

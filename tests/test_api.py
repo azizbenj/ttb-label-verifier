@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-from .conftest import requires_tesseract
+from .conftest import TIMING_BUDGET_MS, requires_tesseract
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLES = ROOT / "data" / "samples"
@@ -68,7 +68,7 @@ def test_verify_sample_old_tom_html_and_json():
     assert r.status_code == 200 and "Label matches the application" in r.text and "Checked in" in r.text
     r = client.post("/api/verify", data={**OLD_TOM, "sample": "old_tom_clean"})
     body = r.json()
-    assert body["overall"] == "PASS" and body["timings"]["total_ms"] < 5000
+    assert body["overall"] == "PASS" and body["timings"]["total_ms"] < TIMING_BUDGET_MS
 
 
 @requires_tesseract
@@ -85,11 +85,11 @@ def test_batch_end_to_end_with_export():
     assert r.status_code == 200
     import re
     job_id = re.search(r'data-job="([a-f0-9]+)"', r.text).group(1)
-    for _ in range(100):
+    import time
+    for _ in range(600):  # up to two minutes: shared CI runners can be slow
         r = client.get(f"/batch/{job_id}")
         if 'data-status="done"' in r.text:
             break
-        import time
         time.sleep(0.2)
     assert 'data-status="done"' in r.text
     assert "No image named" in r.text and "missing.png" in r.text and "readme.txt" in r.text

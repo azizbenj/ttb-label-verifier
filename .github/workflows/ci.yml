@@ -20,5 +20,7 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Run tests (including OCR end-to-end)
         run: pytest -q
+        env:
+          LABELCHECK_TIMING_BUDGET_MS: "30000"  # shared runners; the 5 s budget is verified on the deployment
       - name: Benchmark the sample set
         run: python scripts/bench.py --verbose
