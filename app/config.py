@@ -84,6 +84,8 @@ TESSERACT_MAX_PIXELS = 10_000_000                       # never hand Tesseract m
 TESSERACT_MAX_SIDE = 10_000                             # would otherwise be upscaled to 1600 x 160000)
 TESSERACT_TIMEOUT_S = 30                                # per pass; a pathological image must not hold a worker
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
+CLAUDE_TIMEOUT_S = float(os.getenv("CLAUDE_TIMEOUT_S", "30"))  # per attempt; the SDK default is 10 minutes
+CLAUDE_MAX_RETRIES = 1
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLOUD_READER_AVAILABLE = bool(ANTHROPIC_API_KEY)
 

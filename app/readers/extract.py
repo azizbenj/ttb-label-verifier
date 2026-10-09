@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import statistics
 
-from ..matching import compare_alcohol, compare_country, compare_volume, locate_and_compare
+from ..matching import compare_alcohol, compare_country, compare_volume, locate_and_compare, not_found
 from ..models import Application, FieldResult
+from ..normalize import normalize_strict
 from .base import OCRResult
 
 
@@ -45,21 +46,23 @@ def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
 
 
 def compare_from_fields(app: Application, fields: dict[str, str | None]) -> list[FieldResult]:
-    """When a reader already returned structured fields (vision model), compare them directly."""
-    from ..matching import compare_text, not_found, skipped
+    """When a reader already returned structured fields (vision model), compare them like the OCR path.
 
+    The application value is located inside the statement the model returned, so "Distilled and
+    Bottled by Old Tom Distillery, ..." holds "Old Tom Distillery, ..." exactly as it does on the OCR
+    path, and a value inside a longer phrase gets the same NEAR MATCH.
+    """
     def text_field(key: str, expected: str) -> FieldResult:
-        if not expected.strip():
-            return skipped(key)
-        found = fields.get(key)
-        return compare_text(key, expected, found) if found else not_found(key, expected)
+        found = (fields.get(key) or "").strip()
+        if expected.strip() and not found:
+            return not_found(key, expected)
+        return locate_and_compare(key, expected, found.splitlines(), fallback_found=normalize_strict(found))
 
-    country_lines = [fields.get("country_of_origin") or ""]
     return [
         text_field("brand_name", app.brand_name),
         text_field("class_type", app.class_type),
         compare_alcohol(app.alcohol_content, fields.get("alcohol_content") or ""),
         compare_volume(app.net_contents, fields.get("net_contents") or ""),
         text_field("bottler_name_address", app.bottler_name_address),
-        compare_country(app.country_of_origin, country_lines),
+        compare_country(app.country_of_origin, (fields.get("country_of_origin") or "").splitlines()),
     ]

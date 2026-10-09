@@ -55,7 +55,6 @@ class WarningHint:
     """What a vision model reported about the warning statement (cloud reader only)."""
 
     text: str | None = None
-    heading_caps: bool | None = None
     heading_bold: bool | None = None
 
 

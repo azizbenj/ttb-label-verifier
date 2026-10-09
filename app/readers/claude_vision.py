@@ -15,10 +15,15 @@ import anthropic
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from ..config import CLAUDE_MODEL
-from .base import LabelReading, OCRResult, WarningHint
+from ..config import CLAUDE_MAX_RETRIES, CLAUDE_MODEL, CLAUDE_TIMEOUT_S
+from ..images import flatten
+from .base import LabelReading, OCRResult, ReaderError, WarningHint
 
 _MAX_SIDE = 1568  # Claude's vision sweet spot; larger images are downscaled anyway
+# Models that accept server-side refusal fallbacks: a declined request is re-run on Anthropic's
+# recommended fallback model inside the same call instead of failing the label.
+_FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 SYSTEM_PROMPT = (
     "You read alcohol beverage labels for a government compliance check. Transcribe text exactly as "
@@ -40,7 +45,7 @@ class LabelExtraction(BaseModel):
 
 
 def _encode(image: Image.Image) -> str:
-    img = image.convert("RGB")
+    img = flatten(image).convert("RGB")  # upright, transparency over white (not black)
     scale = _MAX_SIDE / max(img.size)
     if scale < 1:
         img = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
@@ -54,11 +59,11 @@ class ClaudeVisionReader:
 
     def __init__(self, model: str = CLAUDE_MODEL):
         self.model = model
-        self.client = anthropic.Anthropic()
+        # The SDK default (10 minutes, 2 retries) could hold a request or a batch worker for half an hour.
+        self.client = anthropic.Anthropic(timeout=CLAUDE_TIMEOUT_S, max_retries=CLAUDE_MAX_RETRIES)
 
-    def read(self, image: Image.Image) -> LabelReading:
-        t0 = perf_counter()
-        response = self.client.messages.parse(
+    def _call(self, image: Image.Image):
+        request = dict(
             model=self.model,
             max_tokens=4000,
             system=SYSTEM_PROMPT,
@@ -72,11 +77,35 @@ class ClaudeVisionReader:
             }],
             output_format=LabelExtraction,
         )
+        if self.model in _FALLBACK_MODELS:
+            return self.client.beta.messages.parse(**request, betas=[_FALLBACK_BETA], fallbacks="default")
+        return self.client.messages.parse(**request)
+
+    def read(self, image: Image.Image) -> LabelReading:
+        t0 = perf_counter()
+        try:
+            response = self._call(image)
+        except anthropic.APITimeoutError:
+            raise ReaderError(f"The cloud reader did not answer within {CLAUDE_TIMEOUT_S:g} s. "
+                              "Please try again, or use local OCR.") from None
+        except anthropic.APIConnectionError:
+            raise ReaderError("The cloud reader could not be reached from this server. Please use local OCR.") from None
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+            raise ReaderError("The cloud reader rejected this server's API key. Please use local OCR and "
+                              "ask the administrator to check ANTHROPIC_API_KEY.") from None
+        except anthropic.RateLimitError:
+            raise ReaderError("The cloud reader is busy right now. Please try again in a minute, or use local OCR.") from None
+        except anthropic.APIStatusError as e:
+            raise ReaderError(f"The cloud reader returned an error ({e.status_code}). Please try again, "
+                              "or use local OCR.") from None
         if response.stop_reason == "refusal":
-            raise RuntimeError("The cloud reader declined to read this image.")
-        parsed: LabelExtraction = response.parsed_output
+            raise ReaderError("The cloud reader declined to read this image. Please use local OCR.")
+        parsed: LabelExtraction | None = response.parsed_output
+        if parsed is None or response.stop_reason == "max_tokens":
+            raise ReaderError("The cloud reader did not return a complete reading of this label. Please try again, "
+                              "or use local OCR.")
         lines = [l.strip() for l in (parsed.transcription or "").splitlines() if l.strip()]
-        if parsed.government_warning_text and "government warning" not in parsed.transcription.lower():
+        if parsed.government_warning_text and "government warning" not in (parsed.transcription or "").lower():
             lines += [l.strip() for l in parsed.government_warning_text.splitlines() if l.strip()]
         ocr = OCRResult(text="\n".join(lines), lines=lines, words=[], engine=f"claude ({self.model})",
                         ms=(perf_counter() - t0) * 1000)
