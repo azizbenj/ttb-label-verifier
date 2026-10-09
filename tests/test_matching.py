@@ -293,3 +293,24 @@ def test_brand_letter_spaced_trademark_and_one_letter_misread():
     assert locate_and_compare("brand_name", "SOUTH COAST WINERY", ["S O U T H C O A S T W I N E R Y"]).verdict == Verdict.MATCH
     assert compare_text("brand_name", "TOBACCO BARN DISTILLERY", "TOBACCO BARN DISTILLERY®").verdict == Verdict.MATCH
     assert compare_text("brand_name", "CON PAZ", "CON FAZ").verdict == Verdict.NEAR_MATCH
+
+
+def test_a_percentage_not_marked_as_alcohol_never_matches():
+    # The alcohol statement was not read; the only percentages are a blend and a grain bill.
+    r = compare_alcohol("13.5%", "MERLOT\nBlend: 13.5% Petit Verdot, 86.5% Merlot\n750 ml")
+    assert r.verdict == Verdict.NEAR_MATCH and "not marked as alcohol" in r.note
+    assert compare_alcohol("5%", "HAZY WHEAT ALE\nBrewed with 5% wheat malt\n12 FL OZ").verdict == Verdict.NEAR_MATCH
+    r = compare_alcohol("14%", "CABERNET SAUVIGNON\n86% Cabernet Sauvignon, 14% Merlot")
+    assert r.verdict in (Verdict.NEAR_MATCH, Verdict.NOT_FOUND)
+    assert compare_alcohol("40%", "86% Cabernet Sauvignon").verdict == Verdict.NOT_FOUND
+
+
+def test_alcoholic_and_volcanic_do_not_mark_a_percentage_as_alcohol():
+    r = compare_alcohol("15%", "85% Syrah, 15% Grenache from volcanic soil\n12.5% ALC/VOL")
+    assert r.verdict == Verdict.MISMATCH and "12.5" in r.note
+    text = "15% Merlot. GOVERNMENT WARNING: (1) ... alcoholic beverages"
+    assert compare_alcohol("15%", text).verdict != Verdict.MATCH
+
+
+def test_a_vision_model_field_is_already_the_alcohol_statement():
+    assert compare_alcohol("45%", "45%", statement=True).verdict == Verdict.MATCH

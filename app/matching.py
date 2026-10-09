@@ -231,8 +231,15 @@ def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_fo
     return result
 
 
-def compare_alcohol(expected: str, label_text: str, *, th: Thresholds = THRESHOLDS) -> FieldResult:
-    """Alcohol content compared as numbers, over every alcohol statement read on the label."""
+def compare_alcohol(expected: str, label_text: str, *, statement: bool = False,
+                    th: Thresholds = THRESHOLDS) -> FieldResult:
+    """Alcohol content compared as numbers, over every alcohol statement read on the label.
+
+    ``statement``: ``label_text`` is already the alcohol statement (a vision model's field), so a bare
+    "45%" in it counts. On OCR text a percentage only counts when "Alc./Vol.", "ABV" or a proof figure
+    marks it as alcohol: "13.5% Petit Verdot" on a wine label whose real statement was not read must
+    never match an application of 13.5%.
+    """
     key = "alcohol_content"
     exp = parse_alcohol(expected)
     if exp is None or exp.abv is None:
@@ -242,6 +249,16 @@ def compare_alcohol(expected: str, label_text: str, *, th: Thresholds = THRESHOL
     cands = alcohol_candidates(label_text)
     if not cands:
         got = parse_alcohol(label_text)
+        if got is not None and got.abv is not None and not statement:
+            if abs(got.abv - exp.abv) <= th.abv_tolerance:
+                return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text,
+                                   verdict=Verdict.NEAR_MATCH, score=60,
+                                   note=f"{got.text} is on the label, but not marked as alcohol by volume ('Alc./Vol.', "
+                                        "'ABV' or a proof figure), so it may be something else, such as a blend "
+                                        "percentage. Please confirm the alcohol statement.")
+            return not_found(key, expected, note="No alcohol content (e.g. '45% Alc./Vol.' or '90 Proof') was found on "
+                                                 f"the label. The only percentage read, '{got.text}', is not marked as "
+                                                 "alcohol by volume.")
         cands = [got] if got is not None and got.abv is not None else []
     if not cands:
         return not_found(key, expected, note="No alcohol content (e.g. '45% Alc./Vol.' or '90 Proof') was found on the label.")

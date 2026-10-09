@@ -131,3 +131,11 @@ def test_us_customary_units_and_compound_statements():
     assert abs(parse_net_contents("1 PINT").ml - 473.18) < 0.01
     assert abs(parse_net_contents("1 QT. 8 FL OZ").ml - parse_net_contents("40 fl oz").ml) < 0.01
     assert abs(parse_net_contents("1 GALLON").ml - 3785.41) < 0.01
+
+
+def test_alcohol_context_tolerates_ocr_confusions_but_not_other_words():
+    assert parse_alcohol("ONE PINT - 6.5%, ALG/VGL").abv == 6.5
+    from app.normalize import alcohol_candidates
+    assert [c.abv for c in alcohol_candidates("ONE PINT - 6.5%, ALG/VGL")] == [6.5]
+    assert alcohol_candidates("15% Merlot from volcanic soil") == []
+    assert alcohol_candidates("15% Merlot. GOVERNMENT WARNING: alcoholic beverages") == []

@@ -125,11 +125,23 @@ _MAX_PLAUSIBLE_ABV = 96.0  # anything above this is not an alcohol content ("100
 _PROOF_RE = re.compile(r"(\d{1,3}(?:[.,]\d)?)\s*(?:°\s*)?proof\b|\bproof\s*:?\s*(\d{2,3}(?:[.,]\d)?)\b",
                        re.IGNORECASE)
 _BARE_NUMBER_RE = re.compile(r"^\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*$")
-_ALC_CONTEXT_RE = re.compile(r"alc|abv|vol", re.IGNORECASE)
+# Words that mark a percentage as alcohol by volume, allowing OCR's usual confusions ("ALG/VGL",
+# "AIC/V0L"). Not "alcoholic" (the warning statement says "alcoholic beverages") and not "volcanic":
+# those must not turn a blend percentage into an ABV.
+_ALC_CONTEXT_RE = re.compile(r"\b(?:a[l1i][cg](?!oholic)|abv|v[o0g][l1i](?!can))", re.IGNORECASE)
 
 
 def _to_float(s: str) -> float:
     return float(s.replace(",", "."))
+
+
+def _context_starts(t: str) -> list[int]:
+    # Searched on the whole text, not on a slice: a slice can end inside "volc|anic" and defeat the lookahead.
+    return [m.start() for m in _ALC_CONTEXT_RE.finditer(t)]
+
+
+def _near_context(starts: list[int], m: re.Match, reach: int = 30) -> bool:
+    return any(m.start() - reach <= s < m.end() + reach for s in starts)
 
 
 def _proof_value(m: re.Match) -> float:
@@ -151,9 +163,9 @@ def parse_alcohol(text: str) -> AlcoholValue | None:
     percent_match = None
     if percents:
         # Prefer a percentage that sits next to an "alc"/"abv"/"vol" word.
+        starts = _context_starts(t)
         for m in percents:
-            window = t[max(0, m.start() - 30): m.end() + 30]
-            if _ALC_CONTEXT_RE.search(window):
+            if _near_context(starts, m):
                 percent_match = m
                 break
         if percent_match is None:
@@ -205,11 +217,12 @@ def alcohol_candidates(text: str) -> list[AlcoholValue]:
     out: list[AlcoholValue] = []
     used: set[int] = set()
     proofs = list(_PROOF_RE.finditer(t))
+    starts = _context_starts(t)
     for m in _PERCENT_RE.finditer(t):
         value = _to_float(m.group(1))
         if value > _MAX_PLAUSIBLE_ABV:
             continue
-        if not _ALC_CONTEXT_RE.search(t[max(0, m.start() - 30): m.end() + 30]):
+        if not _near_context(starts, m):
             continue
         proof = None
         for pm in proofs:

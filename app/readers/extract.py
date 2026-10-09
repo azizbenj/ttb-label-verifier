@@ -61,7 +61,7 @@ def compare_from_fields(app: Application, fields: dict[str, str | None]) -> list
     return [
         text_field("brand_name", app.brand_name),
         text_field("class_type", app.class_type),
-        compare_alcohol(app.alcohol_content, fields.get("alcohol_content") or ""),
+        compare_alcohol(app.alcohol_content, fields.get("alcohol_content") or "", statement=True),
         compare_volume(app.net_contents, fields.get("net_contents") or ""),
         text_field("bottler_name_address", app.bottler_name_address),
         compare_country(app.country_of_origin, (fields.get("country_of_origin") or "").splitlines()),
