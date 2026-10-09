@@ -356,3 +356,12 @@ def test_a_reading_that_agrees_with_the_application_is_not_trusted_over_one_that
     for other in ("BAm BREW", "BARN BRE"):
         app2 = app.model_copy(update={"brand_name": "BARN BREW"})
         assert extract_and_compare(app2, _ocr_with_readings(["BARN BREW", other]))[0].verdict == Verdict.MATCH, other
+
+
+def test_rules_for_likely_misreads_never_excuse_a_real_difference():
+    # 700 mL is a standard size: one digit from 750 mL, but a real difference, not a probable misread.
+    assert compare_volume("750 mL", "700 mL").verdict == Verdict.MISMATCH
+    assert compare_volume("750 mL", "760 mL").verdict == Verdict.NEAR_MATCH   # 760 is not a size anyone fills
+    # A one-letter difference in the brand is a question for the agent, never a match.
+    assert compare_text("brand_name", "BARN BREW", "BARK BREW").verdict == Verdict.NEAR_MATCH
+    assert compare_text("brand_name", "CON PAZ", "CON FAZ").verdict == Verdict.NEAR_MATCH

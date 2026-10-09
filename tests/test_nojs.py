@@ -66,3 +66,20 @@ def test_batch_errors_without_a_script_are_whole_pages_on_the_batch_tab():
     assert 'data-open-tab="batch"' in r.text and "missing" in r.text
     gone = client.get("/batch/nope")
     assert gone.status_code == 404 and gone.text.lstrip().lower().startswith("<!doctype html")
+
+
+def test_text_from_the_csv_is_escaped_on_every_batch_page():
+    evil = '"><img src=x onerror=alert(1)>'
+    csv_bytes = ("image,application_id,brand_name,class_type,alcohol_content,net_contents\n"
+                 f'old_tom_clean.png,"{evil.replace(chr(34), chr(34) * 2)}","{evil.replace(chr(34), chr(34) * 2)}",'
+                 "Kentucky Straight Bourbon Whiskey,45%,750 mL\n").encode()
+    r = client.post("/batch", files=[("csv_file", ("a.csv", csv_bytes, "text/csv")),
+                                     ("files", ("old_tom_clean.png", (SAMPLES / "old_tom_clean.png").read_bytes(), "image/png"))])
+    job = r.url.path
+    deadline = time.monotonic() + 60
+    while 'data-status="done"' not in r.text and time.monotonic() < deadline:
+        time.sleep(0.1)
+        r = client.get(job)
+    pages = [r.text, client.get(job + "/review").text, client.get(job + "/report").text, client.get(job + "/item/0").text]
+    for page in pages:
+        assert "<img src=x onerror" not in page
