@@ -4,29 +4,32 @@ from __future__ import annotations
 
 import csv
 import logging
+import os
 import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from PIL import Image
 
 from . import batch as batchmod
-from .config import CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELDS, MANDATED_WARNING, MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS
+from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELDS, MANDATED_WARNING, MAX_BATCH_UPLOAD_BYTES,
+                     MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS)
 from .images import ImageError, open_image
 from .models import Application, Status, Verdict
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
-from .readers.base import LabelReader
+from .readers.base import LabelReader, ReaderError
 from .readers.tesseract import TesseractReader, parse_psm, tesseract_version
 
 log = logging.getLogger("labelcheck")
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = Path(__file__).resolve().parent
 SAMPLES_DIR = ROOT / "data" / "samples"
-_SAFE_NAME = re.compile(r"^[a-z0-9_\-]+$")
+_SAFE_NAME = re.compile(r"[a-z0-9_\-]+")  # used with fullmatch: "$" would also accept a trailing newline
 
 app = FastAPI(title="TTB Label Check", docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
@@ -56,11 +59,16 @@ _readers: dict[str, LabelReader] = {}
 def get_reader(name: str | None, psm: str | None = None) -> LabelReader:
     name = (name or OCR_ENGINE).strip().lower()
     if psm and name != "claude":  # benchmarking knob, JSON API only: "4" or "4+11"
-        first, extra = parse_psm(psm)
+        try:
+            first, extra = parse_psm(psm)
+        except ValueError:
+            raise UserError("psm must look like '4' or '4+11'.") from None
+        if not all(0 <= m <= 13 for m in (first, extra if extra is not None else first)):
+            raise UserError("psm values must be Tesseract page-segmentation modes 0-13.")
         return TesseractReader(psm=first, extra_psm=extra)
     if name == "claude":
         if not CLOUD_READER_AVAILABLE:
-            raise UserError("The cloud reader is not enabled on this server. Using local OCR is the default.")
+            raise UserError("The cloud reader is not enabled on this server. Please choose local OCR.")
         if "claude" not in _readers:
             from .readers.claude_vision import ClaudeVisionReader
             _readers["claude"] = ClaudeVisionReader()
@@ -119,7 +127,7 @@ SAMPLES = load_samples()
 # --- helpers ---------------------------------------------------------------------------------------
 async def read_image(upload: UploadFile | None, sample: str) -> tuple[Image.Image, str]:
     if sample:
-        if not _SAFE_NAME.match(sample) or not (SAMPLES_DIR / f"{sample}.png").exists():
+        if not _SAFE_NAME.fullmatch(sample) or not (SAMPLES_DIR / f"{sample}.png").exists():
             raise UserError("That sample does not exist.")
         return Image.open(SAMPLES_DIR / f"{sample}.png"), f"{sample}.png"
     if upload is None or not upload.filename:
@@ -149,6 +157,25 @@ def error_response(request: Request, message: str, status: int = 400) -> HTMLRes
     return templates.TemplateResponse(request, "partials/error.html", {"message": message}, status_code=status)
 
 
+# Refuse oversized uploads from their Content-Length before the body is read (and spooled to disk).
+_UPLOAD_LIMITS = {"/verify": MAX_IMAGE_BYTES + 1024 * 1024, "/api/verify": MAX_IMAGE_BYTES + 1024 * 1024,
+                  "/batch": MAX_BATCH_UPLOAD_BYTES + 1024 * 1024}
+
+
+@app.middleware("http")
+async def limit_upload_size(request: Request, call_next):
+    limit = _UPLOAD_LIMITS.get(request.url.path) if request.method == "POST" else None
+    length = request.headers.get("content-length", "")
+    if limit and length.isdigit() and int(length) > limit:
+        mb = (MAX_BATCH_UPLOAD_BYTES if request.url.path == "/batch" else MAX_IMAGE_BYTES) // (1024 * 1024)
+        message = f"That upload is larger than {mb} MB. Please send smaller files" + (
+            " or split the batch." if request.url.path == "/batch" else ".")
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"error": message}, status_code=413)
+        return error_response(request, message, 413)
+    return await call_next(request)
+
+
 # --- pages -----------------------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
@@ -161,15 +188,17 @@ def index(request: Request):
 
 @app.get("/healthz")
 def healthz():
+    """503 when the default reader cannot run, so a health check does not route traffic to a broken container."""
     v = tesseract_version()
-    import os
-    return {"status": "ok" if v else "degraded", "tesseract": v, "cloud_reader": CLOUD_READER_AVAILABLE,
-            "default_reader": OCR_ENGINE, "deployment": os.getenv("RAILWAY_DEPLOYMENT_ID")}
+    ok = CLOUD_READER_AVAILABLE if OCR_ENGINE == "claude" else v is not None
+    return JSONResponse({"status": "ok" if ok else "degraded", "tesseract": v, "cloud_reader": CLOUD_READER_AVAILABLE,
+                         "default_reader": OCR_ENGINE, "batch_jobs": len(batchmod.JOBS),
+                         "deployment": os.getenv("RAILWAY_DEPLOYMENT_ID")}, status_code=200 if ok else 503)
 
 
 @app.get("/samples/{name}.png")
 def sample_image(name: str):
-    if not _SAFE_NAME.match(name) or not (SAMPLES_DIR / f"{name}.png").exists():
+    if not _SAFE_NAME.fullmatch(name) or not (SAMPLES_DIR / f"{name}.png").exists():
         return Response(status_code=404)
     return FileResponse(SAMPLES_DIR / f"{name}.png", media_type="image/png")
 
@@ -181,7 +210,9 @@ async def _verify_from_form(brand_name, class_type, alcohol_content, net_content
                                  net_contents=net_contents, bottler_name_address=bottler_name_address,
                                  country_of_origin=country_of_origin, application_id=application_id)
     img, name = await read_image(image, sample.strip())
-    return verify(app_data, img, get_reader(reader, psm), image_name=name)
+    # OCR takes about a second of CPU: run it off the event loop so other agents, batch polling and
+    # /healthz are not queued behind it.
+    return await run_in_threadpool(verify, app_data, img, get_reader(reader, psm), name)
 
 
 @app.post("/verify", response_class=HTMLResponse)
@@ -195,6 +226,9 @@ async def verify_html(request: Request, brand_name: str = Form(""), class_type: 
                                          country_of_origin, application_id, sample, reader, image)
     except UserError as e:
         return error_response(request, str(e))
+    except ReaderError as e:
+        log.warning("reader failed: %s", e)
+        return error_response(request, str(e), 502)
     except Exception:
         log.exception("verify failed")
         return error_response(request, "Something went wrong while reading this label. Please try another image.", 500)
@@ -211,6 +245,12 @@ async def verify_json(brand_name: str = Form(""), class_type: str = Form(""), al
                                          country_of_origin, application_id, sample, reader, image, psm)
     except UserError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
+    except ReaderError as e:
+        log.warning("reader failed: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=502)
+    except Exception:
+        log.exception("verify failed")
+        return JSONResponse({"error": "Something went wrong while reading this label."}, status_code=500)
     return JSONResponse(result.model_dump(mode="json"))
 
 
@@ -225,7 +265,7 @@ async def batch_start(request: Request, csv_file: UploadFile | None = File(None)
     try:
         rd = get_reader(reader)
         if sample:
-            job = batchmod.start_sample_job(rd)
+            job = await run_in_threadpool(batchmod.start_sample_job, rd)
         else:
             if csv_file is None or not csv_file.filename:
                 raise UserError("Please choose the CSV of application data.")
@@ -233,7 +273,7 @@ async def batch_start(request: Request, csv_file: UploadFile | None = File(None)
             uploads = [(f.filename, await f.read()) for f in files if f.filename]
             if not uploads:
                 raise UserError("Please add the label images (select the files, or a zip of them).")
-            images, more = batchmod.collect_images(uploads)
+            images, more = await run_in_threadpool(batchmod.collect_images, uploads)
             if not images:
                 raise UserError("None of the uploaded files were images. Use PNG, JPG, TIFF or WEBP, or a zip of them.")
             job = batchmod.start_job(rows, images, rd, source=csv_file.filename, issues=issues + more)

@@ -16,15 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
-from .config import (
-    BATCH_WORKERS,
-    FIELDS,
-    IMAGE_EXTENSIONS,
-    MAX_BATCH_IMAGES,
-    MAX_IMAGE_BYTES,
-    MAX_ZIP_MEMBERS,
-    MAX_ZIP_UNCOMPRESSED,
-)
+from .config import (BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS,
+                     MAX_ZIP_UNCOMPRESSED)
 from .images import ImageError, open_image
 from .models import Application, Status, VerificationResult
 from .pipeline import verify

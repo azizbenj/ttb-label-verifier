@@ -94,6 +94,7 @@ MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 40_000_000                           # decoded size limit (a 20 MB PNG can decode to gigabytes)
 MIN_IMAGE_SIDE = 50                                     # smaller images cannot be read
 MAX_BATCH_IMAGES = 500
+MAX_BATCH_UPLOAD_BYTES = 1024 * 1024 * 1024           # all images of one batch together
 MAX_ZIP_MEMBERS = 1000
 MAX_ZIP_UNCOMPRESSED = 1024 * 1024 * 1024
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}

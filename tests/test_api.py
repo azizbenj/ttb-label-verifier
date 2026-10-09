@@ -21,8 +21,9 @@ def test_index_renders():
 
 
 def test_healthz():
+    from app.readers.tesseract import tesseract_version
     r = client.get("/healthz")
-    assert r.status_code == 200 and "tesseract" in r.json()
+    assert r.status_code == (200 if tesseract_version() else 503) and "tesseract" in r.json()
 
 
 def test_missing_fields_is_friendly():

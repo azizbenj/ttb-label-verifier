@@ -10,16 +10,8 @@ import pytesseract
 from PIL import Image, ImageOps
 from pytesseract import Output
 
-from ..config import (
-    TESSERACT_CMD,
-    TESSERACT_MAX_PIXELS,
-    TESSERACT_MAX_SIDE,
-    TESSERACT_MAX_WIDTH,
-    TESSERACT_MIN_WIDTH,
-    TESSERACT_PSM,
-    TESSERACT_PSM_EXTRA,
-    TESSERACT_TIMEOUT_S,
-)
+from ..config import (TESSERACT_CMD, TESSERACT_MAX_PIXELS, TESSERACT_MAX_SIDE, TESSERACT_MAX_WIDTH,
+                      TESSERACT_MIN_WIDTH, TESSERACT_PSM, TESSERACT_PSM_EXTRA, TESSERACT_TIMEOUT_S)
 from ..images import flatten
 from ..normalize import normalize_loose
 from .base import LabelReading, OCRResult, OCRWord, ReaderError
@@ -144,6 +136,9 @@ class TesseractReader:
         try:
             data = pytesseract.image_to_data(img, config=f"--psm {psm} --oem 1", output_type=Output.DICT,
                                              timeout=TESSERACT_TIMEOUT_S)
+        except pytesseract.TesseractNotFoundError:
+            raise ReaderError("Local OCR (Tesseract) is not installed on this server. "
+                              "Please tell the administrator.") from None
         except RuntimeError as e:  # pytesseract reports its timeout as RuntimeError
             raise ReaderError(f"Reading the label took longer than {TESSERACT_TIMEOUT_S} s and was stopped. "
                               "Please try a smaller or cleaner image.") from e
