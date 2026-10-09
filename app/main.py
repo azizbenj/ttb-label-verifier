@@ -22,7 +22,7 @@ from . import batch as batchmod
 from .evidence import bold_meter_percent, evidence_for, pin_labels
 from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELDS, MANDATED_WARNING, MAX_BATCH_UPLOAD_BYTES,
                      MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS)
-from .images import ImageError, open_image
+from .images import MAX_LABEL_PARTS, ImageError, open_image, stitch
 from .models import Application, Status, VerificationResult, Verdict
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
@@ -194,20 +194,31 @@ SAMPLES = load_samples()
 
 
 # --- helpers ---------------------------------------------------------------------------------------
-async def read_image(upload: UploadFile | None, sample: str) -> tuple[Image.Image, str]:
+async def read_image(uploads: list[UploadFile] | UploadFile | None, sample: str) -> tuple[Image.Image, str]:
+    """The label image, or several (front, back, neck) stacked into one so the label is read whole."""
     if sample:
         if not _SAFE_NAME.fullmatch(sample) or not (SAMPLES_DIR / f"{sample}.png").exists():
             raise UserError("That sample does not exist.")
         return Image.open(SAMPLES_DIR / f"{sample}.png"), f"{sample}.png"
-    if upload is None or not upload.filename:
+    if isinstance(uploads, UploadFile) or uploads is None:
+        uploads = [uploads] if uploads is not None else []
+    uploads = [u for u in uploads if u is not None and u.filename]
+    if not uploads:
         raise UserError("Please choose a label image (PNG, JPG, TIFF or WEBP), or pick a sample.")
-    data = await upload.read(MAX_IMAGE_BYTES + 1)
-    if len(data) > MAX_IMAGE_BYTES:
-        raise UserError(f"That image is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB. Please use a smaller file.")
-    try:
-        return open_image(data, upload.filename), upload.filename
-    except ImageError as e:
-        raise UserError(str(e)) from None
+    if len(uploads) > MAX_LABEL_PARTS:
+        raise UserError(f"That is {len(uploads)} images for one label; up to {MAX_LABEL_PARTS} are accepted "
+                        "(front, back, neck...). Use the batch tab for several applications.")
+    images = []
+    for upload in uploads:
+        data = await upload.read(MAX_IMAGE_BYTES + 1)
+        if len(data) > MAX_IMAGE_BYTES:
+            raise UserError(f"'{upload.filename}' is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB. "
+                            "Please use a smaller file.")
+        try:
+            images.append(open_image(data, upload.filename))
+        except ImageError as e:
+            raise UserError(str(e)) from None
+    return stitch(images), " + ".join(u.filename for u in uploads)
 
 
 def build_application(**values: str) -> Application:
@@ -314,7 +325,7 @@ async def verify_html(request: Request, brand_name: str = Form(""), class_type: 
                       alcohol_content: str = Form(""), net_contents: str = Form(""),
                       bottler_name_address: str = Form(""), country_of_origin: str = Form(""),
                       application_id: str = Form(""), sample: str = Form(""), reader: str = Form(""),
-                      image: UploadFile | None = File(None)):
+                      image: list[UploadFile] = File([])):
     try:
         result, app_data, image_url = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents,
                                                               bottler_name_address, country_of_origin, application_id,
@@ -336,7 +347,7 @@ async def verify_html(request: Request, brand_name: str = Form(""), class_type: 
 async def verify_json(brand_name: str = Form(""), class_type: str = Form(""), alcohol_content: str = Form(""),
                       net_contents: str = Form(""), bottler_name_address: str = Form(""),
                       country_of_origin: str = Form(""), application_id: str = Form(""), sample: str = Form(""),
-                      reader: str = Form(""), image: UploadFile | None = File(None), psm: str | None = Form(None)):
+                      reader: str = Form(""), image: list[UploadFile] = File([]), psm: str | None = Form(None)):
     try:
         result, _, _ = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents,
                                                bottler_name_address, country_of_origin, application_id, sample,

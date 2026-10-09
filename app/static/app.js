@@ -149,29 +149,36 @@
     box.hidden = !box.hidden;
     more.setAttribute("aria-expanded", String(!box.hidden));
   });
-  function fileChosen(file) {
+  // One file or several (front, back, neck): the server stacks them into one label.
+  function fileChosen(files) {
     picker.value = ""; sampleField.value = ""; pressTile(""); currentSample = null;
     drop.classList.remove("err");
-    if (!file) { showPreview(null); return; }
-    if (!/^image\//.test(file.type) && !/\.(png|jpe?g|tiff?|bmp|webp)$/i.test(file.name)) {
+    const list = files ? Array.from(files.length !== undefined ? files : [files]) : [];
+    if (!list.length) { showPreview(null); return; }
+    const bad = list.find((f) => !/^image\//.test(f.type) && !/\.(png|jpe?g|tiff?|bmp|webp)$/i.test(f.name));
+    if (bad) {
       drop.classList.add("err");
       $("#drop b").textContent = "That isn't an image";
+      $("#drop .small").textContent = `'${bad.name}' could not be read as an image. Please choose PNG, JPG, TIFF or WEBP files.`;
       imageInput.value = "";
       return;
     }
     $("#drop b").textContent = "Drop the label here, or choose a file";
-    showPreview(URL.createObjectURL(file), file.name, `${file.type || "image"} · ${fmtBytes(file.size)}`);
+    const total = list.reduce((n, f) => n + f.size, 0);
+    const name = list.length === 1 ? list[0].name : `${list.length} images: ${list.map((f) => f.name).join(", ")}`;
+    const meta = list.length === 1 ? `${list[0].type || "image"} · ${fmtBytes(total)}` : `read together as one label · ${fmtBytes(total)}`;
+    showPreview(URL.createObjectURL(list[0]), name, meta);
   }
-  if (imageInput) imageInput.addEventListener("change", () => fileChosen(imageInput.files[0]));
+  if (imageInput) imageInput.addEventListener("change", () => fileChosen(imageInput.files));
   if (drop) {
     ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); $("#drop b").textContent = "Release to add the label"; }));
     ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, () => { drop.classList.remove("over"); $("#drop b").textContent = "Drop the label here, or choose a file"; }));
     drop.addEventListener("drop", (e) => {
       e.preventDefault();
-      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (!file) return;
-      try { const dt = new DataTransfer(); dt.items.add(file); imageInput.files = dt.files; } catch (err) { /* older browsers */ }
-      fileChosen(file);
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || !files.length) return;
+      try { imageInput.files = files; } catch (err) { /* older browsers */ }
+      fileChosen(files);
     });
   }
   const clearImage = $("#clear-image");

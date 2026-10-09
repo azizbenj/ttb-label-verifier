@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import logging
 import threading
 import uuid
@@ -20,7 +21,7 @@ from time import perf_counter
 
 from .config import (BATCH_JOBS_KEPT, BATCH_JOB_TTL_S, BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES,
                      MAX_BATCH_UPLOAD_BYTES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS, MAX_ZIP_UNCOMPRESSED)
-from .images import ImageError, open_image
+from .images import MAX_LABEL_PARTS, ImageError, open_image, stitch
 from .models import Application, Status, Verdict, VerificationResult
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
@@ -374,17 +375,25 @@ def build_items(rows: list[dict], images: dict[str, bytes | None]) -> tuple[list
                          image_name=row.get("image", ""))
         app, err = _row_to_application(row)
         item.application = app
-        data = _lookup_image(images, item.image_name) if item.image_name else None
+        # Several images for one application: "front.png; back.png" (or separated by "|").
+        names = [n.strip() for n in re.split(r"[;|]", item.image_name) if n.strip()] if item.image_name else []
+        found = [_lookup_image(images, n) for n in names]
+        data = None
+        missing = [n for n, d in zip(names, found) if d is None]
+        if names and not missing:
+            data = _AMBIGUOUS if any(d is _AMBIGUOUS for d in found) else found
         if err:
             item.error = err
         elif not item.image_name:
             item.error = f"Row {row['_row']}: no image file name."
+        elif len(names) > MAX_LABEL_PARTS:
+            item.error = f"Row {row['_row']}: {len(names)} images listed; up to {MAX_LABEL_PARTS} per application."
         elif data is None:
-            item.error = f"No image named '{item.image_name}' was uploaded."
+            item.error = f"No image named '{missing[0] if missing else item.image_name}' was uploaded."
         elif data is _AMBIGUOUS:
             item.error = f"More than one uploaded file could be '{item.image_name}', so it was not checked."
         else:
-            used.add(Path(item.image_name).name.lower())
+            used.update(Path(n).name.lower() for n in names)
             work.append((item, data))
         items.append(item)
     for name, data in images.items():
@@ -393,9 +402,10 @@ def build_items(rows: list[dict], images: dict[str, bytes | None]) -> tuple[list
     return items, work, issues
 
 
-def _process(job: BatchJob, item: BatchItem, data: bytes, reader: LabelReader) -> None:
+def _process(job: BatchJob, item: BatchItem, data: list[bytes], reader: LabelReader) -> None:
     try:
-        image = open_image(data, item.image_name)
+        names = [n.strip() for n in re.split(r"[;|]", item.image_name) if n.strip()]
+        image = stitch([open_image(d, n) for d, n in zip(data, names)])
         item.result = verify(item.application, image, reader, image_name=item.image_name)
         item.needs, item.focus_box = needs_phrase(item.result)
         item.preview = make_preview(image)

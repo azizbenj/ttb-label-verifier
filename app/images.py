@@ -61,3 +61,28 @@ def flatten(image: Image.Image) -> Image.Image:
     if img.mode not in ("RGB", "L"):
         return img.convert("RGB")
     return img
+
+
+MAX_LABEL_PARTS = 6      # front, back, neck, collar... per application
+_PART_GAP = 40           # white space between the stacked images, px
+
+
+def stitch(images: list[Image.Image]) -> Image.Image:
+    """Stack the images of one application (front, back, neck) into one, centred, with white space
+    between them, so the label is read as a whole: the warning is usually on the back."""
+    if len(images) == 1:
+        return images[0]
+    parts = [flatten(i).convert("RGB") for i in images]
+    width = max(p.width for p in parts)
+    height = sum(p.height for p in parts) + _PART_GAP * (len(parts) - 1)
+    if width * height > MAX_IMAGE_PIXELS:
+        scale = (MAX_IMAGE_PIXELS / (width * height)) ** 0.5
+        parts = [p.resize((max(1, round(p.width * scale)), max(1, round(p.height * scale))), Image.LANCZOS) for p in parts]
+        width = max(p.width for p in parts)
+        height = sum(p.height for p in parts) + _PART_GAP * (len(parts) - 1)
+    canvas = Image.new("RGB", (width, height), "white")
+    y = 0
+    for part in parts:
+        canvas.paste(part, ((width - part.width) // 2, y))
+        y += part.height + _PART_GAP
+    return canvas

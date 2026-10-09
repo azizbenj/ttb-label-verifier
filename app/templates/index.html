@@ -28,8 +28,8 @@
       <label class="drop" for="image-input" id="drop">
         {{ icon('upload', 28) }}
         <b>Drop the label here, or choose a file</b>
-        <span class="small">PNG, JPG, TIFF or WEBP · up to 20 MB · flat artwork or a straight-on scan works best</span>
-        <input class="sr" id="image-input" name="image" type="file" accept="image/*">
+        <span class="small">Add the front, back and neck labels together if they are separate files · PNG, JPG, TIFF or WEBP · up to 20 MB each</span>
+        <input class="sr" id="image-input" name="image" type="file" accept="image/*" multiple>
       </label>
       <div class="preview-card" id="preview" hidden>
         <img alt="" id="preview-img">
@@ -88,7 +88,7 @@
       <div><h2>Check many labels at once</h2><p class="muted" style="font-size: 14.5px; margin-top: 4px">One CSV row per application, plus the label images. Images are matched to rows by file name.</p></div>
       <div>
         <span class="lbl" id="csv-l">1. Application data (CSV) <span class="req" aria-hidden="true">*</span></span>
-        <label class="drop compact" for="csv-input" data-drop="csv">{{ icon('csv', 26) }}<b>Drop the CSV here, or choose a file</b><span class="small">Needs the columns image, brand_name, class_type, alcohol_content, net_contents</span>
+        <label class="drop compact" for="csv-input" data-drop="csv">{{ icon('csv', 26) }}<b>Drop the CSV here, or choose a file</b><span class="small">Needs the columns image, brand_name, class_type, alcohol_content, net_contents. Several images for one application: <span class="mono">front.png; back.png</span></span>
           <input class="sr" id="csv-input" name="csv_file" type="file" accept=".csv,text/csv" aria-labelledby="csv-l"></label>
         <div class="small" style="margin-top: 6px"><a href="/batch/template.csv" download>Download the CSV template</a> <span class="muted-3">· two example rows, ready to edit in Excel</span></div>
       </div>
