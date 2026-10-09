@@ -7,12 +7,13 @@
 {%- if err %}<div class="msg" id="f-{{ f.key }}-m">{{ icon('alert', 14) }}{{ err }}</div>{% endif %}
 {%- endmacro %}
 {% block content %}
-<nav class="modes" role="tablist" aria-label="Mode">
-  <button class="tab on" type="button" role="tab" id="tab-btn-single" data-tab="single" aria-selected="true" aria-controls="tab-single">Check one label</button>
-  <button class="tab" type="button" role="tab" id="tab-btn-batch" data-tab="batch" aria-selected="false" aria-controls="tab-batch" tabindex="-1">Check a batch</button>
+{% set batch_open = open_tab == 'batch' %}
+<nav class="modes" role="tablist" aria-label="Mode"{% if open_tab %} data-open-tab="{{ open_tab }}"{% endif %}>
+  <button class="tab{{ ' on' if not batch_open }}" type="button" role="tab" id="tab-btn-single" data-tab="single" aria-selected="{{ 'false' if batch_open else 'true' }}" aria-controls="tab-single"{% if batch_open %} tabindex="-1"{% endif %}>Check one label</button>
+  <button class="tab{{ ' on' if batch_open }}" type="button" role="tab" id="tab-btn-batch" data-tab="batch" aria-selected="{{ 'true' if batch_open else 'false' }}" aria-controls="tab-batch"{% if not batch_open %} tabindex="-1"{% endif %}>Check a batch</button>
 </nav>
 
-<section id="tab-single" class="panel on" role="tabpanel" aria-labelledby="tab-btn-single">
+<section id="tab-single" class="panel{{ ' on' if not batch_open }}" role="tabpanel" aria-labelledby="tab-btn-single">
   <div class="two-col" id="single-entry">
     <form id="single-form" class="card form-card" method="post" action="/verify" enctype="multipart/form-data" novalidate>
       <h2>1. What the application says</h2>
@@ -90,8 +91,8 @@
   <div id="result" class="result-slot"{% if not error_html %} hidden{% endif %}>{{ error_html or '' }}</div>
 </section>
 
-<section id="tab-batch" class="panel" role="tabpanel" aria-labelledby="tab-btn-batch">
-  <div class="two-col" id="batch-entry">
+<section id="tab-batch" class="panel{{ ' on' if batch_open }}" role="tabpanel" aria-labelledby="tab-btn-batch">
+  <div class="two-col" id="batch-entry"{% if batch_html %} hidden{% endif %}>
     <form id="batch-form" class="card form-card" method="post" action="/batch" enctype="multipart/form-data" novalidate>
       <div><h2>Check many labels at once</h2><p class="muted" style="font-size: 14.5px; margin-top: 4px">One CSV row per application, plus the label images. Images are matched to rows by file name.</p></div>
       <div>
@@ -142,7 +143,7 @@
       </div>
     </section>
   </div>
-  <div id="batch-result" class="result-slot" aria-live="polite" hidden></div>
+  <div id="batch-result" class="result-slot" aria-live="polite"{% if not batch_html %} hidden{% endif %}>{{ batch_html or '' }}</div>
 </section>
 
 <script id="samples-data" type="application/json">{{ samples|tojson }}</script>

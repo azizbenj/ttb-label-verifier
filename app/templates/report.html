@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Reports · Label Check{% endblock %}
+{% block content %}
+<div class="report-tools card">
+  <div class="grow"><h2>{{ cards|length }} printable report{{ 's' if cards|length != 1 }}</h2><p class="muted">{{ 'Sample batch' if job.source == 'sample batch' else job.source }} · one page per label for the case file: label image, table, warning checks, a reviewer decision block.</p></div>
+  <button class="btn" type="button" onclick="window.print()">{{ icon('print', 18) }}Print</button>
+  <a class="btn secondary" href="/batch/{{ job.id }}">Back to the results table</a>
+</div>
+{% for c in cards %}
+<div class="report-page">{% with result=c.result, application=c.application, image_url=c.image_url, compact=False, prompts=c.prompts, job_id=c.job_id, item_index=c.item_index, decision=c.decision %}{% include "partials/result.html" %}{% endwith %}</div>
+{% endfor %}
+{% endblock %}

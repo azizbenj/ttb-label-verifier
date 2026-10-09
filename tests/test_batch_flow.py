@@ -63,7 +63,7 @@ def test_sample_batch_runs_and_renders_table_and_export():
     assert r.status_code == 200, r.text
     job_id = re.search(r'data-job="([a-f0-9]+)"', r.text).group(1)
     r = _wait_done(job_id)
-    assert "250 labels checked" in r.text and "Download results (CSV)" in r.text
+    assert "250 labels checked" in r.text and "Export…" in r.text
     csv_out = client.get(f"/batch/{job_id}/export.csv").text
     assert csv_out.count("\n") == 251
     detail = client.get(f"/batch/{job_id}/item/0").text

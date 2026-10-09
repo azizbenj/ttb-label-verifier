@@ -13,16 +13,17 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from PIL import Image, ImageOps
 
 from . import batch as batchmod
-from .evidence import bold_meter_percent, evidence_for, pin_labels
+from .evidence import crop_for, bold_meter_percent, evidence_for, pin_labels
 from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELD_BY_KEY, FIELDS, MANDATED_WARNING, MAX_BATCH_UPLOAD_BYTES,
                      MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS)
+from .decisions import prompt_map
 from .images import MAX_LABEL_PARTS, ImageError, open_image, stitch
 from .models import Application, Status, VerificationResult, Verdict
 from .normalize import parse_alcohol, parse_net_contents
@@ -73,6 +74,7 @@ _ICON_PATHS = {
     "info": ('0 0 24 24', '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>', 2),
     "alert": ('0 0 24 24', '<circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/>', 2),
     "print": ('0 0 24 24', '<path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 21h12v-6H6z"/>', 2),
+    "arrow-left": ('0 0 24 24', '<path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>', 2),
     "copy": ('0 0 24 24', '<rect x="8" y="3" width="12" height="14" rx="2"/><path d="M4 7v12a2 2 0 0 0 2 2h10"/>', 2),
     "expand": ('0 0 24 24', '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>', 2),
     "search": ('0 0 24 24', '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>', 2),
@@ -105,7 +107,7 @@ templates.env.filters["short"] = lambda v: _SHORT.get(v, str(v))
 templates.env.filters["headline"] = lambda v: _HEADLINE.get(v, "")
 templates.env.filters["seconds"] = lambda ms: f"{(ms or 0) / 1000:.1f} s"
 templates.env.globals.update(icon=icon, chip=chip, evidence_for=evidence_for, pin_labels=pin_labels,
-                             static_version=STATIC_VERSION, now_text=lambda: datetime.now().strftime("%-d %b %Y, %H:%M"),
+                             static_version=STATIC_VERSION, crop_for=crop_for, now_text=lambda: datetime.now().strftime("%-d %b %Y, %H:%M"),
                              bold_meter_percent=bold_meter_percent, thresholds=THRESHOLDS)
 
 
@@ -316,11 +318,22 @@ def preview_data_url(image: Image.Image, skew: float = 0.0) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def result_context(result: VerificationResult, application: Application | None, image_url: str | None, *,
+                   compact: bool = False, job: batchmod.BatchJob | None = None, index: int | None = None) -> dict:
+    """Everything partials/result.html needs. In a batch (overlay, review queue, report) the card also
+    carries the job and row, so a decision made on it is kept with the batch."""
+    item = job.items[index] if job is not None and index is not None else None
+    return {"result": result, "application": application, "image_url": image_url, "compact": compact,
+            "reader_info": reader_info(), "cloud": CLOUD_READER_AVAILABLE, "default_reader": OCR_ENGINE,
+            "thresholds": THRESHOLDS, "warning_text": MANDATED_WARNING, "prompts": prompt_map(result),
+            "job_id": job.id if job else "", "item_index": index if index is not None else "",
+            "decision": item.decision if item else ""}
+
+
 def result_response(request: Request, result: VerificationResult, application: Application | None,
-                    image_url: str | None, *, compact: bool = False, full_page: bool = False) -> HTMLResponse:
-    ctx = {"result": result, "application": application, "image_url": image_url, "compact": compact,
-           "reader_info": reader_info(), "cloud": CLOUD_READER_AVAILABLE, "default_reader": OCR_ENGINE,
-           "thresholds": THRESHOLDS, "warning_text": MANDATED_WARNING}
+                    image_url: str | None, *, compact: bool = False, full_page: bool = False,
+                    job: batchmod.BatchJob | None = None, index: int | None = None) -> HTMLResponse:
+    ctx = result_context(result, application, image_url, compact=compact, job=job, index=index)
     return templates.TemplateResponse(request, "result_page.html" if full_page else "partials/result.html", ctx)
 
 
@@ -491,12 +504,89 @@ def batch_sample_zip():
                     headers={"Content-Disposition": "attachment; filename=sample_batch.zip"})
 
 
+_BATCH_GONE = "That batch is no longer available (the server may have restarted). Please run it again."
+
+
 @app.get("/batch/{job_id}", response_class=HTMLResponse)
 def batch_status(request: Request, job_id: str):
+    """The batch card for the page's script; a plain visit (a shared link, the back link from the review
+    queue) gets the whole page with the batch tab open."""
     job = batchmod.JOBS.get(job_id)
     if job is None:
-        return error_response(request, "That batch is no longer available (the server may have restarted). Please run it again.", 404)
-    return _batch_status_response(request, job)
+        return error_response(request, _BATCH_GONE, 404)
+    if request.headers.get("x-partial") == "1":
+        return _batch_status_response(request, job)
+    card = templates.get_template("partials/batch_status.html").render(
+        {"job": job, "fields": FIELDS, "counts": job.counts()})
+    return templates.TemplateResponse(request, "index.html", _index_context() | {"batch_html": Markup(card),
+                                                                                  "open_tab": "batch"})
+
+
+@app.post("/batch/{job_id}/decision")
+async def batch_decide(request: Request, job_id: str, index: int = Form(...), value: str = Form(...),
+                       next: str = Form("")):
+    """Keep the agent's answer (pass, fail, skip; clear undoes it) with the batch. Never changes a verdict.
+    The page's script gets JSON; a plain form post is sent on to ``next`` (the next item in the queue)."""
+    job = batchmod.JOBS.get(job_id)
+    if job is None:
+        return JSONResponse({"error": _BATCH_GONE}, status_code=404)
+    if not (0 <= index < len(job.items)) or value not in batchmod.DECISIONS:
+        return JSONResponse({"error": "That decision is not possible."}, status_code=400)
+    item = job.decide(index, value)
+    if request.headers.get("x-partial") == "1" or "application/json" in request.headers.get("accept", ""):
+        queue = job.review_queue()
+        return {"index": index, "decision": item.decision, "decided": job.decided_count, "queue": len(queue),
+                "remaining": sum(1 for i in queue if not job.items[i].decision)}
+    # A plain form post: on to the next label in the queue (or back where the form said).
+    if next.startswith(f"/batch/{job.id}/") and "n=" in next:
+        target = next
+    else:
+        queue = job.review_queue()
+        pos = queue.index(index) + 1 if index in queue else 0
+        target = f"/batch/{job.id}/review?n={min(pos + 1, len(queue)) if value != 'clear' else max(pos, 1)}"
+    return RedirectResponse(target, status_code=303)
+
+
+@app.get("/batch/{job_id}/review", response_class=HTMLResponse)
+def batch_review(request: Request, job_id: str, n: int = 1):
+    """The review queue (Review-Queue board): one label that needs a look at a time, its one question,
+    yes / no / skip, then the next. Works without JavaScript: the answers are forms."""
+    job = batchmod.JOBS.get(job_id)
+    if job is None:
+        return error_response(request, _BATCH_GONE, 404)
+    queue = job.review_queue()
+    pos = min(max(n, 1), max(len(queue), 1))
+    index = queue[pos - 1] if queue else None
+    item = job.items[index] if index is not None else None
+    ctx = {"job": job, "queue": queue, "pos": pos, "index": index, "item": item, "fields": FIELDS}
+    if item is not None and item.result is not None:
+        image_url = f"/batch/{job.id}/image/{index}" if item.preview else None
+        ctx |= result_context(item.result, item.application, image_url, compact=True, job=job, index=index)
+        ctx["prompt"] = next(iter(ctx["prompts"].values()), None)
+    return templates.TemplateResponse(request, "review.html", ctx)
+
+
+@app.get("/batch/{job_id}/report", response_class=HTMLResponse)
+def batch_report(request: Request, job_id: str, ids: str = "", status: str = ""):
+    """Printable reports: one page per label for the case file, same scope options as the CSV."""
+    job = batchmod.JOBS.get(job_id)
+    if job is None:
+        return error_response(request, _BATCH_GONE, 404)
+    id_set, status_set = _scope(ids, status)
+    cards = []
+    for index, it in enumerate(job.items):
+        if it.result is None or it not in batchmod.export_items(job, id_set, status_set):
+            continue
+        image_url = f"/batch/{job.id}/image/{index}" if it.preview else None
+        cards.append(result_context(it.result, it.application, image_url, job=job, index=index))
+    return templates.TemplateResponse(request, "report.html", {"job": job, "cards": cards,
+                                                                "reader_info": reader_info()})
+
+
+def _scope(ids: str, status: str) -> tuple[set[str] | None, set[str] | None]:
+    id_set = {i.strip() for i in ids.split(",") if i.strip()} or None
+    status_set = {s.strip().upper() for s in status.split(",") if s.strip()} or None
+    return id_set, status_set
 
 
 @app.get("/batch/{job_id}/item/{index}", response_class=HTMLResponse)
@@ -508,7 +598,7 @@ def batch_item(request: Request, job_id: str, index: int):
     if item.result is None:
         return error_response(request, item.error or "Still processing.")
     image_url = f"/batch/{job.id}/image/{index}" if getattr(item, "preview", None) else None
-    return result_response(request, item.result, item.application, image_url, compact=True)
+    return result_response(request, item.result, item.application, image_url, compact=True, job=job, index=index)
 
 
 @app.get("/batch/{job_id}/image/{index}")
@@ -520,16 +610,19 @@ def batch_image(job_id: str, index: int):
 
 
 @app.get("/batch/{job_id}/export.csv")
-def batch_export(request: Request, job_id: str, ids: str = "", status: str = ""):
-    """The whole batch, or ``?ids=APP-1,APP-2`` (selected rows), or ``?status=FAIL`` (one verdict)."""
+def batch_export(request: Request, job_id: str, ids: str = "", status: str = "", include: str = ""):
+    """The whole batch, or ``?ids=APP-1,APP-2`` (selected rows), or ``?status=FAIL`` (one verdict);
+    ``?include=fields,warning,decisions,ocr,timings`` picks the column groups (Batch-Export board).
+    UTF-8 with a BOM so Excel keeps accents and symbols."""
     job = batchmod.JOBS.get(job_id)
     if job is None:
         return Response("Batch not found", status_code=404)
-    id_set = {i.strip() for i in ids.split(",") if i.strip()} or None
-    status_set = {s.strip().upper() for s in status.split(",") if s.strip()} or None
-    suffix = f"-{status.lower()}" if status_set else ("-selected" if id_set else "")
-    return Response(batchmod.export_csv(job, id_set, status_set), media_type="text/csv",
-                    headers={"Content-Disposition": f"attachment; filename=label-check{suffix}-{job.id}.csv"})
+    id_set, status_set = _scope(ids, status)
+    inc = {i.strip().lower() for i in include.split(",") if i.strip()} or None
+    body = "\ufeff" + batchmod.export_csv(job, id_set, status_set, inc)
+    name = batchmod.export_name(job, id_set, status_set)
+    return Response(body, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
 
 
 @app.get("/api/batch/{job_id}")
@@ -540,5 +633,5 @@ def batch_json(job_id: str):
     return {"id": job.id, "done": job.done, "total": job.total, "finished": job.is_done, "counts": job.counts(),
             "elapsed_ms": round(job.elapsed_ms, 1), "issues": job.issues,
             "items": [{"row": it.row, "application_id": it.application_id, "image": it.image_name,
-                       "status": it.status, "error": it.error,
+                       "status": it.status, "error": it.error, "decision": it.decision,
                        "result": it.result.model_dump(mode="json") if it.result else None} for it in job.items]}

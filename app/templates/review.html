@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "partials/decide.html" import decide %}
+{% block title %}Review queue · Label Check{% endblock %}
+{% block content %}
+{% set n = queue|length %}
+<div class="queue-bar card" data-review{% if index is not none %} data-job="{{ job.id }}" data-index="{{ index }}"{% endif %}>
+  <a class="btn icon back" href="/batch/{{ job.id }}" aria-label="Back to the results table" data-act="back">{{ icon('arrow-left', 18) }}</a>
+  <div class="grow">
+    <h2>Review queue · {{ 'Sample batch' if job.source == 'sample batch' else job.source }}</h2>
+    <p>{% if n %}{{ pos }} of {{ n }} that need a look · {{ job.decided_count }} decided{% else %}Nothing in this batch needs a look{% endif %} · <span class="kbd">Esc</span> back to the table</p>
+  </div>
+  {% if n %}
+  <nav class="queue" aria-label="Queue">
+    {% for i in queue %}{% set it = job.items[i] %}{% set k = loop.index %}
+    <a class="qd{{ ' cur' if k == pos }}{{ ' ' ~ it.decision if it.decision }}" href="/batch/{{ job.id }}/review?n={{ k }}" aria-label="{{ it.application_id }}, {{ 'decided ' ~ it.decision if it.decision else 'to decide' }}"{% if k == pos %} aria-current="true"{% endif %}>{{ k }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+</div>
+
+{% if item is none or item.result is none %}
+<section class="card done-card" role="status" tabindex="-1">
+  <div class="text"><h2>Nothing needs a look</h2><p>Every label in this batch is a clear pass or fail. <a href="/batch/{{ job.id }}">Back to the results table</a>.</p></div>
+</section>
+{% else %}
+{% set r = result %}
+<section class="card review-card" role="status" tabindex="-1" aria-label="{{ item.application_id }}, {{ item.brand }}">
+  <div class="banner review">
+    <span class="badge review">{{ icon('bang', 24) }}</span>
+    <div class="text"><h2>{{ item.application_id }} · {{ item.brand }}</h2><p>{{ r.summary }}</p></div>
+    {{ chip(r.overall, 'big') }}
+  </div>
+  <div class="split">
+    <div class="label-pane">
+      <div class="head"><b>{{ item.image_name }}</b>{% if image_url %}<a class="btn quiet small" href="{{ image_url }}" target="_blank" rel="noopener">Open full size</a>{% endif %}</div>
+      {% if image_url %}
+      <div class="label-frame"{% if r.image_aspect %} style="aspect-ratio: 1 / {{ r.image_aspect }}"{% endif %}>
+        <img src="{{ image_url }}" alt="{{ item.brand }} label with the region to check outlined">
+        {% if prompt and prompt.box %}<div class="hl focus review" style="left:{{ prompt.box[0] }}%;top:{{ prompt.box[1] }}%;width:{{ prompt.box[2] }}%;height:{{ prompt.box[3] }}%"><span class="n">?</span></div>{% endif %}
+      </div>
+      {% else %}<div class="label-frame noimg">The label image was not kept for this row.</div>{% endif %}
+      <p class="hint">The outlined region is the one thing to look at on this label. Everything else was checked and matches.</p>
+    </div>
+    <div class="verdicts">
+      {% if prompt %}
+      <div class="ask">
+        <div class="head"><strong>{{ prompt.what }}</strong><span class="chip review">{{ icon('bang') }}{{ prompt.verdict }}</span></div>
+        {% set crop = crop_for(prompt.box, r.image_aspect, 560) %}
+        {% if crop and image_url %}<div class="crop wide" style="{{ crop.box_style }}"><img src="{{ image_url }}" alt="Crop of the label around the region to check" style="{{ crop.img_style }}"></div>{% endif %}
+        <table class="diff">
+          <thead><tr><th style="width: 50%">{{ prompt.left_head }}</th><th>{{ prompt.right_head }}</th></tr></thead>
+          <tbody><tr>
+            <td>{{ prompt.left[0] }}<mark class="req">{{ prompt.left[1] }}</mark>{{ prompt.left[2] }}</td>
+            <td>{{ prompt.right[0] }}<mark>{{ prompt.right[1] }}</mark>{{ prompt.right[2] }}</td>
+          </tr></tbody>
+        </table>
+        <div class="why">{{ prompt.why }}</div>
+        {{ decide(prompt, job.id, index, item.decision) }}
+        <span class="fine">A decision moves you to the next item. Decisions are kept with the batch and go into the export as a "decision" column; nothing is sent anywhere.</span>
+      </div>
+      {% endif %}
+      <details class="rest"><summary>All {{ r.fields|selectattr('verdict.value', 'ne', 'SKIPPED')|list|length }} fields and the other warning checks</summary>
+        <div class="rest-body">{% include "partials/result.html" %}</div>
+      </details>
+      <div class="pager">
+        {% if pos > 1 %}<a class="btn secondary small" href="/batch/{{ job.id }}/review?n={{ pos - 1 }}" data-act="prev">Previous <span class="kbd">K</span></a>{% else %}<span class="btn secondary small" aria-disabled="true">Previous <span class="kbd">K</span></span>{% endif %}
+        {% if pos < n %}<a class="btn secondary small" href="/batch/{{ job.id }}/review?n={{ pos + 1 }}" data-act="next">Next <span class="kbd">J</span></a>{% else %}<span class="btn secondary small" aria-disabled="true">Next <span class="kbd">J</span></span>{% endif %}
+        <span class="timing-line">Checked in <span class="mono">{{ r.timings.total_ms|seconds }}</span> · reading {{ r.timings.read_ms|seconds }} · comparing {{ r.timings.match_ms|seconds }}</span>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

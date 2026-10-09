@@ -14,7 +14,7 @@
     <td colspan="{{ fields|length + 2 }}" class="errtext">{{ it.error }}</td>
   {% endif %}
 {% endmacro %}
-<div class="result-wrap" data-app-card data-job="{{ job.id }}" data-status="{{ 'done' if job.is_done else 'running' }}" data-total="{{ job.total }}">
+<div class="result-wrap" data-app-card data-job="{{ job.id }}" data-status="{{ 'done' if job.is_done else 'running' }}" data-total="{{ job.total }}" data-slug="{{ job.slug }}" data-date="{{ job.created_at.astimezone().strftime('%Y-%m-%d') }}">
 <div class="card appbar">
   <div class="kvs">
     <div class="kv"><span>Batch</span><strong>{{ 'Sample batch' if job.source == 'sample batch' else job.source }}</strong></div>
@@ -53,7 +53,8 @@
       <span class="need">{{ c.REVIEW }} need you</span>, {{ c.FAIL }} have problems, {{ c.PASS }} pass{% if c.ERROR %}, {{ c.ERROR }} could not be checked{% endif %}.</p>
   </div>
   <div class="acts">
-    <a class="btn secondary" href="/batch/{{ job.id }}/export.csv">{{ icon('download', 18) }}Download results (CSV)</a>
+    {% if c.REVIEW %}<a class="btn" href="/batch/{{ job.id }}/review" data-act="review">Review the {{ c.REVIEW }} <span class="kbd w">R</span></a>{% endif %}
+    <a class="btn secondary" href="/batch/{{ job.id }}/export.csv" data-act="export">{{ icon('download', 18) }}Export…</a>
     <button class="btn secondary" type="button" data-act="newbatch">New batch</button>
   </div>
 </section>
@@ -98,7 +99,7 @@
               data-time="{{ it.result.timings.total_ms if it.result else 0 }}" data-text="{{ (it.application_id ~ ' ' ~ it.image_name ~ ' ' ~ it.brand)|lower }}"
               data-summary="{{ it.result.summary if it.result else it.error }}" data-needs="{{ it.needs or ('Fix the file issue' if it.error else '') }}" data-error="{{ '1' if it.error else '' }}"
               data-img="{{ '/batch/' ~ job.id ~ '/image/' ~ index if it.preview else '' }}" data-aspect="{{ it.result.image_aspect if it.result and it.result.image_aspect else '' }}"
-              data-box="{{ it.focus_box|join(',') if it.focus_box else '' }}" aria-selected="false">
+              data-box="{{ it.focus_box|join(',') if it.focus_box else '' }}" data-decision="{{ it.decision }}" aria-selected="false">
             <td class="sel"><input type="checkbox" aria-label="Select {{ it.application_id }}"{% if not job.is_done %} disabled{% endif %}></td>
             {{ row_cells(it) }}
           </tr>
@@ -122,7 +123,7 @@
       <div class="head"><span class="mono muted" data-d="id"></span><strong data-d="brand"></strong><span class="chip" data-d="status"></span></div>
       <div class="label-frame" data-d="frame"><img alt="" data-d="img"><div class="hl focus" data-d="hl" hidden></div></div>
       <div class="summary" data-d="summary"></div>
-      <dl class="dl"><dt>File</dt><dd class="mono" data-d="file"></dd><dt>Checked in</dt><dd class="mono" data-d="time"></dd><dt>Needs</dt><dd data-d="needs"></dd></dl>
+      <dl class="dl"><dt>File</dt><dd class="mono" data-d="file"></dd><dt>Checked in</dt><dd class="mono" data-d="time"></dd><dt>Needs</dt><dd data-d="needs"></dd><dt>Decision</dt><dd data-d="decision">—</dd></dl>
       <div class="acts"><button class="btn small" type="button" data-act="open">{{ icon('expand', 16) }}Open full comparison <span class="kbd">Enter</span></button></div>
       <p class="keys-help"><span class="kbd">J</span> <span class="kbd">K</span> move · <span class="kbd">X</span> select · <span class="kbd">Enter</span> open · <span class="kbd">Esc</span> close</p>
     </aside>
@@ -133,10 +134,40 @@
   <div class="bulkbar" hidden>
     <div class="bulk"><span><b data-d="count">0</b> selected</span><span class="dot">·</span>
       <a class="btn" href="/batch/{{ job.id }}/export.csv" data-act="export-selected">{{ icon('download', 16) }}Export selected (CSV)</a>
+      <a class="btn" href="/batch/{{ job.id }}/report" target="_blank" rel="noopener" data-act="report-selected">{{ icon('print', 16) }}Print reports</a>
       <button class="btn" type="button" data-act="clear">Clear</button></div>
     <span class="muted-3 small">Bulk actions never change a verdict.</span>
   </div>
   {% endif %}
 </section>
+{% if job.is_done %}
+<dialog class="card export" data-export aria-labelledby="exp-title" aria-describedby="exp-desc">
+  <form method="dialog" class="export-form" data-export-form>
+    <div class="head"><div class="grow"><h2 id="exp-title">Export results</h2><p id="exp-desc">{{ 'Sample batch' if job.source == 'sample batch' else job.source }} · checked {{ job.started_at_local }} · one row per label, the same columns as the table plus the reasons.</p></div><button class="btn quiet small" type="button" data-act="close" aria-label="Close">{{ icon('cross', 18) }}</button></div>
+    <fieldset class="opts"><legend>Which labels</legend>
+      <div class="opt-grid">
+        <label class="opt on"><input type="radio" name="scope" value="all" checked><div><b>All {{ job.total }}</b><span>The whole batch, triage order.</span></div></label>
+        <label class="opt"><input type="radio" name="scope" value="shown"><div><b>Shown now · <span data-shown-label>All</span>, <span data-shown-count>{{ job.total }}</span></b><span>Exactly what the table shows with the current filter and search.</span></div></label>
+        <label class="opt"><input type="radio" name="scope" value="selected"><div><b>Selected · <span data-selected-count>0</span></b><span>The rows you ticked.</span></div></label>
+      </div>
+    </fieldset>
+    <fieldset class="opts"><legend>Include</legend>
+      <label class="ck"><input type="checkbox" name="include" value="fields" checked> Per-field verdicts and the one-line reasons</label>
+      <label class="ck"><input type="checkbox" name="include" value="warning" checked> Government warning checks (present, wording, capitals, bold) and the diff</label>
+      <label class="ck"><input type="checkbox" name="include" value="decisions" checked> Your decisions from the review queue <span class="muted-3">(column "decision": pass, fail, skip, or blank)</span></label>
+      <label class="ck"><input type="checkbox" name="include" value="ocr"> All text read from each label</label>
+      <label class="ck"><input type="checkbox" name="include" value="timings" checked> Timings</label>
+    </fieldset>
+    <fieldset class="opts"><legend>Format</legend>
+      <div class="opt-grid">
+        <label class="opt on"><input type="radio" name="fmt" value="csv" checked><div><b>CSV</b><span>Opens in Excel. UTF-8 with BOM so accents and symbols survive.</span></div></label>
+        <label class="opt"><input type="radio" name="fmt" value="reports"><div><b>Printable reports</b><span>One page per label for the case file: label image, table, warning checks.</span></div></label>
+      </div>
+    </fieldset>
+    <div class="foot"><span class="mono small muted" data-export-name>label-check_{{ job.slug }}_all_{{ job.created_at.astimezone().strftime('%Y-%m-%d') }}.csv · {{ job.total }} rows</span><button class="btn secondary" type="button" data-act="close">Cancel <span class="kbd">Esc</span></button><button class="btn" type="submit" data-act="download">Download CSV</button></div>
+    <div class="quick"><span>Quick exports:</span><a class="btn quiet small" href="/batch/{{ job.id }}/export.csv?status=PASS" data-quick="PASS">Passes only ({{ c.PASS }}), for approval</a><span class="dot">·</span><a class="btn quiet small" href="/batch/{{ job.id }}/export.csv?status=FAIL" data-quick="FAIL">Fails only ({{ c.FAIL }}), with reasons, for the send-back letters</a></div>
+  </form>
+</dialog>
+{% endif %}
 <div class="overlay" data-overlay hidden><div class="overlay-card card"><div class="overlay-head"><strong data-overlay-title>Full comparison</strong><button class="btn icon close" type="button" data-act="close" aria-label="Close">{{ icon('cross', 18) }}</button></div><div class="overlay-body" data-overlay-body></div></div></div>
 </div>

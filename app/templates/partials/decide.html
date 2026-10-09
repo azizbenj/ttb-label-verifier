@@ -1,0 +1,20 @@
+{#- A decision prompt (Copy board): the one question, yes / no / skip, then "Decided by you". Inside a
+    batch the card carries the job and row, so the page's script posts the answer; without a script the
+    forms post it and come back here. In the single check the answer stays on the page and prints. -#}
+{% macro decide(pr, job_id, item_index, decision, compact=False) -%}
+<div class="decide" data-decide="{{ pr.key }}" data-decision="{{ decision }}">
+  <span class="q">{{ pr.question }}</span>
+  <div class="row answers"{% if decision %} hidden{% endif %}>
+    {% for value, text, cls, key in [('pass', pr.yes, 'ok', 'Y'), ('fail', pr.no, 'danger', 'N'), ('skip', 'Skip for now', 'secondary', 'S')] %}
+    {% if job_id %}<form method="post" action="/batch/{{ job_id }}/decision" class="inline"><input type="hidden" name="index" value="{{ item_index }}"><input type="hidden" name="value" value="{{ value }}"><input type="hidden" name="next" value="/batch/{{ job_id }}/review">{% endif %}
+    <button class="btn {{ cls }} small" type="{{ 'submit' if job_id else 'button' }}" data-answer="{{ value }}">{{ text }} <span class="kbd{{ ' w' if cls == 'ok' }}">{{ key }}</span></button>
+    {% if job_id %}</form>{% endif %}
+    {% endfor %}
+  </div>
+  <span class="fine"{% if decision %} hidden{% endif %}>Your answer goes into the printed report and the CSV.{% if job_id %} Decisions are kept with the batch; nothing is sent anywhere.{% endif %}</span>
+  <div class="decided"{% if not decision %} hidden{% endif %}>Decided by you: <b data-answer-text>{{ {'pass': pr.yes, 'fail': pr.no, 'skip': 'skipped for now'}.get(decision, '') }}</b> ·
+    {% if job_id %}<form method="post" action="/batch/{{ job_id }}/decision" class="inline"><input type="hidden" name="index" value="{{ item_index }}"><input type="hidden" name="value" value="clear"><input type="hidden" name="next" value="/batch/{{ job_id }}/review"><button class="btn quiet small" type="submit" data-answer="clear">Undo</button></form>
+    {% else %}<button class="btn quiet small" type="button" data-answer="clear">Undo</button>{% endif %}
+  </div>
+</div>
+{%- endmacro %}

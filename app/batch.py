@@ -75,6 +75,7 @@ class BatchItem:
     preview: bytes | None = None       # downscaled JPEG for the detail panel, when the budget allows
     needs: str = ""                    # what the agent has to do with this label, in a few words
     focus_box: list[float] | None = None   # region to outline in the detail panel: the first problem or review
+    decision: str = ""                 # the agent's answer from the review queue: pass, fail, skip, or blank
 
     @property
     def status(self) -> str:
@@ -132,6 +133,11 @@ def make_preview(image, skew: float = 0.0) -> bytes | None:
     return data
 
 
+DECISIONS = ("pass", "fail", "skip", "clear")
+EXPORT_INCLUDE = ("fields", "warning", "decisions", "ocr", "timings")
+EXPORT_DEFAULT = {"fields", "warning", "decisions", "timings"}
+
+
 @dataclass
 class BatchJob:
     id: str
@@ -183,6 +189,30 @@ class BatchJob:
     def mean_read_ms(self) -> float | None:
         xs = [it.result.timings.read_ms for it in self.items if it.result]
         return sum(xs) / len(xs) if xs else None
+
+    # --- the review queue: every label that needs a look, in triage order ---------------------------
+    def review_queue(self) -> list[int]:
+        return [i for i, it in self.ordered_items() if it.status == Status.REVIEW.value]
+
+    @property
+    def decided_count(self) -> int:
+        return sum(1 for it in self.items if it.decision)
+
+    def decide(self, index: int, value: str) -> BatchItem:
+        """Record the agent's answer for one label. Never changes a verdict."""
+        if value not in DECISIONS:
+            raise ValueError(f"decision must be one of {', '.join(DECISIONS)}")
+        with self.lock:
+            item = self.items[index]
+            item.decision = "" if value == "clear" else value
+        return item
+
+    @property
+    def slug(self) -> str:
+        """The source name as a file-name part: 'Sample batch' -> 'sample-batch'."""
+        s = re.sub(r"[^a-z0-9]+", "-", Path(self.source).stem.lower()).strip("-")
+        return s or "batch"
+
 
     def ordered_items(self) -> list[tuple[int, "BatchItem"]]:
         """(index, item) in triage order: REVIEW, FAIL, ERROR, PASS, then still pending."""
@@ -509,33 +539,62 @@ def _cell(value):
     return value
 
 
-def export_csv(job: BatchJob, ids: set[str] | None = None, statuses: set[str] | None = None) -> str:
-    """CSV of the job; ``ids`` (application ids) or ``statuses`` (PASS/REVIEW/FAIL/ERROR) narrow it."""
+def export_items(job: BatchJob, ids: set[str] | None = None, statuses: set[str] | None = None) -> list[BatchItem]:
+    """The rows an export covers: the whole job, ``ids`` (application ids), or ``statuses``."""
+    return [it for it in job.items
+            if (ids is None or it.application_id in ids) and (statuses is None or it.status in statuses)]
+
+
+def export_name(job: BatchJob, ids: set[str] | None, statuses: set[str] | None, ext: str = "csv") -> str:
+    scope = "-".join(sorted(s.lower() for s in statuses)) if statuses else ("selected" if ids is not None else "all")
+    return f"label-check_{job.slug}_{scope}_{job.created_at.astimezone():%Y-%m-%d}.{ext}"
+
+
+def export_csv(job: BatchJob, ids: set[str] | None = None, statuses: set[str] | None = None,
+               include: set[str] | None = None) -> str:
+    """CSV of the job; ``ids`` (application ids) or ``statuses`` (PASS/REVIEW/FAIL/ERROR) narrow it;
+    ``include`` picks the column groups (fields, warning, decisions, ocr, timings)."""
+    inc = EXPORT_DEFAULT if include is None else {i for i in include if i in EXPORT_INCLUDE}
     buf = io.StringIO()
     w = csv.writer(buf)
     header = ["application_id", "image", "overall", "needs", "summary"]
-    for f in FIELDS:
-        header += [f"{f.key}_verdict", f"{f.key}_expected", f"{f.key}_found", f"{f.key}_note"]
-    header += ["warning_present", "warning_wording", "warning_heading_caps", "warning_heading_bold", "warning_notes",
-               "read_ms", "total_ms", "reader", "error"]
+    if "fields" in inc:
+        for f in FIELDS:
+            header += [f"{f.key}_verdict", f"{f.key}_expected", f"{f.key}_found", f"{f.key}_note"]
+    if "warning" in inc:
+        header += ["warning_present", "warning_wording", "warning_heading_caps", "warning_heading_bold", "warning_notes",
+                   "warning_diff"]
+    if "decisions" in inc:
+        header += ["decision"]
+    if "ocr" in inc:
+        header += ["label_text"]
+    if "timings" in inc:
+        header += ["read_ms", "total_ms"]
+    header += ["reader", "error"]
     w.writerow(header)
-    for it in job.items:
-        if ids is not None and it.application_id not in ids:
-            continue
-        if statuses is not None and it.status not in statuses:
-            continue
+    for it in export_items(job, ids, statuses):
         r = it.result
-        row = [it.application_id, it.image_name, it.status, it.needs, r.summary if r else (it.error or "")]
-        if r:
-            by_key = {f.key: f for f in r.fields}
+        row: list = [it.application_id, it.image_name, it.status, it.needs, r.summary if r else (it.error or "")]
+        if "fields" in inc:
+            by_key = {f.key: f for f in r.fields} if r else {}
             for f in FIELDS:
                 fr = by_key.get(f.key)
                 row += [fr.verdict.value, fr.expected, fr.found or "", fr.note] if fr else ["", "", "", ""]
-            wn = r.warning
-            notes = " | ".join(n for n in (wn.wording_note, wn.heading_caps_note, wn.heading_bold_note) if n)
-            row += ["yes" if wn.present else "no", wn.wording.value, wn.heading_caps.value, wn.heading_bold.value,
-                    notes, r.timings.read_ms, r.timings.total_ms, r.reader, ""]
-        else:
-            row += ["", "", "", ""] * len(FIELDS) + ["", "", "", "", "", "", "", "", it.error or ""]
+        if "warning" in inc:
+            if r:
+                wn = r.warning
+                notes = " | ".join(n for n in (wn.wording_note, wn.heading_caps_note, wn.heading_bold_note) if n)
+                diff = "; ".join(f"required '{d.expected}' / label '{d.found}'" for d in (wn.diff or []))
+                row += ["yes" if wn.present else "no", wn.wording.value, wn.heading_caps.value, wn.heading_bold.value,
+                        notes, diff]
+            else:
+                row += ["", "", "", "", "", ""]
+        if "decisions" in inc:
+            row += [it.decision]
+        if "ocr" in inc:
+            row += [r.ocr_text if r else ""]
+        if "timings" in inc:
+            row += [r.timings.read_ms, r.timings.total_ms] if r else ["", ""]
+        row += [r.reader if r else "", "" if r else (it.error or "")]
         w.writerow([_cell(v) for v in row])
     return buf.getvalue()

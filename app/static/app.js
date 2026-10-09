@@ -97,7 +97,7 @@
   const singleForm = $("#single-form");
   const entry = $("#single-entry");
   const resultSlot = $("#result");
-  const samples = (() => { try { return JSON.parse($("#samples-data").textContent); } catch (e) { return []; } })();
+  const samples = (() => { try { return JSON.parse(($("#samples-data") || { textContent: "[]" }).textContent); } catch (e) { return []; } })();
   const picker = $("#sample-picker");
   const sampleField = $("#sample-field");
   const imageInput = $("#image-input");
@@ -285,6 +285,7 @@
       strip.hidden = !strip.hidden;
       pin.setAttribute("aria-expanded", String(!strip.hidden));
     }));
+    wireDecisions(slot);
     $$("[data-act]", slot).forEach((b) => b.addEventListener("click", (e) => {
       const act = b.dataset.act;
       if (act === "another" || act === "edit") e.preventDefault();
@@ -302,6 +303,70 @@
     }));
     if (!frame || !img || !objectUrl) return;
   }
+
+  // --- decisions (Copy board): yes = the label is fine, no = it is wrong, skip; "Decided by you ... Undo" -----
+  function showDecision(block, value) {
+    const texts = {};
+    $$(".answers [data-answer]", block).forEach((b) => { texts[b.dataset.answer] = b.firstChild.textContent.trim(); });
+    block.dataset.decision = value;
+    const answers = block.querySelector(".answers"), fine = block.querySelector(".fine"), done = block.querySelector(".decided");
+    answers.hidden = !!value; if (fine) fine.hidden = !!value; done.hidden = !value;
+    if (value) done.querySelector("[data-answer-text]").textContent = value === "skip" ? "skipped for now" : texts[value];
+  }
+  async function decide(block, value, wrap) {
+    const job = wrap && wrap.dataset.job;
+    if (job) {
+      try {
+        const body = new FormData(); body.append("index", wrap.dataset.index); body.append("value", value);
+        const resp = await fetch(`/batch/${job}/decision`, { method: "POST", body, headers: { "X-Partial": "1" } });
+        if (!resp.ok) { toast("That decision was not saved. Please try again."); return; }
+        const row = document.querySelector(`tr.r[data-index="${wrap.dataset.index}"]`);
+        if (row) row.dataset.decision = value === "clear" ? "" : value;
+        const d = document.querySelector("[data-d=decision]");
+        if (d && row && row.classList.contains("cur")) d.textContent = row.dataset.decision || "—";
+      } catch (err) { toast("That decision was not saved. Please check the connection."); return; }
+    }
+    showDecision(block, value === "clear" ? "" : value);
+  }
+  function wireDecisions(scope) {
+    const wrap = scope.closest("[data-job]") || scope.querySelector("[data-job]");
+    $$(".decide [data-answer]", scope).forEach((b) => b.addEventListener("click", (e) => {
+      e.preventDefault();
+      const block = b.closest(".decide");
+      const value = b.dataset.answer;
+      const review = document.querySelector("[data-review]");
+      decide(block, value, wrap || review).then(() => {
+        // In the queue a decision moves you on (Review-Queue board).
+        if (review && value !== "clear") { const next = $("[data-act=next]"); if (next) location.href = next.href; }
+      });
+    }));
+  }
+  // Y / N / S answer the first open question on the page; the review queue also moves with J / K and leaves with Esc.
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+    const dlg = document.querySelector("dialog[open]"); if (dlg) return;
+    const review = document.querySelector("[data-review]");
+    const k = e.key.toLowerCase();
+    if (k === "y" || k === "n" || k === "s") {
+      const open = $$(".decide").find((d) => !d.dataset.decision && !d.closest("[hidden]") && d.offsetParent !== null);
+      if (!open) return;
+      const btn = open.querySelector(`[data-answer="${{ y: "pass", n: "fail", s: "skip" }[k]}"]`);
+      if (btn) { e.preventDefault(); btn.click(); }
+      return;
+    }
+    if (!review) return;
+    if (k === "j") { const a = $("[data-act=next]"); if (a) { e.preventDefault(); location.href = a.href; } }
+    else if (k === "k") { const a = $("[data-act=prev]"); if (a) { e.preventDefault(); location.href = a.href; } }
+    else if (e.key === "Escape") { const a = $("[data-act=back]"); if (a) location.href = a.href; }
+  });
+  let toastTimer = null;
+  function toast(text) {
+    let t = $(".toast");
+    if (!t) { t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
+    t.textContent = text; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
+  }
+  if (document.querySelector("[data-review]")) wireDecisions(document.body);
 
   if (singleForm) {
     singleForm.addEventListener("submit", async (e) => {
@@ -446,6 +511,7 @@
       detail.querySelector("[data-d=file]").textContent = r.dataset.file || "—";
       detail.querySelector("[data-d=time]").textContent = r.dataset.time ? (r.dataset.time / 1000).toFixed(1) + " s" : "—";
       detail.querySelector("[data-d=needs]").textContent = r.dataset.needs || "—";
+      const dd = detail.querySelector("[data-d=decision]"); if (dd) dd.textContent = r.dataset.decision || "—";
       const frame = detail.querySelector("[data-d=frame]"), img = detail.querySelector("[data-d=img]"), hl = detail.querySelector("[data-d=hl]");
       if (r.dataset.img) {
         img.src = r.dataset.img; img.alt = (r.dataset.brand || "Label") + " label"; frame.hidden = false;
@@ -503,10 +569,67 @@
       bulkbar.querySelector("[data-d=count]").textContent = checked.length;
       const link = bulkbar.querySelector("[data-act=export-selected]");
       link.href = `/batch/${box.dataset.job}/export.csv?ids=` + encodeURIComponent(checked.map((r) => r.dataset.id).join(","));
+      const rep = $("[data-act=report-selected]", batchSlot);
+      if (rep) rep.href = `/batch/${box.dataset.job}/report?ids=` + encodeURIComponent(checked.map((r) => r.dataset.id).join(","));
     }
     const all = $(".select-all", batchSlot);
     if (all) all.addEventListener("change", () => { visible().forEach((r) => { r.querySelector("input[type=checkbox]").checked = all.checked; }); syncBulk(); });
+    const exportSel = $("[data-act=export-selected]", batchSlot);
+    if (exportSel && dlg) exportSel.addEventListener("click", (e) => { e.preventDefault(); openExport("selected"); });
     if (bulkbar) bulkbar.querySelector("[data-act=clear]").addEventListener("click", () => { rows.forEach((r) => { r.querySelector("input[type=checkbox]").checked = false; }); if (all) all.checked = false; syncBulk(); });
+    // Export dialog (Batch-Export board): scope, include, format; quick exports; a toast when it goes.
+    const dlg = $("dialog[data-export]", batchSlot);
+    const jobId = box.dataset.job;
+    const filterName = () => { const on = $(".fchip.on", batchSlot); return on && on.dataset.filter ? on.dataset.filter[0] + on.dataset.filter.slice(1).toLowerCase() : "All"; };
+    function exportUrl(scope, include, fmt) {
+      const p = new URLSearchParams();
+      const on = $(".fchip.on", batchSlot), q = (search && search.value.trim()) || "";
+      if (scope === "selected") p.set("ids", rows.filter((r) => r.querySelector("input[type=checkbox]").checked).map((r) => r.dataset.id).join(","));
+      else if (scope === "shown") { if (on && on.dataset.filter && !q) p.set("status", on.dataset.filter); else p.set("ids", visible().map((r) => r.dataset.id).join(",")); }
+      if (fmt === "reports") return `/batch/${jobId}/report?${p}`;
+      p.set("include", include.join(","));
+      return `/batch/${jobId}/export.csv?${p}`;
+    }
+    function openExport(scope) {
+      if (!dlg) { location.href = `/batch/${jobId}/export.csv`; return; }
+      const selected = rows.filter((r) => r.querySelector("input[type=checkbox]").checked).length;
+      $("[data-selected-count]", dlg).textContent = selected;
+      $("[data-shown-label]", dlg).textContent = filterName();
+      $("[data-shown-count]", dlg).textContent = visible().length;
+      const sel = $('input[name=scope][value=selected]', dlg); sel.disabled = !selected;
+      const want = $(`input[name=scope][value=${scope || (selected ? "selected" : "all")}]`, dlg);
+      if (want && !want.disabled) want.checked = true; else $('input[name=scope][value=all]', dlg).checked = true;
+      syncExport();
+      dlg.showModal();
+    }
+    function syncExport() {
+      if (!dlg) return;
+      $$(".opt", dlg).forEach((o) => o.classList.toggle("on", o.querySelector("input").checked));
+      const scope = $("input[name=scope]:checked", dlg).value, fmt = $("input[name=fmt]:checked", dlg).value;
+      const count = scope === "all" ? rows.length : scope === "shown" ? visible().length : rows.filter((r) => r.querySelector("input[type=checkbox]").checked).length;
+      const stamp = (box.dataset.date || new Date().toISOString().slice(0, 10));
+      const scopeName = scope === "all" ? "all" : scope === "selected" ? "selected" : filterName().toLowerCase();
+      $("[data-export-name]", dlg).textContent = `label-check_${box.dataset.slug || "batch"}_${scopeName}_${stamp}.${fmt === "reports" ? "html" : "csv"} · ${count} row${count === 1 ? "" : "s"}`;
+      $("[data-act=download]", dlg).textContent = fmt === "reports" ? "Open the reports" : "Download CSV";
+      $$(".ck input", dlg).forEach((c) => { c.disabled = fmt === "reports"; });
+    }
+    if (dlg) {
+      dlg.addEventListener("change", syncExport);
+      $$("[data-act=close]", dlg).forEach((b) => b.addEventListener("click", () => dlg.close()));
+      $("[data-export-form]", dlg).addEventListener("submit", (e) => {
+        e.preventDefault();
+        const scope = $("input[name=scope]:checked", dlg).value, fmt = $("input[name=fmt]:checked", dlg).value;
+        const include = $$(".ck input:checked", dlg).map((c) => c.value);
+        const url = exportUrl(scope, include, fmt);
+        const count = $("[data-export-name]", dlg).textContent.split("·")[1].trim();
+        if (fmt === "reports") window.open(url, "_blank", "noopener"); else location.href = url;
+        dlg.close();
+        toast(fmt === "reports" ? `Opened ${count} as printable reports` : `Exported ${count} as ${$("[data-export-name]", dlg).textContent.split("·")[0].trim()}`);
+      });
+      $$("[data-quick]", dlg).forEach((a) => a.addEventListener("click", () => { dlg.close(); toast(`Exported the labels marked ${a.dataset.quick}`); }));
+    }
+    $$("[data-act=export]", batchSlot).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); openExport(); }));
+    const reviewLink = $("[data-act=review]", batchSlot);
     const newBatch = $("[data-act=newbatch]", batchSlot);
     if (newBatch) newBatch.addEventListener("click", () => { showBatchEntry(true); batchForm.reset(); $$("[data-drop] b").forEach((b) => { b.textContent = b.closest("[data-drop]").dataset.drop === "csv" ? "Drop the CSV here, or choose a file" : "Drop the images or a zip here"; }); window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
 
@@ -518,6 +641,7 @@
       else if (k === "k" || k === "ArrowUp") { e.preventDefault(); move(-1); }
       else if (k === "x" && cur >= 0) { e.preventDefault(); const c = rows[cur].querySelector("input[type=checkbox]"); c.checked = !c.checked; syncBulk(); }
       else if (k === "Enter" && cur >= 0) { e.preventDefault(); openFull(rows[cur]); }
+      else if (k === "r" && reviewLink) { e.preventDefault(); location.href = reviewLink.href; }
       else if (k === "1") setFilter("REVIEW"); else if (k === "2") setFilter("FAIL"); else if (k === "3") setFilter("PASS"); else if (k === "4" && rows.some((r) => r.dataset.status === "ERROR")) setFilter("ERROR"); else if (k === "0") setFilter("");
       else if (k === "Escape" && cur >= 0) { setCursor(-1); if (detail) detail.hidden = true; }
     });

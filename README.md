@@ -113,8 +113,10 @@ Code map:
 | `app/readers/` | `base.py` (interface), `tesseract.py` (local OCR), `claude_vision.py` (cloud), `extract.py` (rules over OCR) |
 | `app/pipeline.py` | One label end to end with timings and the overall verdict |
 | `app/evidence.py` | What the result page shows as evidence: crops of the label, unit conversions, misread explanations |
+| `app/decisions.py` | The one question a label that needs a look asks the agent (review queue and single result) |
 | `app/batch.py` | CSV parsing, image/zip intake, thread-pool jobs, CSV export |
-| `app/main.py` + `templates/` + `static/` | FastAPI routes, server-rendered UI (no build step, no CDN) |
+| `app/main.py` + `templates/` + `static/` | FastAPI routes, server-rendered UI (no build step, no CDN, no external assets); `review.html` is the review queue, `report.html` the printable reports |
+| `design/` | The UI design spec: 23 boards, tokens, the implementation order |
 | `scripts/generate_labels.py` | Synthetic label generator (Pillow) |
 | `scripts/bench.py`, `scripts/stress_test.py` | Accuracy and timing on the synthetic sets; the same labels in other typefaces and degraded images |
 | `scripts/fetch_registry_labels.py`, `scripts/real_labels.py`, `scripts/real_labels.csv` | Real approved labels: download, ground truth, field-level scoring |
@@ -260,7 +262,40 @@ CSV export with every field's verdict, found text, note, the four warning result
 start a spreadsheet formula are prefixed with an apostrophe).
 
 Limits: 500 labels and 1 GB of images per batch, 20 MB and 40 megapixels per image, zip-bomb guards. Jobs live in
-memory; finished ones are kept for 24 hours (at most the 50 most recent) and disappear on restart.
+memory; finished ones are kept for 24 hours (at most the 50 most recent) and disappear on restart. A finished
+batch has a link of its own (`/batch/<id>`) that opens the page on the batch tab.
+
+### Reviewing and exporting
+
+- **Triage first.** The results table lists REVIEW rows first, then FAIL, ERROR and PASS; filters (`1` `2` `3`
+  `4` `0`), search, sort, `J`/`K` to move, `X` to select, `Enter` for the full comparison. A row whose image
+  could not be read is an ERROR (grey), never a FAIL: nothing is wrong with the label.
+- **Review queue** (`R`, or "Review the N"): one label that needs a look at a time, with the one thing to look at
+  outlined on the label and a single question: "Is this the same brand name?", "Does the label say 'should'?",
+  "Is GOVERNMENT WARNING: printed in bold?". `Y` means the label is fine (a reading error on our side), `N` that
+  the label is wrong, `S` skips; a decision moves on to the next. Decisions never change a verdict; they are
+  kept with the batch and go into the export as a `decision` column. The same prompts appear under a NEAR MATCH
+  row or a warning check in the single result and in the full comparison, and print with the report. The
+  queue works without JavaScript: the answers are forms.
+- **Export dialog**: which labels (all, shown now with the current filter and search, or the selected rows),
+  what to include (per-field verdicts and reasons, the warning checks and diff, decisions, all text read,
+  timings), and the format: CSV (UTF-8 with a BOM so Excel keeps accents) or printable reports, one page per
+  label for the case file with a reviewer decision block. Quick exports: passes only, fails only. The file is
+  named after the batch, the scope and the date.
+- **Print**: "Print report" on any result prints a Letter page: the application, the verdict, the label with
+  its numbered regions, the table, the warning checks, and a reviewer decision block (approve / return /
+  second look, signature, notes).
+
+### Error states
+
+Errors are inline, where the result would have been, and say what happened in one line and what to do in the
+next. Missing fields are checked in the browser before anything is sent, each input is marked and the
+summary links to it; without JavaScript the server returns the same page with the typed values kept. The drop
+zone itself becomes the error for a missing, unreadable or oversized image, with the file name quoted. A CSV
+with the wrong headers gets a table of expected header vs the near-miss header in the file. An image that
+opens but yields almost no text ("fewer than 8 confident words and nothing matched") gets a grey, verdict-free
+card with what usually fixes it, never a FAIL. The page works at 1280, 768 and 390 px without horizontal
+scrolling; on a phone the batch table becomes a list.
 
 ## Test data
 
@@ -321,6 +356,8 @@ pytest -q
 - `test_boxes.py`: highlight boxes for each field, including text read from a turned view mapped back onto the upright image
 - `test_formats.py`: JPG, TIFF, WEBP and BMP uploads and zips of them, single and batch
 - `test_multi_image.py`: several images per application, in the form and in batch rows
+- `test_errors.py`: every error state (missing fields with and without JavaScript, bad or oversized image, CSV headers, batch limits, reader failure with retry) and the unreadable-image card and ERROR row
+- `test_decisions.py`: review prompts, decisions kept with a batch, the review queue (with and without JavaScript), export scopes and column groups, printable reports, the shared batch link
 - `test_claude_reader.py`: the cloud reader's mapping, error handling, refusal fallbacks and client limits, with the SDK mocked
 
 OCR-dependent tests skip automatically when the Tesseract binary is absent. `.github/workflows/ci.yml` runs the whole

@@ -10,7 +10,9 @@ uvicorn app.main:app --reload --port 8000
 pytest -q
 ```
 
-Tesseract must be on PATH (or set `TESSERACT_CMD`). Templates: `app/templates/` (`base.html`, `index.html`, `partials/result.html`, `partials/batch_status.html`, `partials/error.html`). Styles: `app/static/style.css`. Behaviour: `app/static/app.js`. No build step, no framework, no external assets.
+Tesseract must be on PATH (or set `TESSERACT_CMD`). Templates: `app/templates/` (`base.html`, `index.html`, `review.html` (review queue), `report.html` (printable reports), `partials/result.html`, `partials/batch_status.html` (table, detail, export dialog), `partials/error.html`, `partials/decide.html`). Styles: `app/static/style.css` (tokens, components, phone layouts, print). Behaviour: `app/static/app.js`. No build step, no framework, no external assets. Static links carry a content stamp (`?v=`), so a browser never runs a stale script after a redeploy.
+
+Real-label testing: `scripts/real_labels.py` scores 20 approved labels from the public registry (images in the gitignored `data/real/`, fetched with `scripts/fetch_registry_labels.py`); `scripts/stress_test.py` renders the samples in other typefaces and degraded images. Numbers are in the README under "Measured results".
 
 ## UI redesign spec
 
