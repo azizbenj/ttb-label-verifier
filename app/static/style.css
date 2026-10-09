@@ -600,6 +600,7 @@ dialog.export::backdrop { background: rgba(28,31,36,.35); }
 .report-tools { display: flex; align-items: center; gap: 12px; padding: 14px 20px; flex-wrap: wrap; }
 .report-tools h2 { font-size: 18px; }
 .report-page { margin-bottom: 24px; }
+.report-page .appbar .acts, .report-page .banner .acts { display: none; }
 @media print {
   .report-tools { display: none !important; }
   .report-page { break-after: page; margin: 0; }
