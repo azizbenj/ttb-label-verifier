@@ -49,6 +49,8 @@ class FieldResult(BaseModel):
     verdict: Verdict
     score: int = 0
     note: str = ""
+    lines: list[int] | None = None   # OCR line range [first, last] the value was read from, when located
+    box: list[float] | None = None   # where it sits on the label: [left, top, width, height] in % of the image
 
 
 class DiffItem(BaseModel):
@@ -69,6 +71,7 @@ class WarningResult(BaseModel):
     heading_bold_note: str = ""
     bold_ratio: float | None = None
     overall: Status
+    box: list[float] | None = None   # where the statement sits on the label, in % of the image
 
 
 class Timings(BaseModel):
@@ -87,3 +90,4 @@ class VerificationResult(BaseModel):
     ocr_text: str = ""
     image_name: str = ""
     application_id: str = ""
+    read_confidence: float | None = None   # mean OCR word confidence (0-100), when the reader reports one

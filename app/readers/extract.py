@@ -5,9 +5,9 @@ from __future__ import annotations
 import statistics
 
 from ..matching import compare_alcohol, compare_country, compare_volume, locate_and_compare, not_found
-from ..models import Application, FieldResult
-from ..normalize import normalize_strict
-from .base import OCRResult
+from ..models import Application, FieldResult, Verdict
+from ..normalize import normalize_loose, normalize_strict
+from .base import OCRResult, OCRWord
 
 
 def line_heights(ocr: OCRResult) -> dict[int, float]:
@@ -66,3 +66,53 @@ def compare_from_fields(app: Application, fields: dict[str, str | None]) -> list
         text_field("bottler_name_address", app.bottler_name_address),
         compare_country(app.country_of_origin, (fields.get("country_of_origin") or "").splitlines()),
     ]
+
+
+# --- evidence boxes: where on the label each value was read ----------------------------------------
+def word_box(words: list[OCRWord], width: int, height: int) -> list[float] | None:
+    """Union of word boxes as [left, top, width, height] in percent of the image."""
+    if not words or width <= 0 or height <= 0:
+        return None
+    left, top = min(w.left for w in words), min(w.top for w in words)
+    right, bottom = max(w.right for w in words), max(w.bottom for w in words)
+    return [round(100 * left / width, 2), round(100 * top / height, 2),
+            round(100 * (right - left) / width, 2), round(100 * (bottom - top) / height, 2)]
+
+
+def words_for_text(ocr: OCRResult, text: str, line_range: tuple[int, int] | None = None) -> list[OCRWord]:
+    """The OCR words that spell ``text``: a contiguous run of words on the given lines (or on any
+    line, or across two consecutive lines) whose normalized tokens equal the text's tokens.
+    Falls back to every word on the given lines when the tokens cannot be aligned."""
+    want = [t for t in normalize_loose(text).split() if t]
+    if not want:
+        return []
+    ranges: list[tuple[int, int]]
+    if line_range is not None:
+        ranges = [line_range]
+    else:
+        n = len(ocr.lines)
+        ranges = [(i, i) for i in range(n)] + [(i, i + 1) for i in range(n - 1)]
+    for start, end in ranges:
+        cand = [w for w in ocr.words if start <= w.line_index <= end]
+        toks = [normalize_loose(w.text).split() for w in cand]
+        flat = [(t, i) for i, ts in enumerate(toks) for t in ts]
+        seq = [t for t, _ in flat]
+        for a in range(len(seq) - len(want) + 1):
+            if seq[a:a + len(want)] == want:
+                first, last = flat[a][1], flat[a + len(want) - 1][1]
+                return cand[first:last + 1]
+    if line_range is not None:
+        return [w for w in ocr.words if line_range[0] <= w.line_index <= line_range[1]]
+    return []
+
+
+def attach_boxes(ocr: OCRResult, fields: list[FieldResult]) -> None:
+    """Fill FieldResult.box for every value that was read somewhere on the label."""
+    if ocr.ink is None or not ocr.words:
+        return
+    height, width = ocr.ink.shape
+    for f in fields:
+        if not f.found or f.verdict in (Verdict.NOT_FOUND, Verdict.SKIPPED):
+            continue
+        rng = (f.lines[0], f.lines[1]) if f.lines else None
+        f.box = word_box(words_for_text(ocr, f.found, rng), width, height)

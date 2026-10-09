@@ -161,6 +161,7 @@ def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_fo
     if loc is None:
         return not_found(key, expected, fallback_found=fallback_found)
     result = compare_text(key, expected, loc.text, th=th)
+    result.lines = [loc.line_start, loc.line_end]
     if result.verdict != Verdict.MATCH or key not in th.whole_phrase_fields:
         return result
     context = normalize_strict(" ".join(lines[loc.line_start: loc.line_end + 1]))

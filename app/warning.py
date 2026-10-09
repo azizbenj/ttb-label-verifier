@@ -266,6 +266,15 @@ def check_warning(lines: list[str], words: list[OCRWord] | None = None, ink: np.
         overall = Status.REVIEW
     else:
         overall = Status.PASS
+    box = None
+    if words is not None and ink is not None:
+        span_words = [w for w in words if span.start <= w.line_index <= span.end]
+        if span_words:
+            h, w_ = ink.shape
+            left, top = min(w.left for w in span_words), min(w.top for w in span_words)
+            right, bottom = max(w.right for w in span_words), max(w.bottom for w in span_words)
+            box = [round(100 * left / w_, 2), round(100 * top / h, 2),
+                   round(100 * (right - left) / w_, 2), round(100 * (bottom - top) / h, 2)]
     return WarningResult(present=True, found_text=found_text, wording=wording, wording_score=score,
                          wording_note=wording_note, diff=diff, heading_caps=caps, heading_caps_note=caps_note,
-                         heading_bold=bold, heading_bold_note=bold_note, bold_ratio=ratio, overall=overall)
+                         heading_bold=bold, heading_bold_note=bold_note, bold_ratio=ratio, overall=overall, box=box)

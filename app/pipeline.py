@@ -9,7 +9,7 @@ from PIL import Image
 from .config import FIELD_BY_KEY
 from .models import Application, FieldResult, Status, Timings, VerificationResult, Verdict, WarningResult
 from .readers.base import LabelReader
-from .readers.extract import compare_from_fields, extract_and_compare
+from .readers.extract import attach_boxes, compare_from_fields, extract_and_compare
 from .warning import check_warning
 
 
@@ -49,6 +49,7 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
         fields = compare_from_fields(app, reading.fields)
     else:
         fields = extract_and_compare(app, ocr)
+        attach_boxes(ocr, fields)
     hint = reading.warning_hint
     warning = check_warning(ocr.lines, ocr.words, ocr.ink, bold_hint=hint.heading_bold if hint else None)
     status = overall_status(fields, warning)
@@ -58,4 +59,5 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
         timings=Timings(read_ms=round((t_read - t0) * 1000, 1), match_ms=round((t_end - t_read) * 1000, 1),
                         total_ms=round((t_end - t0) * 1000, 1)),
         reader=ocr.engine or reader.name, ocr_text=ocr.text, image_name=image_name, application_id=app.application_id,
+        read_confidence=round(ocr.mean_conf, 1) if ocr.mean_conf is not None else None,
     )
