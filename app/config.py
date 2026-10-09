@@ -48,6 +48,12 @@ class Thresholds:
     # Text fields: rapidfuzz similarity (0-100) after normalization.
     near_match: int = 88          # >= this and not identical  -> NEAR MATCH (agent decides)
     find_floor: int = 60          # best window on the label scores below this -> NOT FOUND
+    locate_max_lines: int = 3     # a value may wrap over up to this many OCR lines (addresses, long class names)
+    # Fields whose value must be the whole phrase on the label: "Rum" inside "SPICED RUM" is a NEAR MATCH.
+    whole_phrase_fields: tuple[str, ...] = ("brand_name", "class_type")
+    # A brand found only in text smaller than this fraction of the label's largest text (e.g. inside
+    # "Bottled by ...") is a NEAR MATCH: the brand on the label may be a different one.
+    brand_small_print_ratio: float = 0.5
     # Numeric fields.
     abv_tolerance: float = 0.05   # percentage points of alcohol by volume
     volume_tolerance_ml: float = 0.5

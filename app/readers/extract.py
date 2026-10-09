@@ -9,16 +9,19 @@ from ..models import Application, FieldResult
 from .base import OCRResult
 
 
-def prominent_line_index(ocr: OCRResult) -> int | None:
-    """Index of the line printed in the largest type: on a label, almost always the brand name."""
+def line_heights(ocr: OCRResult) -> dict[int, float]:
+    """Median height of the real words (2+ characters, with letters) on each OCR line."""
     by_line: dict[int, list[int]] = {}
     for w in ocr.words:
-        if len(w.text) >= 2 and any(ch.isalpha() for ch in w.text):
+        if len(w.text) >= 2 and any(ch.isalpha() for ch in w.text) and 0 <= w.line_index < len(ocr.lines):
             by_line.setdefault(w.line_index, []).append(w.height)
-    if not by_line:
-        return None
-    best = max(by_line, key=lambda i: statistics.median(by_line[i]))
-    return best if best < len(ocr.lines) else None
+    return {i: float(statistics.median(hs)) for i, hs in by_line.items()}
+
+
+def prominent_line_index(ocr: OCRResult, heights: dict[int, float] | None = None) -> int | None:
+    """Index of the line printed in the largest type: on a label, almost always the brand name."""
+    heights = line_heights(ocr) if heights is None else heights
+    return max(heights, key=heights.__getitem__) if heights else None
 
 
 def prominent_line(ocr: OCRResult) -> str | None:
@@ -28,10 +31,11 @@ def prominent_line(ocr: OCRResult) -> str | None:
 
 def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
     lines, text = ocr.lines, ocr.text
-    brand_line = prominent_line_index(ocr)
+    heights = line_heights(ocr)
+    brand_line = prominent_line_index(ocr, heights)
     return [
-        locate_and_compare("brand_name", app.brand_name, lines, fallback_found=prominent_line(ocr),
-                           preferred_line=brand_line),
+        locate_and_compare("brand_name", app.brand_name, lines, preferred_line=brand_line, line_heights=heights,
+                           fallback_found=lines[brand_line] if brand_line is not None else None),
         locate_and_compare("class_type", app.class_type, lines),
         compare_alcohol(app.alcohol_content, text),
         compare_volume(app.net_contents, text),

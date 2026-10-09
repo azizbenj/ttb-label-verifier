@@ -20,28 +20,42 @@ from .models import FieldResult, Verdict
 from .normalize import normalize_loose, normalize_strict, parse_alcohol, parse_net_contents
 
 _EDGE_PUNCT = " ,.;:-|'\"()[]"
+_SEPARATORS = set(",;:|/·•-()[].")  # punctuation that ends a phrase on a label line ("RUM · AGED 4 YEARS")
 
 
 @dataclass(frozen=True)
 class Located:
-    text: str        # the span of label text that best matches, original case kept
-    score: int       # similarity (0-100) between that span and the expected value
-    line_start: int  # first OCR line index used
-    line_end: int    # last OCR line index used (inclusive)
+    text: str          # the span of label text that best matches, original case kept
+    score: int         # similarity (0-100) between that span and the expected value
+    line_start: int    # OCR line holding the span's first word
+    line_end: int      # OCR line holding the span's last word (inclusive)
+    joined: bool = False  # the span runs straight into other words on its line ("SPICED RUM" for "Rum")
 
 
-def locate_text(expected: str, lines: list[str], *, max_window: int = 3,
+def _is_word(token: str) -> bool:
+    return sum(ch.isalpha() for ch in token) >= 2
+
+
+def _joined(before: list[str], span: list[str], after: list[str]) -> bool:
+    """Is the span part of a longer phrase on its line, with no punctuation in between?"""
+    left = bool(before) and _is_word(before[-1]) and before[-1][-1] not in _SEPARATORS and span[0][0] not in _SEPARATORS
+    right = bool(after) and _is_word(after[0]) and span[-1][-1] not in _SEPARATORS and after[0][0] not in _SEPARATORS
+    return left or right
+
+
+def locate_text(expected: str, lines: list[str], *, max_window: int | None = None,
                 floor: int | None = None, preferred_line: int | None = None,
                 th: Thresholds = THRESHOLDS) -> Located | None:
     """Find the span of consecutive label words that best matches ``expected``.
 
-    Windows of up to ``max_window`` consecutive OCR lines are joined so that values
-    wrapped over several lines (addresses, long class/type names) are still found.
-    Returns None when nothing on the label scores at least ``floor``.
-    Ties between equally good spans go to the one on ``preferred_line`` (the most
-    prominent line, for the brand name), then to the one that also matches case.
+    Spans may run over up to ``max_window`` consecutive OCR lines so that values wrapped over
+    several lines (addresses, long class/type names) are still found. Returns None when nothing
+    on the label scores at least ``floor``. Ties between equally good spans go to the one on
+    ``preferred_line`` (the most prominent line, for the brand name), then to the one that also
+    matches case.
     """
     floor = th.find_floor if floor is None else floor
+    max_window = th.locate_max_lines if max_window is None else max_window
     exp_loose = normalize_loose(expected)
     if not exp_loose or not lines:
         return None
@@ -54,24 +68,22 @@ def locate_text(expected: str, lines: list[str], *, max_window: int = 3,
 
     best: Located | None = None
     best_rank: tuple = ()
-    for i in range(len(lines)):
+    for i, first_line in enumerate(raw_tokens):
+        # Spans start on line i and end on line j; spans starting later are found when i gets there.
         raw: list[str] = []
         loose: list[str] = []
-        for w in range(max_window):
-            j = i + w
-            if j >= len(lines):
-                break
-            last_line_start = len(raw)
+        for j in range(i, min(len(lines), i + max_window)):
+            ends_before = len(raw)
             raw.extend(raw_tokens[j])
             loose.extend(loose_tokens[j])
             if not raw_tokens[j]:
                 continue
-            for a in range(len(raw)):
+            for a in range(len(first_line)):
                 for span_len in range(min_len, max_len + 1):
                     b = a + span_len
                     if b > len(raw):
                         break
-                    if b <= last_line_start:   # already scored inside a smaller window
+                    if b <= ends_before:   # ends on an earlier line: scored with a shorter window
                         continue
                     cand = " ".join(t for t in loose[a:b] if t)
                     if not cand:
@@ -82,7 +94,10 @@ def locate_text(expected: str, lines: list[str], *, max_window: int = 3,
                     text = " ".join(raw[a:b]).strip(_EDGE_PUNCT)
                     rank = (score, preferred_line is not None and i == j == preferred_line, text == exp_strict)
                     if best is None or rank > best_rank:
-                        best, best_rank = Located(text=text, score=score, line_start=i, line_end=j), rank
+                        after = raw_tokens[j][b - ends_before:]
+                        best = Located(text=text, score=score, line_start=i, line_end=j,
+                                       joined=_joined(first_line[:a], raw[a:b], after))
+                        best_rank = rank
     if best is None or best.score < floor:
         return None
     return best
@@ -130,14 +145,37 @@ def compare_text(key: str, expected: str, found: str | None, *, th: Thresholds =
 
 
 def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_found: str | None = None,
-                       preferred_line: int | None = None, th: Thresholds = THRESHOLDS) -> FieldResult:
+                       preferred_line: int | None = None, line_heights: dict[int, float] | None = None,
+                       th: Thresholds = THRESHOLDS) -> FieldResult:
+    """Locate ``expected`` on the label and classify it.
+
+    A MATCH found inside a longer phrase ("Rum" in "SPICED RUM", "OLD TOM" in "OLD TOM DISTILLERY")
+    or, for the brand, only in small print ("Bottled by River Bend Brewing Co.") is downgraded to a
+    NEAR MATCH: the words are on the label, but the label may not say what the application says.
+    ``line_heights`` (median word height per OCR line) enables the small-print check.
+    """
     spec = _spec(key)
     if not expected.strip():
         return skipped(key) if not spec.required else not_found(key, expected, note="Required on the application.")
     loc = locate_text(expected, lines, preferred_line=preferred_line, th=th)
     if loc is None:
         return not_found(key, expected, fallback_found=fallback_found)
-    return compare_text(key, expected, loc.text, th=th)
+    result = compare_text(key, expected, loc.text, th=th)
+    if result.verdict != Verdict.MATCH or key not in th.whole_phrase_fields:
+        return result
+    context = normalize_strict(" ".join(lines[loc.line_start: loc.line_end + 1]))
+    if loc.joined:
+        return result.model_copy(update={
+            "verdict": Verdict.NEAR_MATCH, "found": context,
+            "note": f"The application value is only part of what the label says ('{context}'). Please confirm."})
+    if key == "brand_name" and line_heights:
+        span_h = max((line_heights.get(i, 0.0) for i in range(loc.line_start, loc.line_end + 1)), default=0.0)
+        if span_h and span_h < th.brand_small_print_ratio * max(line_heights.values()):
+            biggest = f" The largest text on the label reads '{fallback_found}'." if fallback_found else ""
+            return result.model_copy(update={
+                "verdict": Verdict.NEAR_MATCH, "found": context,
+                "note": f"Found only in small print ('{context}'), not as the brand on the label.{biggest} Please confirm."})
+    return result
 
 
 def compare_alcohol(expected: str, label_text: str, *, th: Thresholds = THRESHOLDS) -> FieldResult:

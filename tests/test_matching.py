@@ -207,3 +207,44 @@ def test_locate_prefers_prominent_line_over_case_exact_mention():
 def test_mangled_litre_volume_asks_for_confirmation():
     r = compare_volume("1.5 L", "ALC. 15% BY VOL. LSL")
     assert r.verdict == Verdict.NEAR_MATCH and r.found == "15 L"
+
+
+# --- the application value must be the whole phrase on the label --------------------------------
+def test_value_inside_a_longer_phrase_is_never_a_silent_match():
+    for key, app, line in [("class_type", "Rum", "SPICED RUM"), ("class_type", "Vodka", "GRAPEFRUIT FLAVORED VODKA"),
+                           ("class_type", "Bourbon Whiskey", "STRAIGHT BOURBON WHISKEY"),
+                           ("brand_name", "OLD TOM", "OLD TOM DISTILLERY")]:
+        r = locate_and_compare(key, app, ["45% ALC./VOL.", line, "750 mL"])
+        assert r.verdict == Verdict.NEAR_MATCH and r.found == line, (app, line, r)
+
+
+def test_phrase_ending_at_punctuation_or_line_break_still_matches():
+    assert locate_and_compare("class_type", "Silver Rum", ["SILVER RUM · AGED 2 YEARS"]).verdict == Verdict.MATCH
+    assert locate_and_compare("class_type", "Kentucky Straight Bourbon Whiskey", LINES).verdict == Verdict.MATCH
+    # The bottler statement is expected to carry a prefix ("Distilled and bottled by ...").
+    r = locate_and_compare("bottler_name_address", "Old Tom Distillery, Bardstown, KY",
+                           ["Bottled by Old Tom Distillery, Bardstown, KY"])
+    assert r.verdict == Verdict.MATCH
+
+
+def test_located_span_reports_its_own_lines():
+    loc = locate_text("Product of Scotland", ["GLEN MORAR", "Single Malt Scotch Whisky", "Product of Scotland"])
+    assert (loc.line_start, loc.line_end) == (2, 2)
+
+
+def test_brand_found_only_in_small_print_needs_review():
+    from app.models import Application
+    from app.readers.base import OCRResult, OCRWord
+    from app.readers.extract import extract_and_compare
+
+    rows = [("HAZY DAZE", 90), ("India Pale Ale", 50), ("6.8% ALC./VOL. 12 FL. OZ.", 40), ("Brewed and Bottled by", 30),
+            ("River Bend Brewing Co., Portland, OR 97209", 30)]
+    words = [OCRWord(text=t, left=0, top=0, width=10, height=h, conf=90, line_index=i)
+             for i, (line, h) in enumerate(rows) for t in line.split()]
+    ocr = OCRResult(text="\n".join(r[0] for r in rows), lines=[r[0] for r in rows], words=words)
+    app = Application(brand_name="River Bend Brewing Co.", class_type="India Pale Ale", alcohol_content="6.8%",
+                      net_contents="12 fl oz")
+    brand = extract_and_compare(app, ocr)[0]
+    assert brand.verdict == Verdict.NEAR_MATCH and "small print" in brand.note and "HAZY DAZE" in brand.note
+    app = app.model_copy(update={"brand_name": "HAZY DAZE"})
+    assert extract_and_compare(app, ocr)[0].verdict == Verdict.MATCH
