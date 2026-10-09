@@ -403,8 +403,7 @@ Throughput: the 250-label sample batch completes in about 90 s through the UI wi
 label of wall-clock time.
 
 **After the code review (October 2026), measured locally** (Tesseract 5.5.3, 11-core Mac, `scripts/bench.py`, one
-label at a time; the Railway figures above are from the build before the review and should be re-measured with
-`--url` after the next deploy):
+label at a time; the Railway figures for the current build are in the next table):
 
 | Set | Expected verdict | Planted defects reported as PASS | Median | p95 |
 |---|---|---|---|---|
@@ -418,6 +417,19 @@ warning heading, image intake) change no verdict on these two sets: their labels
 wrong, which is why each fix comes with its own tests. The speed-up comes from running Tesseract with one OpenMP
 thread per process (`OMP_THREAD_LIMIT=1`); with four batch workers the 250-label batch takes 44 s instead of 157 s
 on the same machine.
+
+**On Railway after the latest deploy (9 October 2026, `scripts/bench.py --url ...`, one label at a time, so the
+figures include HTTP overhead and the extra turned and contrast passes where they run):**
+
+| Set | Expected verdict | Planted defects reported as PASS | Median | p95 | Max |
+|---|---|---|---|---|---|
+| Samples (15) | 15/15 | 0 | 1.00 s | 1.13 s | 1.13 s |
+| Batch (250) | 242/250 | 0 | 0.45 s | 1.08 s | 1.27 s |
+
+All eight batch misses are conservative: a clean label asked for a look (a litre volume read without its decimal
+point, or a brand matched in title case). Compared with the 0.81 s median measured on Railway before the code
+review, the per-label time halved with `OMP_THREAD_LIMIT=1` (one OpenMP thread per Tesseract process), so that
+setting stays; the slowest label, 1.27 s, is one that needed the extra passes.
 
 **Real approved labels (October 2026, local, `scripts/real_labels.py --defects`).** The 20 labels carry 104 filled
 application fields:
