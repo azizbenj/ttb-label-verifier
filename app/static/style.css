@@ -354,7 +354,7 @@ table.batch-table tr.detail td { white-space: normal; background: var(--surface-
   table.fields td[data-th="Result"] > .why { grid-column: 1 / -1; grid-row: 4; }
   table.fields tr.rv { background: var(--row-review); } table.fields tr.bad { background: var(--row-fail); } table.fields tr.on { background: var(--action-tint); }
   .ev { padding: 10px 12px; gap: 10px; } .ev .crop { width: 100%; }
-  .chk { grid-template-columns: 1fr; gap: 4px; }
+  .chk { grid-template-columns: 1fr; gap: 4px; } .chk .body, .chk .t { grid-column: auto; }   /* undo the 1000 px placement */
   .wsec .head { flex-wrap: wrap; } .wsec .cite { flex-basis: 100%; }
   .unread-body { padding: 12px 14px; }
 }
