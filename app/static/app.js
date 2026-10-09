@@ -28,11 +28,16 @@
       next.focus();
     });
   });
-  try {
-    const saved = localStorage.getItem("labelcheck.tab");
-    const tab = saved && $(`.modes .tab[data-tab="${saved}"]`);
-    if (tab) selectTab(tab, false);
-  } catch (e) { /* ignore */ }
+  // The remembered tab, unless the server asked for one (a shared batch link opens on the batch tab).
+  const asked = $(".modes[data-open-tab]");
+  if (asked) { const tab = $(`.modes .tab[data-tab="${asked.dataset.openTab}"]`); if (tab) selectTab(tab, false); }
+  else {
+    try {
+      const saved = localStorage.getItem("labelcheck.tab");
+      const tab = saved && $(`.modes .tab[data-tab="${saved}"]`);
+      if (tab) selectTab(tab, false);
+    } catch (e) { /* ignore */ }
+  }
 
   // --- help drawer ----------------------------------------------------------------------------------
   const helpBtn = $("#help-btn"), drawer = $("#help-drawer"), scrim = $("#help-scrim");
@@ -574,8 +579,6 @@
     }
     const all = $(".select-all", batchSlot);
     if (all) all.addEventListener("change", () => { visible().forEach((r) => { r.querySelector("input[type=checkbox]").checked = all.checked; }); syncBulk(); });
-    const exportSel = $("[data-act=export-selected]", batchSlot);
-    if (exportSel && dlg) exportSel.addEventListener("click", (e) => { e.preventDefault(); openExport("selected"); });
     if (bulkbar) bulkbar.querySelector("[data-act=clear]").addEventListener("click", () => { rows.forEach((r) => { r.querySelector("input[type=checkbox]").checked = false; }); if (all) all.checked = false; syncBulk(); });
     // Export dialog (Batch-Export board): scope, include, format; quick exports; a toast when it goes.
     const dlg = $("dialog[data-export]", batchSlot);
@@ -629,6 +632,8 @@
       $$("[data-quick]", dlg).forEach((a) => a.addEventListener("click", () => { dlg.close(); toast(`Exported the labels marked ${a.dataset.quick}`); }));
     }
     $$("[data-act=export]", batchSlot).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); openExport(); }));
+    const exportSel = $("[data-act=export-selected]", batchSlot);
+    if (exportSel && dlg) exportSel.addEventListener("click", (e) => { e.preventDefault(); openExport("selected"); });
     const reviewLink = $("[data-act=review]", batchSlot);
     const newBatch = $("[data-act=newbatch]", batchSlot);
     if (newBatch) newBatch.addEventListener("click", () => { showBatchEntry(true); batchForm.reset(); $$("[data-drop] b").forEach((b) => { b.textContent = b.closest("[data-drop]").dataset.drop === "csv" ? "Drop the CSV here, or choose a file" : "Drop the images or a zip here"; }); window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
@@ -666,6 +671,8 @@
     }
     wireBatch();
   }
+  // A batch card the server rendered into the page (a shared /batch/<id> link): wire it like one just fetched.
+  if (batchSlot && batchSlot.querySelector("[data-job]")) wireBatch();
   if (batchForm) {
     batchForm.addEventListener("submit", (e) => { e.preventDefault(); startBatch(new FormData(batchForm), batchForm.querySelector('button[type="submit"]')); });
     const sampleBtn = $("#sample-batch");

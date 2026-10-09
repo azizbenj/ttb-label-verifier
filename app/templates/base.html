@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>{% block title %}Label Check{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css?v={{ static_version }}">
+<link rel="stylesheet" href="/static/style.css?v={{ static_version() }}">
 </head>
 <body>
 <div class="strip"><div class="wrap">
@@ -23,6 +23,6 @@
 <main class="wrap page">{% block content %}{% endblock %}</main>
 <footer class="wrap page-foot">Prototype · Mandatory label information under 27 CFR parts 4, 5 and 7; health warning statement under 27 CFR part 16 · Uploads are processed in memory and not stored · <a href="/healthz">service status</a></footer>
 {% block drawer %}{% endblock %}
-<script src="/static/app.js?v={{ static_version }}"></script>
+<script src="/static/app.js?v={{ static_version() }}"></script>
 </body>
 </html>

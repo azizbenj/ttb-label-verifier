@@ -41,17 +41,15 @@ app = FastAPI(title="Label Check", docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 
 
-def _static_version() -> str:
-    """Changes whenever a static file changes, so a browser never keeps a stale script after a redeploy."""
+def static_version() -> str:
+    """Changes whenever a static file changes, so a browser never keeps a stale script after a redeploy
+    (or after an edit while developing). Two stat calls per page: cheap enough to do on every render."""
     import hashlib
     h = hashlib.sha1()
     for f in sorted((APP_DIR / "static").glob("*")):
         if f.is_file():
             h.update(f.name.encode()); h.update(str(f.stat().st_mtime_ns).encode())
     return h.hexdigest()[:10]
-
-
-STATIC_VERSION = _static_version()
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
 # Verdict and status -> design token class (pass / review / fail / none). NOT FOUND shares FAIL colours.
@@ -107,7 +105,7 @@ templates.env.filters["short"] = lambda v: _SHORT.get(v, str(v))
 templates.env.filters["headline"] = lambda v: _HEADLINE.get(v, "")
 templates.env.filters["seconds"] = lambda ms: f"{(ms or 0) / 1000:.1f} s"
 templates.env.globals.update(icon=icon, chip=chip, evidence_for=evidence_for, pin_labels=pin_labels,
-                             static_version=STATIC_VERSION, crop_for=crop_for, now_text=lambda: datetime.now().strftime("%-d %b %Y, %H:%M"),
+                             static_version=static_version, crop_for=crop_for, now_text=lambda: datetime.now().strftime("%-d %b %Y, %H:%M"),
                              bold_meter_percent=bold_meter_percent, thresholds=THRESHOLDS)
 
 
