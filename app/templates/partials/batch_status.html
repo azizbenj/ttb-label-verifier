@@ -169,5 +169,5 @@
   </form>
 </dialog>
 {% endif %}
-<div class="overlay" data-overlay hidden><div class="overlay-card card"><div class="overlay-head"><strong data-overlay-title>Full comparison</strong><button class="btn icon close" type="button" data-act="close" aria-label="Close">{{ icon('cross', 18) }}</button></div><div class="overlay-body" data-overlay-body></div></div></div>
+<div class="overlay" data-overlay hidden><div class="overlay-card card" role="dialog" aria-modal="true" aria-labelledby="overlay-title-{{ job.id }}"><div class="overlay-head"><strong data-overlay-title id="overlay-title-{{ job.id }}">Full comparison</strong><button class="btn icon close" type="button" data-act="close" aria-label="Close">{{ icon('cross', 18) }}</button></div><div class="overlay-body" data-overlay-body></div></div></div>
 </div>

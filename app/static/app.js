@@ -39,17 +39,23 @@
     } catch (e) { /* ignore */ }
   }
 
+  // --- modal layers: the page behind a drawer or overlay is inert, so focus and screen readers stay in it
+  const PAGE = ".strip, header.masthead, main, footer.page-foot";
+  function setPageInert(on) { $$(PAGE).forEach((el) => { el.inert = on; }); }
+
   // --- help drawer ----------------------------------------------------------------------------------
   const helpBtn = $("#help-btn"), drawer = $("#help-drawer"), scrim = $("#help-scrim");
   let lastFocus = null;
   function openHelp() {
     lastFocus = document.activeElement;
     drawer.hidden = false; scrim.hidden = false;
+    setPageInert(true);
     helpBtn.setAttribute("aria-expanded", "true");
     $("#help-close").focus();
   }
   function closeHelp() {
     drawer.hidden = true; scrim.hidden = true;
+    setPageInert(false);
     helpBtn.setAttribute("aria-expanded", "false");
     if (lastFocus) lastFocus.focus();
   }
@@ -461,6 +467,7 @@
     }
     if (box.dataset.wired) return;
     box.dataset.wired = "1";
+    $$("body > [data-overlay]").forEach((o) => { if (!batchSlot.contains(o)) o.remove(); });   // a previous batch's
     focusCard(batchSlot);
 
     const rows = $$("tr.r", batchSlot);
@@ -544,7 +551,10 @@
     }
     async function openFull(r) {
       if (!overlay || !r) return;
+      // Out of <main> so that the page behind can be made inert while the overlay is open.
+      if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
       overlay.hidden = false;
+      setPageInert(true);
       overlay.querySelector("[data-overlay-title]").textContent = `${r.dataset.id} · ${r.dataset.brand}`;
       const body = overlay.querySelector("[data-overlay-body]");
       body.innerHTML = '<p class="muted">Loading…</p>';
@@ -555,7 +565,9 @@
       } catch (err) { body.innerHTML = errorCard("Could not load this result.", "Please try again."); }
       overlay.querySelector("[data-act=close]").focus();
     }
-    function closeFull() { if (overlay && !overlay.hidden) { overlay.hidden = true; if (cur >= 0) rows[cur].focus(); } }
+    function closeFull() {
+      if (overlay && !overlay.hidden) { overlay.hidden = true; setPageInert(false); if (cur >= 0) rows[cur].focus(); }
+    }
 
     rows.forEach((r, i) => {
       r.addEventListener("click", (e) => {

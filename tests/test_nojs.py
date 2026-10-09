@@ -53,6 +53,7 @@ def test_a_batch_posted_without_a_script_gets_its_own_page_that_reloads_until_do
         time.sleep(0.1)
         page = client.get(r.headers["location"]).text
     assert 'http-equiv="refresh"' not in page
+    assert 'role="dialog" aria-modal="true"' in page          # the full-comparison overlay is a modal dialog
     link = re.search(r'<a class="rowlink" href="(/batch/[a-f0-9]+/item/\d+)"', page).group(1)
     item = client.get(link).text
     assert item.lstrip().lower().startswith("<!doctype html") and "Back to the results table" in item
