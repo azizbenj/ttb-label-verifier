@@ -351,10 +351,15 @@ def check_warning(lines: list[str], words: list[OCRWord] | None = None, ink: np.
                              heading_bold=Status.FAIL, heading_bold_note="Not found.", overall=Status.FAIL)
     found_text = "\n".join(span.texts) if span.texts else "\n".join(lines[i] for i in span.line_ids)
     wording, score, wording_note, diff = check_wording(found_text, th=th)
-    if span.beside and wording == Status.PASS:
-        wording = Status.REVIEW
-        wording_note = (f"Wording matches, but text printed beside the statement was left out ('{span.beside}'). "
-                        "Please check it is not part of the warning.")
+    if span.beside:
+        # Words set aside as a neighbouring column are always quoted to the agent: they may instead be
+        # words added to the statement, which the regulation does not allow.
+        aside = (f"text printed beside the statement was left out ('{span.beside}'). "
+                 "Please check it is not part of the warning.")
+        if wording == Status.PASS:
+            wording, wording_note = Status.REVIEW, "Wording matches, but " + aside
+        else:
+            wording_note += " Also, " + aside
     heading_text = lines[span.heading_line] if span.heading_line is not None else lines[span.line_ids[0]]
     caps, caps_note = check_heading_caps(heading_text)
     in_span = set(span.line_ids)

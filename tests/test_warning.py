@@ -183,3 +183,15 @@ def test_a_clearly_read_wrong_heading_word_fails():
 def test_a_heading_cut_at_the_image_edge_is_a_misread_not_a_wrong_word():
     # A real light-on-purple can: OCR lost "GOV" at the edge and read N as M.
     assert check_heading_caps("ERNMENT WARMING: (1) ACCORDING TO THE SURGEON")[0] == Status.REVIEW
+
+
+def test_words_left_out_as_beside_text_are_always_quoted():
+    words = MANDATED_WARNING.split()
+    lines = [" ".join(words[0:10]), " ".join(words[10:20]), " ".join(words[20:30]),
+             " ".join(words[30:]) + " ENJOY OUR BEER RESPONSIBLY WITH FRIENDS"]
+    r = check_warning(lines, bold_hint=True)
+    assert r.wording == Status.REVIEW and "ENJOY OUR BEER RESPONSIBLY WITH FRIENDS" in r.wording_note
+    # With a reading difference elsewhere as well, the left-out words are still named.
+    lines[1] = lines[1].replace("drink", "drlnk")
+    r = check_warning(lines, bold_hint=True)
+    assert r.wording != Status.PASS and "ENJOY OUR BEER RESPONSIBLY WITH FRIENDS" in r.wording_note
