@@ -19,6 +19,20 @@ def line_heights(ocr: OCRResult) -> dict[int, float]:
     return {i: float(statistics.median(hs)) for i, hs in by_line.items()}
 
 
+def line_boxes(ocr: OCRResult) -> dict[int, tuple[float, float, float, float]]:
+    """Each OCR line's box (left, top, width, height) on the upright image, whatever view it was read in."""
+    by_line: dict[int, list[tuple[int, int, int, int]]] = {}
+    for w in ocr.words:
+        if 0 <= w.line_index < len(ocr.lines):
+            by_line.setdefault(w.line_index, []).append(upright_box(w, ocr.views))
+    out = {}
+    for i, bs in by_line.items():
+        left, top = min(b[0] for b in bs), min(b[1] for b in bs)
+        out[i] = (float(left), float(top), float(max(b[0] + b[2] for b in bs) - left),
+                  float(max(b[1] + b[3] for b in bs) - top))
+    return out
+
+
 def prominent_line_index(ocr: OCRResult, heights: dict[int, float] | None = None) -> int | None:
     """Index of the line printed in the largest type: on a label, almost always the brand name."""
     heights = line_heights(ocr) if heights is None else heights
@@ -33,14 +47,15 @@ def prominent_line(ocr: OCRResult) -> str | None:
 def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
     lines, text = ocr.lines, ocr.text
     heights = line_heights(ocr)
+    boxes = line_boxes(ocr)
     brand_line = prominent_line_index(ocr, heights)
     return [
         locate_and_compare("brand_name", app.brand_name, lines, preferred_line=brand_line, line_heights=heights,
-                           fallback_found=lines[brand_line] if brand_line is not None else None),
-        locate_and_compare("class_type", app.class_type, lines),
+                           line_boxes=boxes, fallback_found=lines[brand_line] if brand_line is not None else None),
+        locate_and_compare("class_type", app.class_type, lines, line_boxes=boxes),
         compare_alcohol(app.alcohol_content, text),
         compare_volume(app.net_contents, text),
-        locate_and_compare("bottler_name_address", app.bottler_name_address, lines),
+        locate_and_compare("bottler_name_address", app.bottler_name_address, lines, line_boxes=boxes),
         compare_country(app.country_of_origin, lines),
     ]
 

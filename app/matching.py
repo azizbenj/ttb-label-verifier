@@ -196,8 +196,57 @@ def compare_text(key: str, expected: str, found: str | None, *, th: Thresholds =
                        score=score, note=f"Does not match the application ({score}% alike).")
 
 
+def _overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    """Intersection over the smaller box's area: 1.0 when one box sits inside the other."""
+    ix = max(0.0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+    smaller = min(a[2] * a[3], b[2] * b[3])
+    return ix * iy / smaller if smaller > 0 else 0.0
+
+
+_OCR_CONFUSIONS = (("rn", "m"), ("cl", "d"), ("vv", "w"), ("0", "o"), ("1", "l"), ("|", "l"), ("i", "l"),
+                   ("5", "s"), ("8", "b"))
+
+
+def _ocr_fold(s: str) -> str:
+    """Collapse the letter shapes OCR confuses, so 'Bam' and 'Barn' fold to the same text."""
+    s = _despaced(normalize_loose(s))
+    for a, b in _OCR_CONFUSIONS:
+        s = s.replace(a, b)
+    return s
+
+
+def conflicting_reading(expected: str, lines: list[str], loc: Located,
+                        line_boxes: dict[int, tuple[float, float, float, float]], th: Thresholds = THRESHOLDS) -> str | None:
+    """Another reading of the same place on the label that says something else.
+
+    The label is read several times (two page-segmentation passes, and turned or contrast views when
+    something is missing), and the matcher takes the reading that agrees best with the application.
+    When another reading of the same region disagrees, the agreeing one may itself be the misread
+    ("BARK BREW" printed, one pass reading "BARN BREW"), so the match must not be silent."""
+    span = [line_boxes[i] for i in range(loc.line_start, loc.line_end + 1) if i in line_boxes]
+    if not span:
+        return None
+    left, top = min(b[0] for b in span), min(b[1] for b in span)
+    box = (left, top, max(b[0] + b[2] for b in span) - left, max(b[1] + b[3] for b in span) - top)
+    want = _ocr_fold(expected)
+    for i, other in line_boxes.items():
+        if loc.line_start <= i <= loc.line_end or _overlap(box, other) < 0.6:
+            continue
+        alt = locate_text(expected, [lines[i]], max_window=1, floor=th.conflict_floor, th=th)
+        if alt is None:
+            continue
+        got = _ocr_fold(alt.text)
+        # Not evidence of a different spelling: the usual letter confusions ("Bam" for "Barn") and a
+        # reading cut short ("IRISH WHISKE"). A different letter ("BARK" for "BARN") is.
+        if got and got != want and got not in want:
+            return alt.text
+    return None
+
+
 def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_found: str | None = None,
                        preferred_line: int | None = None, line_heights: dict[int, float] | None = None,
+                       line_boxes: dict[int, tuple[float, float, float, float]] | None = None,
                        th: Thresholds = THRESHOLDS) -> FieldResult:
     """Locate ``expected`` on the label and classify it.
 
@@ -214,6 +263,13 @@ def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_fo
         return not_found(key, expected, fallback_found=fallback_found)
     result = compare_text(key, expected, loc.text, th=th)
     result.lines = [loc.line_start, loc.line_end]
+    if result.verdict == Verdict.MATCH and line_boxes:
+        alt = conflicting_reading(expected, lines, loc, line_boxes, th)
+        if alt is not None:
+            return result.model_copy(update={
+                "verdict": Verdict.NEAR_MATCH, "score": 90,
+                "note": f"Read as '{loc.text}', but another reading of the same place says '{alt}'. "
+                        "One of them is a reading error. Please confirm."})
     if result.verdict != Verdict.MATCH or key not in th.whole_phrase_fields:
         return result
     context = normalize_strict(" ".join(lines[loc.line_start: loc.line_end + 1]))

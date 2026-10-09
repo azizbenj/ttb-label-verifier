@@ -54,6 +54,9 @@ class Thresholds:
     # A brand found only in text smaller than this fraction of the label's largest text (e.g. inside
     # "Bottled by ...") is a NEAR MATCH: the brand on the label may be a different one.
     brand_small_print_ratio: float = 0.5
+    # Another reading of the same place (a second OCR pass or view) at least this similar to the
+    # application value but not equal to it turns a MATCH into a NEAR MATCH: the readings disagree.
+    conflict_floor: int = 70
     # Numeric fields.
     abv_tolerance: float = 0.05   # percentage points of alcohol by volume
     proof_tolerance: float = 0.5  # proof degrees: a label's proof may be rounded to a whole number (46.3% -> 93)

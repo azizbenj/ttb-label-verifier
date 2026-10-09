@@ -327,3 +327,32 @@ def test_a_second_reading_that_disagrees_is_shown_not_ignored():
     r = compare_volume("750 mL", "750 mL\n760 mL")
     assert r.verdict == Verdict.NEAR_MATCH and "760" in r.note
     assert compare_volume("1.5 L", "1.5 L\n15 L").verdict == Verdict.MATCH   # the same statement, point lost
+
+
+# --- several readings of the same place --------------------------------------------------------
+def _ocr_with_readings(readings: list[str]):
+    """The same brand line read by several passes: every reading sits at the same place on the label."""
+    from app.readers.base import OCRResult, OCRWord
+    lines = list(readings) + ["Kentucky Straight Bourbon Whiskey", "45% ALC./VOL.", "750 mL"]
+    words = []
+    for i, line in enumerate(lines):
+        top = 100 if i < len(readings) else 300 + 80 * i
+        x = 100
+        for t in line.split():
+            words.append(OCRWord(text=t, left=x, top=top, width=40 * len(t), height=60, conf=90, line_index=i))
+            x += 40 * len(t) + 30
+    return OCRResult(text="\n".join(lines), lines=lines, words=words)
+
+
+def test_a_reading_that_agrees_with_the_application_is_not_trusted_over_one_that_disagrees():
+    from app.models import Application
+    from app.readers.extract import extract_and_compare
+    app = Application(brand_name="BARN BREW", class_type="Kentucky Straight Bourbon Whiskey",
+                      alcohol_content="45%", net_contents="750 mL")
+    # The label says BARK BREW; one pass misread it as the application's BARN BREW.
+    brand = extract_and_compare(app, _ocr_with_readings(["BARK BREW", "BARN BREW"]))[0]
+    assert brand.verdict == Verdict.NEAR_MATCH and "BARK BREW" in brand.note
+    # Readings that differ only by OCR letter confusions or are cut short are noise, not disagreement.
+    for other in ("BAm BREW", "BARN BRE"):
+        app2 = app.model_copy(update={"brand_name": "BARN BREW"})
+        assert extract_and_compare(app2, _ocr_with_readings(["BARN BREW", other]))[0].verdict == Verdict.MATCH, other
