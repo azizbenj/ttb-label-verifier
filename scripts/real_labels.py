@@ -72,12 +72,24 @@ def main() -> None:
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--defects", action="store_true")
     ap.add_argument("-j", type=int, default=4)
+    ap.add_argument("--csv", default=str(ROOT / "scripts" / "real_labels.csv"),
+                    help="ground truth to score (default: the 20 hand-checked labels); several: a,b")
+    ap.add_argument("--json", help="write every field's verdict, found text and note here, for diffs between builds")
+    ap.add_argument("--only", help="comma-separated kinds to score (spirits,wine,beer,import)")
     a = ap.parse_args()
     if a.stitch:
         stitch()
         return
-    rows = list(csv.DictReader(open(ROOT / "scripts" / "real_labels.csv", newline="")))
+    rows = []
+    for path in a.csv.split(","):
+        rows += list(csv.DictReader(open(path, newline="")))
     rows = [r for r in rows if (REAL / f"{r['ttbid']}.jpg").exists()]
+    skipped = [r["ttbid"] for r in rows if not all(r.get(k, "").strip() for k in FIELDS[:4])]
+    rows = [r for r in rows if r["ttbid"] not in skipped]
+    if a.only:
+        rows = [r for r in rows if r["kind"] in a.only.split(",")]
+    if skipped:
+        print(f"{len(skipped)} rows skipped: a required application value is blank in the ground truth")
     if not rows:
         sys.exit("No images in data/real/. Run fetch_registry_labels.py and --stitch first.")
     reader = TesseractReader()
@@ -93,33 +105,47 @@ def main() -> None:
         results = list(pool.map(run, rows))
 
     tally = {"right": 0, "conservative": 0, "false_alarm": 0, "accepted": 0}
+    by_kind: dict[str, dict] = {}
     warn = {"PASS": 0, "REVIEW": 0, "FAIL": 0}
     times = []
+    dump = []
     print(f"{'record':16} {'kind':8} {'overall':7} {'time':>6}  fields that did not come back as expected")
     for row, r in zip(rows, results):
         expect = dict(e.split("=") for e in row["expect"].split(";") if e)
         times.append(r.timings.total_ms)
         warn[r.warning.overall.value] += 1
+        kt = by_kind.setdefault(row["kind"], {"labels": 0, "right": 0, "conservative": 0, "false_alarm": 0,
+                                              "accepted": 0, "warn_pass": 0})
+        kt["labels"] += 1
+        kt["warn_pass"] += r.warning.overall.value == "PASS"
         problems = []
         for f in r.fields:
             want = expect.get(f.key, "skip" if not row[f.key] else "match")
             got = f.verdict.value
+            dump.append({"ttbid": row["ttbid"], "kind": row["kind"], "field": f.key, "want": want, "verdict": got,
+                         "expected": f.expected, "found": f.found, "note": f.note})
             if want == "skip":
                 continue
             if (want == "match" and got == "MATCH") or (want == "review" and got == "NEAR MATCH") or \
                (want == "absent" and got == "NOT FOUND"):
-                tally["right"] += 1
+                tally["right"] += 1; kt["right"] += 1
             elif want == "review" and got == "MATCH":
                 # The ground truth says this needs a look (the brand only in the bottler statement, the class
                 # inside a longer phrase): a MATCH is the silent acceptance the rules exist to prevent.
-                tally["accepted"] += 1
+                tally["accepted"] += 1; kt["accepted"] += 1
                 problems.append(f"{f.key}: MATCH where a look was expected ({f.found!r})")
             elif got == "NEAR MATCH":
-                tally["conservative"] += 1
+                tally["conservative"] += 1; kt["conservative"] += 1
                 problems.append(f"{f.key}: NEAR MATCH ({f.found!r})")
             else:
-                tally["false_alarm"] += 1
+                tally["false_alarm"] += 1; kt["false_alarm"] += 1
                 problems.append(f"{f.key}: {got} ({f.found!r})")
+        dump.append({"ttbid": row["ttbid"], "kind": row["kind"], "field": "warning", "want": "pass",
+                     "verdict": r.warning.overall.value, "expected": "", "found": r.warning.found_text,
+                     "note": " | ".join(n for n in (r.warning.wording_note, r.warning.heading_caps_note,
+                                                    r.warning.heading_bold_note) if n)})
+        dump.append({"ttbid": row["ttbid"], "kind": row["kind"], "field": "overall", "want": "",
+                     "verdict": r.overall.value, "expected": "", "found": "", "note": f"{r.timings.total_ms:.0f} ms"})
         w = r.warning
         wtxt = f"warning {w.overall.value}" + ("" if w.overall.value == "PASS" else
                                                 f" (present={w.present} wording={w.wording.value} caps={w.heading_caps.value} bold={w.heading_bold.value})")
@@ -133,6 +159,14 @@ def main() -> None:
           f"{tally['accepted']} accepted without the look the ground truth expects")
     print(f"government warning: {warn['PASS']} pass, {warn['REVIEW']} review, {warn['FAIL']} fail (all {len(rows)} labels carry the warning)")
     print(f"timing: median {statistics.median(times) / 1000:.2f} s, max {max(times) / 1000:.2f} s")
+    if len(by_kind) > 1:
+        for k, t in sorted(by_kind.items()):
+            fields = t["right"] + t["conservative"] + t["false_alarm"] + t["accepted"]
+            print(f"  {k:8} {t['labels']:3} labels · fields {t['right']}/{fields} as expected, {t['conservative']} review, "
+                  f"{t['false_alarm']} false alarms, {t['accepted']} accepted · warning pass {t['warn_pass']}/{t['labels']}")
+    if a.json:
+        Path(a.json).write_text(json.dumps(dump, indent=1))
+        print(f"wrote {len(dump)} rows to {a.json}")
 
     if a.defects:
         missed = caught = 0

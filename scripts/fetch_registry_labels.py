@@ -6,6 +6,12 @@ For local testing only: label artwork belongs to the brand owners, so the files 
 because the image endpoint serves the attachments of the record last opened in the session.
 
     python scripts/fetch_registry_labels.py 26203001000533 26189001000502 ...
+    python scripts/fetch_registry_labels.py --search 09/15/2026 09/29/2026 --sample 180 [--seed 1] [--dry-run]
+
+--search lists the records completed in a date range (the registry's own "save results to file" export,
+at most 1000 per search), keeps one record per permit holder, picks a sample balanced over wine / beer /
+spirits and domestic / imported, and fetches those. The filed values (brand, class/type, origin) are kept
+in data/real/raw/registry.csv next to records.json: they are the application side of the ground truth.
 """
 
 from __future__ import annotations
@@ -82,6 +88,88 @@ def fetch(ttbid: str) -> dict:
     return rec
 
 
+US_PLACES = {
+    "ALABAMA", "ALASKA", "ARIZONA", "ARKANSAS", "CALIFORNIA", "COLORADO", "CONNECTICUT", "DELAWARE", "FLORIDA",
+    "GEORGIA", "HAWAII", "IDAHO", "ILLINOIS", "INDIANA", "IOWA", "KANSAS", "KENTUCKY", "LOUISIANA", "MAINE",
+    "MARYLAND", "MASSACHUSETTS", "MICHIGAN", "MINNESOTA", "MISSISSIPPI", "MISSOURI", "MONTANA", "NEBRASKA",
+    "NEVADA", "NEW HAMPSHIRE", "NEW JERSEY", "NEW MEXICO", "NEW YORK", "NORTH CAROLINA", "NORTH DAKOTA", "OHIO",
+    "OKLAHOMA", "OREGON", "PENNSYLVANIA", "RHODE ISLAND", "SOUTH CAROLINA", "SOUTH DAKOTA", "TENNESSEE", "TEXAS",
+    "UTAH", "VERMONT", "VIRGINIA", "WASHINGTON", "WEST VIRGINIA", "WISCONSIN", "WYOMING", "DISTRICT OF COLUMBIA",
+    "PUERTO RICO", "U.S. VIRGIN ISLANDS", "VIRGIN ISLANDS", "GUAM", "AMERICAN", "UNITED STATES",
+}
+_KINDS = (   # spirits first: a single malt Scotch is not a malt beverage
+    ("spirits", re.compile(r"\b(WHISK|BOURBON|VODKA|GIN|RUM|TEQUILA|MEZCAL|BRANDY|COGNAC|LIQUEUR|CORDIAL|SPIRIT|"
+                           r"DISTILLED|ABSINTHE|SCHNAPPS|GRAPPA|AQUAVIT|SOJU|BAIJIU|NEUTRAL)", re.I)),
+    ("wine", re.compile(r"\b(WINE|CHAMPAGNE|SPARKLING|VERMOUTH|PORT|SHERRY|GRAPE)\b", re.I)),
+    ("beer", re.compile(r"\b(BEER|ALE|LAGER|MALT|STOUT|PORTER|PILS|IPA|CIDER|MEAD|SAKE)\b", re.I)),
+)
+
+
+def kind_of(class_desc: str) -> str:
+    for kind, rx in _KINDS:
+        if rx.search(class_desc or ""):
+            return kind
+    return "other"
+
+
+def search(date_from: str, date_to: str) -> list[dict]:
+    """The registry's results export for a completed-date range: one dict per record."""
+    import csv
+    import io
+    form = [
+        ("searchCriteria.dateCompletedFrom", date_from), ("searchCriteria.dateCompletedTo", date_to),
+        ("searchCriteria.productOrFancifulName", ""), ("searchCriteria.productNameSearchType", "E"),
+        ("searchCriteria.classTypeFrom", ""), ("searchCriteria.classTypeTo", ""), ("searchCriteria.originCode", ""),
+    ]
+    cmd = [CURL, "-sS", "--max-time", "90", "-c", JAR, "-b", JAR, "-A", UA, "-X", "POST",
+           f"{BASE}/publicSearchColasBasicProcess.do?action=search", "-o", "/dev/null"]
+    for k, v in form:
+        cmd += ["--data-urlencode", f"{k}={v}"]
+    subprocess.run(cmd, check=True, capture_output=True)
+    time.sleep(1)
+    data = get(f"{BASE}/publicSaveSearchResultsToFile.do?path=/publicSearchColasBasicProcess").decode("utf-8", "replace")
+    rows = []
+    for r in csv.DictReader(io.StringIO(data)):
+        ttbid = (r.get("TTB ID") or "").strip().strip("'")
+        if not ttbid.isdigit():
+            continue
+        origin_desc = (r.get("Origin Desc") or "").strip()
+        rows.append({
+            "ttbid": ttbid, "permit": (r.get("Permit No.") or "").strip(), "date": (r.get("Completed Date") or "").strip(),
+            "fanciful_name": (r.get("Fanciful Name") or "").strip(), "brand_name": (r.get("Brand Name") or "").strip(),
+            "origin_code": (r.get("Origin") or "").strip(), "origin_desc": origin_desc,
+            "class_code": (r.get("Class/Type") or "").strip(), "class_desc": (r.get("Class/Type Desc") or "").strip(),
+        })
+    for r in rows:
+        r["kind"] = kind_of(r["class_desc"])
+        r["imported"] = r["origin_desc"].upper() not in US_PLACES and r["origin_desc"] != ""
+    return rows
+
+
+def pick_sample(rows: list[dict], n: int, seed: int) -> list[dict]:
+    """One record per permit holder, then as even a spread as possible over kind x domestic/imported."""
+    import random
+    rnd = random.Random(seed)
+    rows = [r for r in rows if r["kind"] != "other" and r["brand_name"]]
+    rnd.shuffle(rows)
+    seen_permit, unique = set(), []
+    for r in rows:
+        if r["permit"] in seen_permit:
+            continue
+        seen_permit.add(r["permit"])
+        unique.append(r)
+    strata: dict[tuple[str, bool], list[dict]] = {}
+    for r in unique:
+        strata.setdefault((r["kind"], r["imported"]), []).append(r)
+    picked: list[dict] = []
+    keys = sorted(strata)
+    while len(picked) < n and any(strata[k] for k in keys):
+        for k in keys:
+            if strata[k] and len(picked) < n:
+                picked.append(strata[k].pop())
+    return picked
+
+
 def main(ids: list[str]) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     index = OUT / "records.json"
@@ -101,5 +189,43 @@ def main(ids: list[str]) -> None:
         time.sleep(1)
 
 
+def main_search(date_from: str, date_to: str, n: int, seed: int, dry_run: bool) -> None:
+    import csv
+    rows = search(date_from, date_to)
+    picked = pick_sample(rows, n, seed)
+    from collections import Counter
+    c = Counter((r["kind"], "import" if r["imported"] else "domestic") for r in picked)
+    print(f"{len(rows)} records listed, {len(picked)} picked: " + ", ".join(f"{k[0]} {k[1]} {v}" for k, v in sorted(c.items())))
+    OUT.mkdir(parents=True, exist_ok=True)
+    reg = OUT / "registry.csv"
+    existing = {}
+    if reg.exists():
+        existing = {r["ttbid"]: r for r in csv.DictReader(reg.open())}
+    for r in picked:
+        existing[r["ttbid"]] = {k: ("yes" if v is True else "no" if v is False else v) for k, v in r.items()}
+    with reg.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["ttbid", "permit", "date", "fanciful_name", "brand_name", "origin_code",
+                                          "origin_desc", "class_code", "class_desc", "kind", "imported"])
+        w.writeheader()
+        for r in existing.values():
+            w.writerow(r)
+    if dry_run:
+        for r in picked[:12]:
+            print(f"  {r['ttbid']} {r['kind']:8} {'import' if r['imported'] else 'domestic':9} {r['brand_name'][:28]:28} {r['class_desc'][:30]} ({r['origin_desc']})")
+        return
+    main([r["ttbid"] for r in picked])
+
+
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("ids", nargs="*")
+    ap.add_argument("--search", nargs=2, metavar=("FROM", "TO"), help="completed-date range, MM/DD/YYYY")
+    ap.add_argument("--sample", type=int, default=150)
+    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--dry-run", action="store_true", help="list the sample, download nothing")
+    a = ap.parse_args()
+    if a.search:
+        main_search(a.search[0], a.search[1], a.sample, a.seed, a.dry_run)
+    else:
+        main(a.ids)
