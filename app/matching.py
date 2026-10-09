@@ -216,14 +216,25 @@ def _ocr_fold(s: str) -> str:
     return s
 
 
+def _span_conf(line_words: dict[int, list[tuple[str, float]]], first: int, last: int, text: str) -> float | None:
+    """The lowest OCR confidence among the words that spell ``text`` on lines first..last."""
+    toks = set(normalize_loose(text).split())
+    confs = [c for i in range(first, last + 1) for t, c in line_words.get(i, []) if normalize_loose(t) in toks]
+    return min(confs) if confs else None
+
+
 def conflicting_reading(expected: str, lines: list[str], loc: Located,
-                        line_boxes: dict[int, tuple[float, float, float, float]], th: Thresholds = THRESHOLDS) -> str | None:
+                        line_boxes: dict[int, tuple[float, float, float, float]],
+                        line_words: dict[int, list[tuple[str, float]]] | None = None,
+                        th: Thresholds = THRESHOLDS) -> str | None:
     """Another reading of the same place on the label that says something else.
 
     The label is read several times (two page-segmentation passes, and turned or contrast views when
     something is missing), and the matcher takes the reading that agrees best with the application.
     When another reading of the same region disagrees, the agreeing one may itself be the misread
-    ("BARK BREW" printed, one pass reading "BARN BREW"), so the match must not be silent."""
+    ("BARK BREW" printed, one pass reading "BARN BREW"), so the match must not be silent. A
+    disagreeing reading that OCR was less sure of than the agreeing one ("CQ." at 65 beside "CO." at
+    77 in a display face) is noise; one it was at least as sure of counts."""
     span = [line_boxes[i] for i in range(loc.line_start, loc.line_end + 1) if i in line_boxes]
     if not span:
         return None
@@ -239,14 +250,21 @@ def conflicting_reading(expected: str, lines: list[str], loc: Located,
         got = _ocr_fold(alt.text)
         # Not evidence of a different spelling: the usual letter confusions ("Bam" for "Barn") and a
         # reading cut short ("IRISH WHISKE"). A different letter ("BARK" for "BARN") is.
-        if got and got != want and got not in want:
-            return alt.text
+        if not got or got == want or got in want:
+            continue
+        if line_words:
+            mine = _span_conf(line_words, loc.line_start, loc.line_end, loc.text)
+            theirs = _span_conf(line_words, i, i, alt.text)
+            if mine is not None and theirs is not None and theirs < mine:
+                continue
+        return alt.text
     return None
 
 
 def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_found: str | None = None,
                        preferred_line: int | None = None, line_heights: dict[int, float] | None = None,
                        line_boxes: dict[int, tuple[float, float, float, float]] | None = None,
+                       line_words: dict[int, list[tuple[str, float]]] | None = None,
                        th: Thresholds = THRESHOLDS) -> FieldResult:
     """Locate ``expected`` on the label and classify it.
 
@@ -264,7 +282,7 @@ def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_fo
     result = compare_text(key, expected, loc.text, th=th)
     result.lines = [loc.line_start, loc.line_end]
     if result.verdict == Verdict.MATCH and line_boxes:
-        alt = conflicting_reading(expected, lines, loc, line_boxes, th)
+        alt = conflicting_reading(expected, lines, loc, line_boxes, line_words, th)
         if alt is not None:
             return result.model_copy(update={
                 "verdict": Verdict.NEAR_MATCH, "score": 90,

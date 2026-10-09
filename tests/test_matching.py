@@ -330,16 +330,17 @@ def test_a_second_reading_that_disagrees_is_shown_not_ignored():
 
 
 # --- several readings of the same place --------------------------------------------------------
-def _ocr_with_readings(readings: list[str]):
+def _ocr_with_readings(readings: list[str], confs: list[float] | None = None):
     """The same brand line read by several passes: every reading sits at the same place on the label."""
     from app.readers.base import OCRResult, OCRWord
     lines = list(readings) + ["Kentucky Straight Bourbon Whiskey", "45% ALC./VOL.", "750 mL"]
+    confs = (confs or [90] * len(readings)) + [90] * 3
     words = []
     for i, line in enumerate(lines):
         top = 100 if i < len(readings) else 300 + 80 * i
         x = 100
         for t in line.split():
-            words.append(OCRWord(text=t, left=x, top=top, width=40 * len(t), height=60, conf=90, line_index=i))
+            words.append(OCRWord(text=t, left=x, top=top, width=40 * len(t), height=60, conf=confs[i], line_index=i))
             x += 40 * len(t) + 30
     return OCRResult(text="\n".join(lines), lines=lines, words=words)
 
@@ -352,6 +353,13 @@ def test_a_reading_that_agrees_with_the_application_is_not_trusted_over_one_that
     # The label says BARK BREW; one pass misread it as the application's BARN BREW.
     brand = extract_and_compare(app, _ocr_with_readings(["BARK BREW", "BARN BREW"]))[0]
     assert brand.verdict == Verdict.NEAR_MATCH and "BARK BREW" in brand.note
+    # OCR more sure of the disagreeing reading than of the agreeing one: the agreeing one is suspect.
+    brand = extract_and_compare(app, _ocr_with_readings(["BARK BREW", "BARN BREW"], [94, 71]))[0]
+    assert brand.verdict == Verdict.NEAR_MATCH
+    # A disagreeing reading OCR was less sure of ("CQ" for "CO" in a display face) is noise.
+    app3 = app.model_copy(update={"brand_name": "RIVER BEND CO"})
+    assert extract_and_compare(app3, _ocr_with_readings(["RIVER BEND CO", "RIVER BEND CQ"], [77, 65]))[0].verdict \
+        == Verdict.MATCH
     # Readings that differ only by OCR letter confusions or are cut short are noise, not disagreement.
     for other in ("BAm BREW", "BARN BRE"):
         app2 = app.model_copy(update={"brand_name": "BARN BREW"})

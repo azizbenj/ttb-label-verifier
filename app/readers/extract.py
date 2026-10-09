@@ -48,14 +48,18 @@ def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
     lines, text = ocr.lines, ocr.text
     heights = line_heights(ocr)
     boxes = line_boxes(ocr)
+    confs: dict[int, list[tuple[str, float]]] = {}
+    for w in ocr.words:
+        confs.setdefault(w.line_index, []).append((w.text, w.conf))
     brand_line = prominent_line_index(ocr, heights)
     return [
         locate_and_compare("brand_name", app.brand_name, lines, preferred_line=brand_line, line_heights=heights,
-                           line_boxes=boxes, fallback_found=lines[brand_line] if brand_line is not None else None),
-        locate_and_compare("class_type", app.class_type, lines, line_boxes=boxes),
+                           line_boxes=boxes, line_words=confs,
+                           fallback_found=lines[brand_line] if brand_line is not None else None),
+        locate_and_compare("class_type", app.class_type, lines, line_boxes=boxes, line_words=confs),
         compare_alcohol(app.alcohol_content, text),
         compare_volume(app.net_contents, text),
-        locate_and_compare("bottler_name_address", app.bottler_name_address, lines, line_boxes=boxes),
+        locate_and_compare("bottler_name_address", app.bottler_name_address, lines, line_boxes=boxes, line_words=confs),
         compare_country(app.country_of_origin, lines),
     ]
 
