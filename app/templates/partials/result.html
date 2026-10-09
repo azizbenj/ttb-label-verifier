@@ -25,7 +25,7 @@
     {% if application.country_of_origin %}<div class="kv"><span>Origin</span><span>{{ application.country_of_origin }}</span></div>{% endif %}
     {% if r.image_name %}<div class="kv"><span>Image</span><span class="file">{{ r.image_name }}</span></div>{% endif %}
   </div>
-  <div class="acts">
+  <div class="acts js-only">
     <button class="btn secondary small" type="button" data-act="edit">Edit application</button>
     <button class="btn secondary small" type="button" data-act="another">Check another label</button>
   </div>
@@ -72,7 +72,7 @@
     </div>
     <div class="timing"><b>{{ r.timings.total_ms|seconds }}</b><small>reading {{ r.timings.read_ms|seconds }} · comparing {{ r.timings.match_ms|seconds }}</small></div>
     {% if not compact %}
-    <div class="acts">
+    <div class="acts js-only">
       {% if r.overall.value == 'FAIL' %}<button class="btn secondary small" type="button" data-act="copy">{{ icon('copy', 16) }}Copy problem summary</button>{% endif %}
       <button class="btn secondary small" type="button" data-act="print">{{ icon('print', 16) }}Print report</button>
     </div>

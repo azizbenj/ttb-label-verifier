@@ -282,18 +282,27 @@ def build_application(**values: str) -> Application:
     return app_data
 
 
+def is_partial(request: Request) -> bool:
+    """The page's script asks for a card (X-Partial); a plain form post or link (no JavaScript) gets a page."""
+    return request.headers.get("x-partial") == "1"
+
+
 def error_response(request: Request, message: str, status: int = 400, title: str | None = None,
                    **extra) -> HTMLResponse:
-    """The error card for the page's script. A plain form post (no JavaScript) to /verify gets the whole
-    page back instead, with the error where the result would be and the typed values kept."""
+    """The error card for the page's script. Without JavaScript the whole page comes back instead, with the
+    error where the result would be: the typed values kept for /verify, the batch tab open for /batch."""
     ctx = {"message": message, "title": title, **extra}
-    if request.url.path == "/verify" and request.headers.get("x-partial") != "1":
+    path = request.url.path
+    if not is_partial(request) and (path == "/verify" or path.startswith("/batch")):
         values = extra.pop("values", None) or {}
         ctx.pop("values", None)
-        error_html = templates.get_template("partials/error.html").render(ctx)
-        page = _index_context() | {"error_html": Markup(error_html), "values": values,
-                                   "field_errors": {f["key"]: f["message"] for f in ctx.get("fields") or []},
-                                   "drop_error": ctx.get("drop")}
+        error_html = Markup(templates.get_template("partials/error.html").render(ctx))
+        if path == "/verify":
+            page = _index_context() | {"error_html": error_html, "values": values,
+                                       "field_errors": {f["key"]: f["message"] for f in ctx.get("fields") or []},
+                                       "drop_error": ctx.get("drop")}
+        else:
+            page = _index_context() | {"batch_error_html": error_html, "open_tab": "batch"}
         return templates.TemplateResponse(request, "index.html", page, status_code=status)
     ctx.pop("values", None)
     return templates.TemplateResponse(request, "partials/error.html", ctx, status_code=status)
@@ -330,6 +339,8 @@ def result_response(request: Request, result: VerificationResult, application: A
                     image_url: str | None, *, compact: bool = False, full_page: bool = False,
                     job: batchmod.BatchJob | None = None, index: int | None = None) -> HTMLResponse:
     ctx = result_context(result, application, image_url, compact=compact, job=job, index=index)
+    if job is not None:
+        ctx |= {"back_url": f"/batch/{job.id}", "back_text": "Back to the results table"}
     return templates.TemplateResponse(request, "result_page.html" if full_page else "partials/result.html", ctx)
 
 
@@ -428,8 +439,7 @@ async def verify_html(request: Request, brand_name: str = Form(""), class_type: 
         return error_response(request, "Something went wrong while reading this label. Please try another image.",
                               500, values=typed)
     # The page's script asks for the partial; a plain form post (no JavaScript) gets a whole page.
-    full_page = request.headers.get("x-partial") != "1"
-    return result_response(request, result, app_data, image_url, full_page=full_page)
+    return result_response(request, result, app_data, image_url, full_page=not is_partial(request))
 
 
 @app.post("/api/verify")
@@ -476,6 +486,9 @@ async def batch_start(request: Request, csv_file: UploadFile | None = File(None)
             if not images:
                 raise UserError("None of the uploaded files were images. Use PNG, JPG, TIFF or WEBP, or a zip of them.")
             job = batchmod.start_job(rows, images, rd, source=csv_file.filename, issues=issues + more)
+        if not is_partial(request):
+            # Without JavaScript: on to the batch's own page, which refreshes itself until the batch is done.
+            return RedirectResponse(f"/batch/{job.id}", status_code=303)
     except UserError as e:
         return error_response(request, **e.context())
     except batchmod.BatchError as e:
@@ -510,12 +523,13 @@ def batch_status(request: Request, job_id: str):
     job = batchmod.JOBS.get(job_id)
     if job is None:
         return error_response(request, _BATCH_GONE, 404)
-    if request.headers.get("x-partial") == "1":
+    if is_partial(request):
         return _batch_status_response(request, job)
     card = templates.get_template("partials/batch_status.html").render(
         {"job": job, "fields": FIELDS, "counts": job.counts()})
-    return templates.TemplateResponse(request, "index.html", _index_context() | {"batch_html": Markup(card),
-                                                                                  "open_tab": "batch"})
+    # Without JavaScript nothing polls: a running batch's page reloads itself (inside <noscript>).
+    return templates.TemplateResponse(request, "index.html", _index_context() | {
+        "batch_html": Markup(card), "open_tab": "batch", "refresh_url": None if job.is_done else f"/batch/{job.id}"})
 
 
 @app.post("/batch/{job_id}/decision")
@@ -594,7 +608,8 @@ def batch_item(request: Request, job_id: str, index: int):
     if item.result is None:
         return error_response(request, item.error or "Still processing.")
     image_url = f"/batch/{job.id}/image/{index}" if getattr(item, "preview", None) else None
-    return result_response(request, item.result, item.application, image_url, compact=True, job=job, index=index)
+    return result_response(request, item.result, item.application, image_url, compact=is_partial(request),
+                           full_page=not is_partial(request), job=job, index=index)
 
 
 @app.get("/batch/{job_id}/image/{index}")

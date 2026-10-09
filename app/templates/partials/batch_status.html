@@ -1,9 +1,9 @@
 {#- Batch: progress while running (triage counts so far, rows streaming in), then the triage table. -#}
 {% set c = counts %}
 {% macro mini(v) %}{{ chip(v, 'mini', v|short) }}{% endmacro %}
-{% macro row_cells(it) %}
+{% macro row_cells(it, it_index) %}
   {% set r = it.result %}
-  <td class="mono">{{ it.application_id }}</td>
+  <td class="mono">{% if it.result %}<a class="rowlink" href="/batch/{{ job.id }}/item/{{ it_index }}">{{ it.application_id }}</a>{% else %}{{ it.application_id }}{% endif %}</td>
   <td class="brand" title="{{ it.brand }}">{{ it.brand or '—' }}</td>
   <td>{% if r %}{{ chip(r.overall, 'mini', r.overall|short) }}{% else %}<span class="chip mini none">{{ icon('alert') }}Error</span>{% endif %}</td>
   {% if r %}
@@ -55,7 +55,7 @@
   <div class="acts">
     {% if c.REVIEW %}<a class="btn" href="/batch/{{ job.id }}/review" data-act="review">Review the {{ c.REVIEW }} <span class="kbd w">R</span></a>{% endif %}
     <a class="btn secondary" href="/batch/{{ job.id }}/export.csv" data-act="export">{{ icon('download', 18) }}Export…</a>
-    <button class="btn secondary" type="button" data-act="newbatch">New batch</button>
+    <a class="btn secondary" href="/" data-act="newbatch">New batch</a>
   </div>
 </section>
 {% endif %}
@@ -69,7 +69,7 @@
 
 <section class="card triage">
   {% if job.is_done %}
-  <div class="toolbar" role="group" aria-label="Filter results">
+  <div class="toolbar js-only" role="group" aria-label="Filter results">
     <button class="fchip review" type="button" data-filter="REVIEW" aria-pressed="false"{% if not c.REVIEW %} disabled{% endif %}>{{ icon('bang', 14) }}Review <b>{{ c.REVIEW }}</b></button>
     <button class="fchip fail" type="button" data-filter="FAIL" aria-pressed="false"{% if not c.FAIL %} disabled{% endif %}>{{ icon('cross', 14) }}Fail <b>{{ c.FAIL }}</b></button>
     <button class="fchip pass" type="button" data-filter="PASS" aria-pressed="false"{% if not c.PASS %} disabled{% endif %}>{{ icon('check', 14) }}Pass <b>{{ c.PASS }}</b></button>
@@ -101,7 +101,7 @@
               data-img="{{ '/batch/' ~ job.id ~ '/image/' ~ index if it.preview else '' }}" data-aspect="{{ it.result.image_aspect if it.result and it.result.image_aspect else '' }}"
               data-box="{{ it.focus_box|join(',') if it.focus_box else '' }}" data-decision="{{ it.decision }}" aria-selected="false">
             <td class="sel"><input type="checkbox" aria-label="Select {{ it.application_id }}"{% if not job.is_done %} disabled{% endif %}></td>
-            {{ row_cells(it) }}
+            {{ row_cells(it, index) }}
           </tr>
           {% endif %}
         {% endfor %}

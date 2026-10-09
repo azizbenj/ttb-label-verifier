@@ -65,6 +65,9 @@ footer.page-foot { padding-bottom: 24px; font-size: 13.5px; color: var(--ink-3);
 .tab { min-height: 48px; padding: 0 4px; margin-right: 24px; border: 0; background: none; font-weight: 600; font-size: 17px; color: var(--ink-2); border-bottom: 3px solid transparent; cursor: pointer; }
 .tab.on, .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--action); }
 .panel { display: none; } .panel.on { display: block; }
+/* Without JavaScript (no "js" class on <html>): both panels, no tab bar, no controls that need a script. */
+html:not(.js) .panel { display: block; } html:not(.js) .panel + .panel { margin-top: var(--sp-6); }
+html:not(.js) .modes, html:not(.js) .js-only { display: none !important; }
 
 /* ---------- cards, buttons, inputs ---------- */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--sh-1); }

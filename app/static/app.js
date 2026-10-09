@@ -558,7 +558,11 @@
     function closeFull() { if (overlay && !overlay.hidden) { overlay.hidden = true; if (cur >= 0) rows[cur].focus(); } }
 
     rows.forEach((r, i) => {
-      r.addEventListener("click", (e) => { if (e.target.type === "checkbox") { syncBulk(); return; } setCursor(i, false); });
+      r.addEventListener("click", (e) => {
+        if (e.target.type === "checkbox") { syncBulk(); return; }
+        if (e.target.closest("a.rowlink")) e.preventDefault();   // the link is for pages without JavaScript
+        setCursor(i, false);
+      });
       r.addEventListener("dblclick", () => openFull(r));
       r.addEventListener("focus", () => { if (cur !== i) setCursor(i, false); });
       r.querySelector("input[type=checkbox]").addEventListener("change", syncBulk);
@@ -636,7 +640,7 @@
     if (exportSel && dlg) exportSel.addEventListener("click", (e) => { e.preventDefault(); openExport("selected"); });
     const reviewLink = $("[data-act=review]", batchSlot);
     const newBatch = $("[data-act=newbatch]", batchSlot);
-    if (newBatch) newBatch.addEventListener("click", () => { showBatchEntry(true); batchForm.reset(); $$("[data-drop] b").forEach((b) => { b.textContent = b.closest("[data-drop]").dataset.drop === "csv" ? "Drop the CSV here, or choose a file" : "Drop the images or a zip here"; }); window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
+    if (newBatch) newBatch.addEventListener("click", (e) => { e.preventDefault(); showBatchEntry(true); batchForm.reset(); $$("[data-drop] b").forEach((b) => { b.textContent = b.closest("[data-drop]").dataset.drop === "csv" ? "Drop the CSV here, or choose a file" : "Drop the images or a zip here"; }); window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
 
     box.addEventListener("keydown", (e) => {
       if (e.target.matches("input, select, textarea")) return;
@@ -676,7 +680,8 @@
   if (batchForm) {
     batchForm.addEventListener("submit", (e) => { e.preventDefault(); startBatch(new FormData(batchForm), batchForm.querySelector('button[type="submit"]')); });
     const sampleBtn = $("#sample-batch");
-    if (sampleBtn) sampleBtn.addEventListener("click", () => {
+    if (sampleBtn) sampleBtn.addEventListener("click", (e) => {
+      e.preventDefault();   // a submit button, so the sample batch also starts without JavaScript
       const fd = new FormData();
       fd.append("sample", "1");
       const reader = batchForm.querySelector('[name="reader"]:checked');

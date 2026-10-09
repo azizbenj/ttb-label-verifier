@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Result · Label Check{% endblock %}
 {% block content %}
-<p><a href="/">← Check another label</a></p>
+<p><a href="{{ back_url or '/' }}">← {{ back_text or 'Check another label' }}</a></p>
 {% include "partials/result.html" %}
 {% endblock %}

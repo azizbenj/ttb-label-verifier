@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>{% block title %}Label Check{% endblock %}</title>
+<script>document.documentElement.classList.add("js")</script>
+{% if refresh_url %}<noscript><meta http-equiv="refresh" content="3;url={{ refresh_url }}"></noscript>{% endif %}
 <link rel="stylesheet" href="/static/style.css?v={{ static_version() }}">
 </head>
 <body>
