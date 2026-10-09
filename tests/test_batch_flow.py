@@ -55,7 +55,7 @@ def _wait_done(job_id, timeout_s: float = 60.0):
 def test_single_verify_renders_result_card():
     r = client.post("/verify", data={**OLD_TOM, "sample": "old_tom_clean"})
     assert r.status_code == 200
-    assert "Needs a quick look" in r.text and "Checked in" in r.text and "Government warning" in r.text
+    assert "Needs a quick look" in r.text and 'class="timing"' in r.text and "Government warning" in r.text
 
 
 def test_sample_batch_runs_and_renders_table_and_export():
@@ -67,7 +67,7 @@ def test_sample_batch_runs_and_renders_table_and_export():
     csv_out = client.get(f"/batch/{job_id}/export.csv").text
     assert csv_out.count("\n") == 251
     detail = client.get(f"/batch/{job_id}/item/0").text
-    assert "Checked in" in detail
+    assert 'class="timing"' in detail
 
 
 def test_uploaded_batch_reports_missing_and_stray_files():

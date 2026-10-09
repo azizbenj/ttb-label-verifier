@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import csv
+import io
 import logging
 import os
 import re
@@ -13,13 +15,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from PIL import Image
+from markupsafe import Markup
+from PIL import Image, ImageOps
 
 from . import batch as batchmod
+from .evidence import bold_meter_percent, evidence_for, pin_labels
 from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELDS, MANDATED_WARNING, MAX_BATCH_UPLOAD_BYTES,
                      MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS)
 from .images import ImageError, open_image
-from .models import Application, Status, Verdict
+from .models import Application, Status, VerificationResult, Verdict
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
 from .readers.base import LabelReader, ReaderError
@@ -35,17 +39,55 @@ app = FastAPI(title="TTB Label Check", docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
-_CHIP = {Verdict.MATCH: "ok", Verdict.NEAR_MATCH: "warn", Verdict.MISMATCH: "bad", Verdict.NOT_FOUND: "missing",
-         Verdict.SKIPPED: "skip", Status.PASS: "ok", Status.REVIEW: "warn", Status.FAIL: "bad", Status.ERROR: "bad"}
+# Verdict and status -> design token class (pass / review / fail / none). NOT FOUND shares FAIL colours.
+_CHIP = {Verdict.MATCH: "pass", Verdict.NEAR_MATCH: "review", Verdict.MISMATCH: "fail", Verdict.NOT_FOUND: "fail",
+         Verdict.SKIPPED: "none", Status.PASS: "pass", Status.REVIEW: "review", Status.FAIL: "fail", Status.ERROR: "fail"}
+# Glyphs are fixed per verdict so colour is never the only signal.
+_GLYPH = {Verdict.MATCH: "check", Verdict.NEAR_MATCH: "bang", Verdict.MISMATCH: "cross", Verdict.NOT_FOUND: "question",
+          Verdict.SKIPPED: "dash", Status.PASS: "check", Status.REVIEW: "bang", Status.FAIL: "cross", Status.ERROR: "cross"}
+_ICON_PATHS = {
+    "check": ('0 0 16 16', '<path d="M3 8.5l3 3 7-7"/>', 2.5),
+    "bang": ('0 0 16 16', '<path d="M8 3v6"/><path d="M8 12.5h.01"/>', 2.5),
+    "cross": ('0 0 16 16', '<path d="M4 4l8 8M12 4l-8 8"/>', 2.5),
+    "question": ('0 0 16 16', '<path d="M5.5 6.2a2.5 2.5 0 1 1 3.7 2.2C8.4 8.8 8 9.3 8 10"/><path d="M8 12.6h.01"/>', 2.2),
+    "dash": ('0 0 16 16', '<path d="M4 8h8"/>', 2.5),
+    "lock": ('0 0 24 24', '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>', 2.4),
+    "mark": ('0 0 24 24', '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/>', 2.2),
+    "help": ('0 0 24 24', '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8"/><path d="M12 17h.01"/>', 2),
+    "upload": ('0 0 24 24', '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/>', 2),
+    "download": ('0 0 24 24', '<path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/>', 2),
+    "info": ('0 0 24 24', '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>', 2),
+    "alert": ('0 0 24 24', '<circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/>', 2),
+    "print": ('0 0 24 24', '<path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 21h12v-6H6z"/>', 2),
+    "copy": ('0 0 24 24', '<rect x="8" y="3" width="12" height="14" rx="2"/><path d="M4 7v12a2 2 0 0 0 2 2h10"/>', 2),
+    "expand": ('0 0 24 24', '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>', 2),
+}
+
+
+def icon(name: str, size: int | None = None) -> Markup:
+    """Inline SVG glyph. Without ``size`` it is a 14 px chip glyph (class "i")."""
+    viewbox, paths, width = _ICON_PATHS[name]
+    attrs = f'width="{size}" height="{size}"' if size else 'class="i"'
+    return Markup(f'<svg {attrs} viewBox="{viewbox}" fill="none" stroke="currentColor" stroke-width="{width}" '
+                  f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{paths}</svg>')
+
+
+def chip(v, cls_extra: str = "", word: str | None = None) -> Markup:
+    """A verdict or status chip: glyph + word, with the fixed vocabulary."""
+    text = word if word is not None else (v.value if hasattr(v, "value") else str(v))
+    return Markup(f'<span class="chip {_CHIP.get(v, "none")} {cls_extra}">{icon(_GLYPH.get(v, "dash"))}{text}</span>')
 _SHORT = {Verdict.MATCH: "Match", Verdict.NEAR_MATCH: "Review", Verdict.MISMATCH: "Mismatch",
           Verdict.NOT_FOUND: "Not found", Verdict.SKIPPED: "—", Status.PASS: "Pass", Status.REVIEW: "Review",
           Status.FAIL: "Fail", Status.ERROR: "Error"}
 _HEADLINE = {Status.PASS: "Label matches the application", Status.REVIEW: "Needs a quick look",
              Status.FAIL: "Problems found", Status.ERROR: "Could not check"}
-templates.env.filters["chip"] = lambda v: _CHIP.get(v, "skip")
+templates.env.filters["chip"] = lambda v: _CHIP.get(v, "none")
+templates.env.filters["glyph"] = lambda v: _GLYPH.get(v, "dash")
 templates.env.filters["short"] = lambda v: _SHORT.get(v, str(v))
 templates.env.filters["headline"] = lambda v: _HEADLINE.get(v, "")
 templates.env.filters["seconds"] = lambda ms: f"{(ms or 0) / 1000:.1f} s"
+templates.env.globals.update(icon=icon, chip=chip, evidence_for=evidence_for, pin_labels=pin_labels,
+                             bold_meter_percent=bold_meter_percent, thresholds=THRESHOLDS)
 
 
 class UserError(Exception):
@@ -79,9 +121,9 @@ def get_reader(name: str | None, psm: str | None = None) -> LabelReader:
 
 
 def reader_info() -> str:
-    parts = [f"Local OCR: Tesseract {tesseract_version() or 'not installed'}"]
+    parts = [f"Local OCR · Tesseract {tesseract_version() or 'not installed'}"]
     if CLOUD_READER_AVAILABLE:
-        parts.append(f"Cloud reader: {CLAUDE_MODEL}")
+        parts.append(f"Cloud reader · {CLAUDE_MODEL}")
     return " · ".join(parts)
 
 
@@ -105,6 +147,27 @@ _SAMPLE_TITLES = {
 }
 
 
+# Gallery tiles: (short title, one-line kind, group). Clean samples are the four tiles; the rest sit
+# behind "labels with a planted problem", grouped by what they demonstrate.
+_SAMPLE_TILES = {
+    "old_tom_clean": ("Old Tom Distillery", "Bourbon · should pass", "clean"),
+    "stones_throw_clean": ("Stone's Throw Cellars", "Wine · should pass", "clean"),
+    "river_bend_clean": ("River Bend Brewing", "Beer · should pass", "clean"),
+    "glen_morar_import_clean": ("Glen Morar", "Import · country of origin", "clean"),
+    "wrong_abv": ("Wrong alcohol content", "Old Tom · 40% printed, 45% filed", "fields"),
+    "brand_case": ("Brand capitalization differs", "Stone's Throw · needs a look", "fields"),
+    "wrong_net_contents": ("Wrong net contents", "Old Tom · 1 L printed, 750 mL filed", "fields"),
+    "wrong_brand": ("Different brand on the label", "River Bend printed, Copper Kettle filed", "fields"),
+    "missing_net_contents": ("Net contents missing", "River Bend · nothing printed", "fields"),
+    "wrong_country": ("Wrong country of origin", "Glen Morar · Ireland printed", "fields"),
+    "missing_warning": ("Warning missing", "River Bend · no statement", "warning"),
+    "warning_not_caps": ("Heading not in capitals", "Stone's Throw · 'Government Warning:'", "warning"),
+    "warning_not_bold": ("Heading not bold", "Old Tom · regular weight", "warning"),
+    "warning_text_altered": ("One word changed", "Glen Morar · 'can' for 'may'", "warning"),
+    "warning_truncated": ("Statement cut short", "Stone's Throw · second sentence missing", "warning"),
+}
+
+
 def load_samples() -> list[dict]:
     path = SAMPLES_DIR / "samples.csv"
     if not path.exists():
@@ -113,8 +176,10 @@ def load_samples() -> list[dict]:
     with open(path, newline="") as f:
         for row in csv.DictReader(f):
             name = Path(row["image"]).stem
+            short, kind, group = _SAMPLE_TILES.get(name, (name.replace("_", " "), "", "fields"))
             out.append({"name": name, "title": _SAMPLE_TITLES.get(name, name.replace("_", " ")),
-                        "expected": row.get("expected_overall", ""),
+                        "expected": row.get("expected_overall", ""), "short": short, "kind": kind, "group": group,
+                        "clean": group == "clean",
                         **{k: row.get(k, "") for k in ("brand_name", "class_type", "alcohol_content", "net_contents",
                                                        "bottler_name_address", "country_of_origin",
                                                        "application_id")}})
@@ -153,8 +218,31 @@ def build_application(**values: str) -> Application:
     return app_data
 
 
-def error_response(request: Request, message: str, status: int = 400) -> HTMLResponse:
-    return templates.TemplateResponse(request, "partials/error.html", {"message": message}, status_code=status)
+def error_response(request: Request, message: str, status: int = 400, title: str | None = None) -> HTMLResponse:
+    return templates.TemplateResponse(request, "partials/error.html", {"message": message, "title": title},
+                                      status_code=status)
+
+
+PREVIEW_MAX_SIDE = 1000
+
+
+def preview_data_url(image: Image.Image) -> str:
+    """A downscaled JPEG of the label, inlined so the result can show it without storing the upload."""
+    img = ImageOps.exif_transpose(image)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    img.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=82, optimize=True)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def result_response(request: Request, result: VerificationResult, application: Application | None,
+                    image_url: str | None, *, compact: bool = False, full_page: bool = False) -> HTMLResponse:
+    ctx = {"result": result, "application": application, "image_url": image_url, "compact": compact,
+           "reader_info": reader_info(), "cloud": CLOUD_READER_AVAILABLE, "default_reader": OCR_ENGINE,
+           "thresholds": THRESHOLDS, "warning_text": MANDATED_WARNING}
+    return templates.TemplateResponse(request, "result_page.html" if full_page else "partials/result.html", ctx)
 
 
 # Refuse oversized uploads from their Content-Length before the body is read (and spooled to disk).
@@ -212,7 +300,9 @@ async def _verify_from_form(brand_name, class_type, alcohol_content, net_content
     img, name = await read_image(image, sample.strip())
     # OCR takes about a second of CPU: run it off the event loop so other agents, batch polling and
     # /healthz are not queued behind it.
-    return await run_in_threadpool(verify, app_data, img, get_reader(reader, psm), name)
+    result = await run_in_threadpool(verify, app_data, img, get_reader(reader, psm), name)
+    image_url = f"/samples/{sample.strip()}.png" if sample.strip() else await run_in_threadpool(preview_data_url, img)
+    return result, app_data, image_url
 
 
 @app.post("/verify", response_class=HTMLResponse)
@@ -222,17 +312,20 @@ async def verify_html(request: Request, brand_name: str = Form(""), class_type: 
                       application_id: str = Form(""), sample: str = Form(""), reader: str = Form(""),
                       image: UploadFile | None = File(None)):
     try:
-        result = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents, bottler_name_address,
-                                         country_of_origin, application_id, sample, reader, image)
+        result, app_data, image_url = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents,
+                                                              bottler_name_address, country_of_origin, application_id,
+                                                              sample, reader, image)
     except UserError as e:
         return error_response(request, str(e))
     except ReaderError as e:
         log.warning("reader failed: %s", e)
-        return error_response(request, str(e), 502)
+        return error_response(request, str(e), 502, title="We couldn't read this label.")
     except Exception:
         log.exception("verify failed")
         return error_response(request, "Something went wrong while reading this label. Please try another image.", 500)
-    return templates.TemplateResponse(request, "partials/result.html", {"result": result})
+    # The page's script asks for the partial; a plain form post (no JavaScript) gets a whole page.
+    full_page = request.headers.get("x-partial") != "1"
+    return result_response(request, result, app_data, image_url, full_page=full_page)
 
 
 @app.post("/api/verify")
@@ -241,8 +334,9 @@ async def verify_json(brand_name: str = Form(""), class_type: str = Form(""), al
                       country_of_origin: str = Form(""), application_id: str = Form(""), sample: str = Form(""),
                       reader: str = Form(""), image: UploadFile | None = File(None), psm: str | None = Form(None)):
     try:
-        result = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents, bottler_name_address,
-                                         country_of_origin, application_id, sample, reader, image, psm)
+        result, _, _ = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents,
+                                               bottler_name_address, country_of_origin, application_id, sample,
+                                               reader, image, psm)
     except UserError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     except ReaderError as e:
@@ -315,7 +409,16 @@ def batch_item(request: Request, job_id: str, index: int):
     item = job.items[index]
     if item.result is None:
         return error_response(request, item.error or "Still processing.")
-    return templates.TemplateResponse(request, "partials/result.html", {"result": item.result, "compact": True})
+    image_url = f"/batch/{job.id}/image/{index}" if getattr(item, "preview", None) else None
+    return result_response(request, item.result, item.application, image_url, compact=True)
+
+
+@app.get("/batch/{job_id}/image/{index}")
+def batch_image(job_id: str, index: int):
+    job = batchmod.JOBS.get(job_id)
+    if job is None or not (0 <= index < len(job.items)) or not getattr(job.items[index], "preview", None):
+        return Response(status_code=404)
+    return Response(job.items[index].preview, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/batch/{job_id}/export.csv")

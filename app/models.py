@@ -56,6 +56,10 @@ class FieldResult(BaseModel):
 class DiffItem(BaseModel):
     expected: str
     found: str
+    expected_before: str = ""   # a few words of context from the required text
+    expected_after: str = ""
+    found_before: str = ""      # the same context as read from the label
+    found_after: str = ""
 
 
 class WarningResult(BaseModel):
@@ -91,3 +95,4 @@ class VerificationResult(BaseModel):
     image_name: str = ""
     application_id: str = ""
     read_confidence: float | None = None   # mean OCR word confidence (0-100), when the reader reports one
+    image_aspect: float | None = None      # height / width of the label image, for the evidence crops

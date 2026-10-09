@@ -76,7 +76,7 @@ def test_unknown_batch_is_friendly():
 @requires_tesseract
 def test_verify_sample_old_tom_html_and_json():
     r = client.post("/verify", data={**OLD_TOM, "sample": "old_tom_clean"})
-    assert r.status_code == 200 and "Label matches the application" in r.text and "Checked in" in r.text
+    assert r.status_code == 200 and "Label matches the application" in r.text and 'class="timing"' in r.text
     r = client.post("/api/verify", data={**OLD_TOM, "sample": "old_tom_clean"})
     body = r.json()
     assert body["overall"] == "PASS" and body["timings"]["total_ms"] < TIMING_BUDGET_MS

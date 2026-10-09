@@ -80,13 +80,24 @@ def locate_warning(lines: list[str], *, th: Thresholds = THRESHOLDS) -> WarningS
 
 
 # --- wording ----------------------------------------------------------------------------------
-def word_diff(found_text: str) -> list[DiffItem]:
+_MANDATED_RAW_WORDS = MANDATED_WARNING.split()   # same count as _MANDATED_WORDS (no punctuation-only tokens)
+
+
+def word_diff(found_text: str, context: int = 5) -> list[DiffItem]:
+    """Word-level differences from the mandated text, each with a few words of context on both sides."""
+    raw_found = [t for t in found_text.split() if normalize_loose(t)]
     got = normalize_loose(found_text).split()
+    show_found = raw_found if len(raw_found) == len(got) else got
+    show_exp = _MANDATED_RAW_WORDS if len(_MANDATED_RAW_WORDS) == len(_MANDATED_WORDS) else _MANDATED_WORDS
     sm = difflib.SequenceMatcher(a=_MANDATED_WORDS, b=got, autojunk=False)
     out = []
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag != "equal":
-            out.append(DiffItem(expected=" ".join(_MANDATED_WORDS[i1:i2]), found=" ".join(got[j1:j2])))
+        if tag == "equal":
+            continue
+        out.append(DiffItem(
+            expected=" ".join(show_exp[i1:i2]), found=" ".join(show_found[j1:j2]),
+            expected_before=" ".join(show_exp[max(0, i1 - context):i1]), expected_after=" ".join(show_exp[i2:i2 + context]),
+            found_before=" ".join(show_found[max(0, j1 - context):j1]), found_after=" ".join(show_found[j2:j2 + context])))
     return out
 
 

@@ -1,54 +1,142 @@
+{#- One label's verdict: application bar, status banner, split view (label with pins | evidence table + warning). -#}
 {% set r = result %}
-<div class="card result" tabindex="-1">
-  <div class="banner {{ r.overall|chip }}">
-    <div class="banner-text">
-      <strong>{{ r.overall|headline }}</strong>
-      <p>{{ r.summary }}</p>
+{% set cls = r.overall|chip %}
+{% set pins = pin_labels(r) %}
+{% set problem_fields = r.fields|selectattr('verdict.value', 'in', ['MISMATCH', 'NOT FOUND'])|list %}
+{% set review_fields = r.fields|selectattr('verdict.value', 'equalto', 'NEAR MATCH')|list %}
+<div class="result-wrap" data-app-card data-status="{{ r.overall.value }}">
+{% if application and not compact %}
+<div class="card appbar" id="appbar">
+  <div class="kvs">
+    {% if application.application_id %}<div class="kv"><span>Application</span><strong class="id">{{ application.application_id }}</strong></div>{% endif %}
+    <div class="kv"><span>Brand</span><strong>{{ application.brand_name }}</strong></div>
+    <div class="kv"><span>Type</span><span>{{ application.class_type }}</span></div>
+    <div class="kv"><span>Alcohol</span><span>{{ application.alcohol_content }}</span></div>
+    <div class="kv"><span>Net</span><span>{{ application.net_contents }}</span></div>
+    {% if application.country_of_origin %}<div class="kv"><span>Origin</span><span>{{ application.country_of_origin }}</span></div>{% endif %}
+    {% if r.image_name %}<div class="kv"><span>Image</span><span class="file">{{ r.image_name }}</span></div>{% endif %}
+  </div>
+  <div class="acts">
+    <button class="btn secondary small" type="button" data-act="edit">Edit application</button>
+    <button class="btn secondary small" type="button" data-act="another">Check another label</button>
+  </div>
+</div>
+{% endif %}
+
+<section class="card result {{ cls }}" role="status" tabindex="-1" aria-label="Result: {{ r.overall|headline }}">
+  <div class="banner {{ cls }}">
+    <span class="badge {{ cls }}">{{ icon(r.overall|glyph, 24) }}</span>
+    <div class="text">
+      <h2>{{ r.overall|headline }}</h2>
+      <p>{% if problem_fields %}{{ problem_fields|length }} problem{{ 's' if problem_fields|length > 1 }}: {% for f in problem_fields %}<a class="problem" href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if r.warning.overall.value == 'FAIL' %}, <a class="problem" href="#warning-section">government warning</a>{% endif %}.{% elif r.warning.overall.value == 'FAIL' %}1 problem: <a class="problem" href="#warning-section">government warning</a>.{% endif %}
+        {% if review_fields or r.warning.overall.value == 'REVIEW' %} Needs a look: {% for f in review_fields %}<a href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if r.warning.overall.value == 'REVIEW' %}{{ ', ' if review_fields }}<a href="#warning-section">government warning</a>{% endif %}.{% endif %}
+        {% if r.overall.value == 'PASS' %}{{ r.summary }}{% elif not problem_fields and r.warning.overall.value != 'FAIL' and r.warning.overall.value != 'REVIEW' %} Everything else matches and the government warning is correct.{% elif r.warning.overall.value == 'PASS' %} Everything else matches and the government warning is correct.{% endif %}</p>
     </div>
-    <div class="timing" title="Reading the image took {{ r.timings.read_ms|seconds }}, comparing took {{ r.timings.match_ms|seconds }}">
-      Checked in <b>{{ r.timings.total_ms|seconds }}</b>
-      <small>reading {{ r.timings.read_ms|seconds }} · comparing {{ r.timings.match_ms|seconds }}</small>
+    <div class="timing"><b>{{ r.timings.total_ms|seconds }}</b><small>reading {{ r.timings.read_ms|seconds }} · comparing {{ r.timings.match_ms|seconds }}</small></div>
+    {% if not compact %}
+    <div class="acts">
+      {% if r.overall.value == 'FAIL' %}<button class="btn secondary small" type="button" data-act="copy">{{ icon('copy', 16) }}Copy problem summary</button>{% endif %}
+      <button class="btn secondary small" type="button" data-act="print">{{ icon('print', 16) }}Print report</button>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="split">
+    <div class="label-pane">
+      <div class="head"><b>Label, with where each value was read</b>{% if image_url %}<a class="btn quiet small" href="{{ image_url }}" target="_blank" rel="noopener">Open full size</a>{% endif %}</div>
+      {% if image_url %}
+      <div class="label-frame" id="label-frame"{% if r.image_aspect %} style="aspect-ratio: 1 / {{ r.image_aspect }}"{% endif %}>
+        <img src="{{ image_url }}" alt="{{ application.brand_name if application else 'The label' }} label. Highlighted regions are numbered to match the rows of the results table.">
+        {% for f in r.fields if pins[f.key] %}<div class="hl {{ f.verdict|chip if f.verdict.value != 'MATCH' else '' }}" data-hl="{{ f.key }}" style="left:{{ f.box[0] }}%;top:{{ f.box[1] }}%;width:{{ f.box[2] }}%;height:{{ f.box[3] }}%"><span class="n">{{ pins[f.key] }}</span></div>{% endfor %}
+        {% if r.warning.box %}<div class="hl {{ r.warning.overall|chip if r.warning.overall.value != 'PASS' else '' }}" data-hl="warning" style="left:{{ r.warning.box[0] }}%;top:{{ r.warning.box[1] }}%;width:{{ r.warning.box[2] }}%;height:{{ r.warning.box[3] }}%"><span class="n">W</span></div>{% endif %}
+      </div>
+      <p class="hint">Hover or focus a row to light up its region. Numbers match the rows.{% if r.read_confidence is not none %} Read confidence {{ r.read_confidence|round|int }}% ({{ r.reader }}).{% endif %}</p>
+      {% else %}
+      <div class="label-frame noimg">The label image is not kept after the check, so it cannot be shown here.</div>
+      {% endif %}
+    </div>
+
+    <div class="verdicts">
+      <div class="head"><h3>Mandatory label information</h3><span>27 CFR parts 4, 5 and 7 · as filed on the COLA application</span></div>
+      <table class="fields">
+        <colgroup><col class="c-pin"><col class="c-field"><col><col><col class="c-res"></colgroup>
+        <thead><tr><th><span class="sr">Show on label</span></th><th>Field</th><th>On the application</th><th>On the label</th><th>Result</th></tr></thead>
+        <tbody>
+        {% for f in r.fields %}
+          {% set v = f.verdict.value %}
+          {% set rowcls = 'rv' if v == 'NEAR MATCH' else ('bad' if v in ('MISMATCH', 'NOT FOUND') else ('skip' if v == 'SKIPPED' else '')) %}
+          {% set strip = v != 'SKIPPED' and (f.found or v == 'NOT FOUND') %}
+          <tr class="{{ rowcls }}" id="row-{{ f.key }}" data-row="{{ f.key }}">
+            <td>{% if pins[f.key] %}<button class="pin {{ f.verdict|chip if v != 'MATCH' else '' }}" type="button" data-pin="{{ f.key }}" aria-label="Show {{ f.label|lower }} on the label" aria-expanded="{{ 'true' if v in ('NEAR MATCH', 'MISMATCH') else 'false' }}" aria-controls="strip-{{ f.key }}">{{ pins[f.key] }}</button>{% else %}<span class="pin none" aria-hidden="true">–</span>{% endif %}</td>
+            <td class="k" data-th="Field">{{ f.label }}</td>
+            <td data-th="On the application">{{ f.expected if f.expected else '—' }}</td>
+            <td data-th="On the label">{% if f.found %}{% if v in ('MISMATCH',) %}<strong>{{ f.found }}</strong>{% else %}{{ f.found }}{% endif %}{% else %}—{% endif %}</td>
+            <td data-th="Result">{{ chip(f.verdict) }}<div class="why {{ 'bad' if v in ('MISMATCH', 'NOT FOUND') else ('rv' if v == 'NEAR MATCH' else '') }}">{{ f.note }}</div></td>
+          </tr>
+          {% if strip %}
+          {% set ev = evidence_for(f, r) %}
+          <tr class="{{ rowcls }} strip-row" id="strip-{{ f.key }}" data-strip="{{ f.key }}"{% if v not in ('NEAR MATCH', 'MISMATCH', 'NOT FOUND') %} data-collapsed="1"{% endif %}>
+            <td colspan="5">
+              <div class="ev {{ f.verdict|chip if v != 'MATCH' else '' }}">
+                {% if ev.crop and image_url %}<div class="crop" style="{{ ev.crop.box_style }}"><img src="{{ image_url }}" alt="Crop of the label around the {{ f.label|lower }}" style="{{ ev.crop.img_style }}" loading="lazy"></div>{% endif %}
+                <div class="grid">{% for k, val, c in ev.rows %}<span>{{ k }}</span><span class="{{ c }}">{{ val }}</span>{% endfor %}</div>
+                {% if ev.text %}<div class="text">{{ ev.text }}</div>{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+        </tbody>
+      </table>
+
+      {% set w = r.warning %}
+      {% set wcls = w.overall|chip %}
+      <section class="wsec {{ wcls }}" id="warning-section" data-row="warning">
+        <div class="head">
+          {% if w.box %}<button class="pin {{ wcls if w.overall.value != 'PASS' else '' }}" type="button" data-pin="warning" aria-label="Show the government warning on the label">W</button>{% endif %}
+          <h3>Government warning</h3>
+          {{ chip(w.overall) }}
+          <span class="cite">27 CFR 16.21 · required word for word · heading in capitals and bold</span>
+        </div>
+        {% if not w.present %}
+          <p class="why bad">{{ w.wording_note }}</p>
+        {% else %}
+        <div class="chks">
+          <div class="chk"><span class="chip pass">{{ icon('check') }}PASS</span><span class="name">Present</span><div><div class="t">The statement was found on the label.</div></div></div>
+          <div class="chk {{ 'rv' if w.wording.value == 'REVIEW' else ('bad' if w.wording.value == 'FAIL' else '') }}">
+            {{ chip(w.wording) }}<span class="name">Wording</span>
+            <div class="body">
+              <div class="t">{{ w.wording_note }}</div>
+              {% if w.diff %}
+              <table class="diff">
+                <thead><tr><th style="width: 50%">Required text says</th><th>Label says</th></tr></thead>
+                <tbody>{% for d in w.diff %}<tr>
+                  <td>{% if d.expected_before %}…{{ d.expected_before }} {% endif %}<mark class="req">{{ d.expected or '(nothing)' }}</mark>{% if d.expected_after %} {{ d.expected_after }}…{% endif %}</td>
+                  <td>{% if d.found_before %}…{{ d.found_before }} {% endif %}<mark>{{ d.found or '(nothing)' }}</mark>{% if d.found_after %} {{ d.found_after }}…{% endif %}</td>
+                </tr>{% endfor %}</tbody>
+              </table>
+              <div class="stats"><span>similarity <b>{{ w.wording_score }} / 100</b></span><span>review from {{ thresholds.warning_near }}, fail below</span></div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="chk {{ 'rv' if w.heading_caps.value == 'REVIEW' else ('bad' if w.heading_caps.value == 'FAIL' else '') }}">{{ chip(w.heading_caps) }}<span class="name">Heading in capitals</span><div><div class="t">{{ w.heading_caps_note }}</div></div></div>
+          <div class="chk {{ 'rv' if w.heading_bold.value == 'REVIEW' else ('bad' if w.heading_bold.value == 'FAIL' else '') }}">{{ chip(w.heading_bold) }}<span class="name">Heading bold</span>
+            <div class="body">
+              <div><div class="t">{{ w.heading_bold_note }}</div><div class="s">Estimated from stroke width in the image (bold passes from {{ thresholds.bold_ratio }}×; regular text measures about 1.0–1.1×). A heuristic, so a doubtful result asks for a look instead of failing the label.</div></div>
+              {% set pct = bold_meter_percent(w.bold_ratio, thresholds.bold_ratio) %}
+              {% if pct is not none %}
+              <div class="meter-wrap"><div class="meter" aria-hidden="true" style="--tick: {{ bold_meter_percent(thresholds.bold_ratio, thresholds.bold_ratio) }}%"><span class="tick" style="left: {{ bold_meter_percent(thresholds.bold_ratio, thresholds.bold_ratio) }}%"></span><span class="markr {{ 'review' if w.heading_bold.value != 'PASS' else '' }}" style="left: {{ pct }}%"></span></div>
+              <div class="meter-scale"><span>0.8× regular</span><span>{{ thresholds.bold_ratio }}× threshold</span><span>{{ '%.2f'|format(w.bold_ratio) }}× measured</span><span>2.5×</span></div></div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <details><summary>Statement as read from the label</summary><blockquote class="read">{{ w.found_text }}</blockquote></details>
+        {% endif %}
+      </section>
+
+      <details><summary>All text we read on the label <span class="dim">({{ r.reader }})</span></summary><pre class="ocr">{{ r.ocr_text }}</pre></details>
     </div>
   </div>
-  {% if r.image_name and not compact %}<p class="muted small">Label: {{ r.image_name }}{% if r.application_id %} · Application {{ r.application_id }}{% endif %}</p>{% endif %}
-  <table class="fields">
-    <thead><tr><th>Field</th><th>On the application</th><th>On the label</th><th>Result</th></tr></thead>
-    <tbody>
-    {% for f in r.fields %}
-      <tr class="{{ f.verdict|chip }}">
-        <td class="fname">{{ f.label }}</td>
-        <td data-th="On the application">{{ f.expected if f.expected else '—' }}</td>
-        <td data-th="On the label">{{ f.found if f.found else '—' }}</td>
-        <td data-th="Result"><span class="chip {{ f.verdict|chip }}">{{ f.verdict.value }}</span><div class="note">{{ f.note }}</div></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-
-  {% set w = r.warning %}
-  <section class="warning-box {{ w.overall|chip }}">
-    <h3>Government warning <span class="chip {{ w.overall|chip }}">{{ w.overall.value }}</span></h3>
-    {% if not w.present %}
-      <p class="note">{{ w.wording_note }}</p>
-    {% else %}
-      <ul class="checks">
-        <li><span class="chip ok">Pass</span> <strong>Present.</strong> The statement was found on the label.</li>
-        <li><span class="chip {{ w.wording|chip }}">{{ w.wording|short }}</span> <strong>Wording.</strong> {{ w.wording_note }}</li>
-        <li><span class="chip {{ w.heading_caps|chip }}">{{ w.heading_caps|short }}</span> <strong>Capitals.</strong> {{ w.heading_caps_note }}</li>
-        <li><span class="chip {{ w.heading_bold|chip }}">{{ w.heading_bold|short }}</span> <strong>Bold.</strong> {{ w.heading_bold_note }}</li>
-      </ul>
-      {% if w.diff %}
-      <table class="diff">
-        <thead><tr><th>Required text says</th><th>Label says</th></tr></thead>
-        <tbody>{% for d in w.diff %}<tr><td>{{ d.expected or '(nothing)' }}</td><td>{{ d.found or '(nothing)' }}</td></tr>{% endfor %}</tbody>
-      </table>
-      {% endif %}
-      <details><summary>Statement as read from the label</summary><blockquote>{{ w.found_text }}</blockquote></details>
-    {% endif %}
-  </section>
-
-  <details class="ocr">
-    <summary>All text we read on the label <span class="muted small">({{ r.reader }})</span></summary>
-    <pre>{{ r.ocr_text }}</pre>
-  </details>
+</section>
 </div>

@@ -45,7 +45,8 @@ def test_wording_one_word_changed_needs_review_with_diff():
     text = MANDATED_WARNING.replace("may cause", "can cause")
     status, score, _, diff = check_wording(text)
     assert status == Status.REVIEW
-    assert diff == [type(diff[0])(expected="may", found="can")]
+    assert [(d.expected, d.found) for d in diff] == [("may", "can")]
+    assert diff[0].expected_before.endswith("machinery, and") and diff[0].found_after.startswith("cause")
 
 
 def test_wording_truncated_fails():
