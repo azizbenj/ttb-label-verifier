@@ -256,3 +256,8 @@ def test_brand_found_only_in_small_print_needs_review():
     app = app.model_copy(update={"brand_name": "HAZY DAZE"})
     assert extract_and_compare(app, ocr)[0].verdict == Verdict.MATCH
 
+
+def test_volume_compound_and_thousands_compare_as_numbers():
+    assert compare_volume("22 fl oz", "1 PINT 6 FL. OZ.").verdict == Verdict.MATCH
+    assert compare_volume("1,000 mL", "1 L").verdict == Verdict.MATCH
+    assert compare_volume("750 mL", "GROWN IN VOLCANIC SOIL 750 mL").verdict == Verdict.MATCH

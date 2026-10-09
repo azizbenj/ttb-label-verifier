@@ -110,3 +110,24 @@ def test_state_codes_in_addresses_are_not_volumes():
     assert parse_net_contents("Imported by Great Lakes Beverage Imports, Chicago, IL 60607") is None
     assert parse_net_contents("Bottled in Springfield, IL") is None
     assert parse_net_contents("50% ALC./VOL. (100 PROOF) LL").ml == 1000.0
+
+
+def test_thousands_separator_in_volumes():
+    assert parse_net_contents("1,000 mL").ml == 1000.0
+    assert parse_net_contents("1,750 mL").ml == 1750.0
+    assert parse_net_contents("1,5 L").ml == 1500.0       # decimal comma
+    assert parse_net_contents("0,750 L").ml == 750.0      # decimal comma, not thousands
+    assert parse_net_contents("1.2.3 L") is None          # garbage never crashes the parser
+
+
+def test_look_alike_repair_never_overrides_a_real_volume():
+    # "SOIL" used to become "501 L" and win because it comes first on the label.
+    assert parse_net_contents("GROWN IN VOLCANIC SOIL\n750 mL").ml == 750.0
+    assert parse_net_contents("OLIVE OIL CASK FINISH 750 mL").ml == 750.0
+
+
+def test_us_customary_units_and_compound_statements():
+    assert abs(parse_net_contents("1 PINT 6 FL. OZ.").ml - parse_net_contents("22 fl oz").ml) < 0.01
+    assert abs(parse_net_contents("1 PINT").ml - 473.18) < 0.01
+    assert abs(parse_net_contents("1 QT. 8 FL OZ").ml - parse_net_contents("40 fl oz").ml) < 0.01
+    assert abs(parse_net_contents("1 GALLON").ml - 3785.41) < 0.01

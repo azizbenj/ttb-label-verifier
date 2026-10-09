@@ -99,10 +99,6 @@ def fix_ocr_digits(token: str) -> str:
     return _NUMERIC_RUN_RE.sub(_repair_run, token)
 
 
-def fix_ocr_digits_in_text(text: str) -> str:
-    return fix_ocr_digits(text)
-
-
 # --- Alcohol content --------------------------------------------------------------------------
 @dataclass(frozen=True)
 class AlcoholValue:
@@ -139,7 +135,7 @@ def parse_alcohol(text: str) -> AlcoholValue | None:
     """
     if not text:
         return None
-    t = fix_ocr_digits_in_text(unify_unicode(text))
+    t = fix_ocr_digits(unify_unicode(text))
     percents = [m for m in _PERCENT_RE.finditer(t) if _to_float(m.group(1)) <= _MAX_PLAUSIBLE_ABV]
     proofs = list(_PROOF_RE.finditer(t))
 
@@ -200,19 +196,29 @@ _UNIT_TO_ML = {
     "cl": 10.0, "centiliter": 10.0, "centilitre": 10.0,
     "l": 1000.0, "liter": 1000.0, "litre": 1000.0,
     "floz": 29.5735, "fluidounce": 29.5735, "oz": 29.5735, "ounce": 29.5735,
+    "pt": 473.176, "pint": 473.176, "qt": 946.353, "quart": 946.353, "gal": 3785.41, "gallon": 3785.41,
 }
 _CANON_UNIT = {
     "ml": "mL", "milliliter": "mL", "millilitre": "mL",
     "cl": "cL", "centiliter": "cL", "centilitre": "cL",
     "l": "L", "liter": "L", "litre": "L",
     "floz": "fl oz", "fluidounce": "fl oz", "oz": "fl oz", "ounce": "fl oz",
+    "pt": "pt", "pint": "pt", "qt": "qt", "quart": "qt", "gal": "gal", "gallon": "gal",
 }
+_METRIC_UNITS = ("mL", "L", "cL")
+# The number must not be glued to a digit look-alike ("7S0 mL" is not "0 mL"; the repair below reads it).
 _VOLUME_RE = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*"
+    r"(?<![0-9.,LlIOoSsB])(\d{1,3}(?:,\d{3})+|\d+(?:[.,]\d+)?)\s*"
     r"(m\s?l|milliliters?|millilitres?|c\s?l|centiliters?|centilitres?|"
-    r"fl\.?\s*oz\.?|fluid\s*ounces?|oz\.?|ounces?|liters?|litres?|l)\b\.?",
+    r"fl\.?\s*oz\.?|fluid\s*ounces?|oz\.?|ounces?|liters?|litres?|l|"
+    r"pints?|pt\.?|quarts?|qt\.?|gallons?|gal\.?)\b\.?",
     re.IGNORECASE,
 )
+_THOUSANDS_RE = re.compile(r"^[1-9]\d{0,2}(?:,\d{3})+$")   # "1,000" or "1,750" (but "0,750" is a decimal comma)
+
+
+def _volume_number(s: str) -> float:
+    return float(s.replace(",", "")) if _THOUSANDS_RE.match(s) else _to_float(s)
 
 
 def _canon_unit_key(raw: str) -> str:
@@ -249,24 +255,45 @@ def _repair_mangled_volumes(t: str) -> str:
     return _MANGLED_VOLUME_RE.sub(fix, t)
 
 
-def parse_net_contents(text: str) -> VolumeValue | None:
-    """Pull a volume out of free text and express it in millilitres.
-
-    Accepts "750 mL", "750ml", "1.75 L", "12 FL. OZ.", "70 cl". When several volumes
-    appear (e.g. "12 FL OZ (355 mL)") the metric one wins because it is exact.
-    """
-    if not text:
-        return None
-    t = _repair_mangled_volumes(fix_ocr_digits_in_text(unify_unicode(text)))
-    candidates = []
+def _volume_candidates(t: str) -> list[VolumeValue]:
+    found: list[tuple[re.Match, VolumeValue]] = []
     for m in _VOLUME_RE.finditer(t):
         key = _canon_unit_key(m.group(2))
         if key not in _UNIT_TO_ML:
             continue
-        value = _to_float(m.group(1))
-        candidates.append(VolumeValue(ml=round(value * _UNIT_TO_ML[key], 2), unit=_CANON_UNIT[key],
-                                      text=collapse_ws(m.group(0)), digits=re.sub(r"[.,]", "", m.group(1))))
+        value = _volume_number(m.group(1))
+        found.append((m, VolumeValue(ml=round(value * _UNIT_TO_ML[key], 2), unit=_CANON_UNIT[key],
+                                     text=collapse_ws(m.group(0)), digits=re.sub(r"[.,]", "", m.group(1)))))
+    # US compound statements: "1 PINT 6 FL. OZ." is 22 fl oz, not 6.
+    out: list[VolumeValue] = []
+    i = 0
+    while i < len(found):
+        m, v = found[i]
+        if v.unit in ("pt", "qt", "gal") and i + 1 < len(found):
+            m2, v2 = found[i + 1]
+            if v2.unit == "fl oz" and not t[m.end():m2.start()].strip(" ,&"):
+                out.append(VolumeValue(ml=round(v.ml + v2.ml, 2), unit="fl oz",
+                                       text=collapse_ws(t[m.start():m2.end()]), digits=v.digits + v2.digits))
+                i += 2
+                continue
+        out.append(v)
+        i += 1
+    return out
+
+
+def parse_net_contents(text: str) -> VolumeValue | None:
+    """Pull a volume out of free text and express it in millilitres.
+
+    Accepts "750 mL", "750ml", "1.75 L", "1,000 mL", "12 FL. OZ.", "70 cl", "1 PINT 6 FL. OZ.". When
+    several volumes appear (e.g. "12 FL OZ (355 mL)") the metric one wins because it is exact.
+    Digits read as look-alike letters are repaired only when no ordinary volume is present, so a
+    word such as "SOIL" is never turned into "501 L" in front of the real statement.
+    """
+    if not text:
+        return None
+    t = fix_ocr_digits(unify_unicode(text))
+    candidates = _volume_candidates(t) or _volume_candidates(_repair_mangled_volumes(t))
     if not candidates:
         return None
-    metric = [c for c in candidates if c.unit in ("mL", "L", "cL")]
+    metric = [c for c in candidates if c.unit in _METRIC_UNITS]
     return metric[0] if metric else candidates[0]
