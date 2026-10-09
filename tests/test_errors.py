@@ -157,3 +157,23 @@ def test_too_many_images_says_how_to_split(monkeypatch):
         assert "You added 3 images; the limit is 2 per batch" in str(e)
     else:
         raise AssertionError("expected BatchError")
+
+
+class SparseWrongReader:
+    """A neck label read perfectly: three words, all of them disagreeing with the application."""
+
+    name = "sparse"
+
+    def read(self, image):
+        lines = ["VODKA", "40% ALC/VOL", "1 LITER"]
+        words = [OCRWord(text=t, left=10 + 60 * j, top=50 * i, width=50, height=30, conf=92, line_index=i)
+                 for i, line in enumerate(lines) for j, t in enumerate(line.split())]
+        return LabelReading(ocr=OCRResult(text="\n".join(lines), lines=lines, words=words, engine="sparse"))
+
+
+def test_few_words_that_were_read_and_disagree_are_a_fail_not_unreadable():
+    app = Application(brand_name="NORTH STAR", class_type="Gin", alcohol_content="45%", net_contents="750 mL")
+    r = verify(app, Image.new("RGB", (300, 300), "white"), SparseWrongReader())
+    assert not r.unreadable and r.overall.value == "FAIL"
+    by_key = {f.key: f.verdict.value for f in r.fields}
+    assert by_key["alcohol_content"] == "MISMATCH" and by_key["net_contents"] == "MISMATCH"

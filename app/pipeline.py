@@ -13,6 +13,14 @@ from .readers.extract import attach_boxes, compare_from_fields, extract_and_comp
 from .warning import check_warning
 
 
+def was_read(f: FieldResult) -> bool:
+    """Something on the label was read for this field, whether it agrees or not. The brand's fallback
+    (the largest line, shown when nothing resembles the brand) does not count: it is not a reading of it."""
+    if f.verdict in (Verdict.NOT_FOUND, Verdict.SKIPPED):
+        return False
+    return not (f.key == "brand_name" and f.verdict == Verdict.MISMATCH and f.lines is None)
+
+
 def overall_status(fields: list[FieldResult], warning: WarningResult) -> Status:
     verdicts = {f.verdict for f in fields}
     if Verdict.MISMATCH in verdicts or Verdict.NOT_FOUND in verdicts or warning.overall == Status.FAIL:
@@ -67,8 +75,11 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
         clear = [w for w in ocr.words if w.conf >= THRESHOLDS.unreadable_word_conf
                  and sum(ch.isalpha() for ch in w.text) >= 3]
         words_read = len(clear)
-        found = any(f.verdict in (Verdict.MATCH, Verdict.NEAR_MATCH) for f in fields)
-        unreadable = words_read < THRESHOLDS.unreadable_min_words and not found and not warning.present
+        # "Unreadable" withholds the verdict, so it is only for an image where nothing was read at all: a
+        # neck label reading "VODKA / 40% ALC/VOL / 1 LITER" against 45% and 750 mL has few words but
+        # two clear mismatches and must FAIL.
+        read_any = any(was_read(f) for f in fields)
+        unreadable = words_read < THRESHOLDS.unreadable_min_words and not read_any and not warning.present
     status = overall_status(fields, warning)
     t_end = perf_counter()
     return VerificationResult(
