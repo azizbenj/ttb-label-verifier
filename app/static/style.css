@@ -83,10 +83,11 @@ button.link, a.link { background: none; border: none; color: var(--blue); text-d
 .banner p { margin: 2px 0 0; color: var(--ink); }
 .timing { text-align: right; color: var(--ink); line-height: 1.25; }
 .timing b { font-size: 1.2rem; } .timing small { display: block; color: var(--muted); }
-table.fields { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+table.fields { width: 100%; border-collapse: collapse; margin-bottom: 16px; table-layout: fixed; }
+table.fields th:nth-child(1) { width: 20%; } table.fields th:nth-child(2), table.fields th:nth-child(3) { width: 28%; }
 table.fields th { text-align: left; font-size: .85rem; color: var(--muted); padding: 6px 8px; border-bottom: 2px solid var(--line); }
 table.fields td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-table.fields td.fname { font-weight: 600; white-space: nowrap; }
+table.fields td.fname { font-weight: 600; }
 table.fields tr.bad td { background: #fff7f7; } table.fields tr.warn td { background: #fffbf0; } table.fields tr.missing td { background: #f7f8fa; }
 .note { color: var(--muted); font-size: .85rem; margin-top: 4px; }
 .warning-box { border: 1px solid var(--line); border-left: 6px solid var(--missing-line); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
@@ -136,7 +137,7 @@ table.legend td { padding: 6px 10px 6px 0; vertical-align: top; }
 /* narrow screens: never overflow horizontally, stack the comparison table */
 .cols > * { min-width: 0; }
 .form select, .form input { max-width: 100%; }
-table.fields td, table.diff td { overflow-wrap: anywhere; }
+table.fields td, table.diff td { overflow-wrap: break-word; word-break: normal; }
 @media (max-width: 640px) {
   html { font-size: 16px; }
   .banner { flex-direction: column; align-items: flex-start; }
@@ -148,3 +149,4 @@ table.fields td, table.diff td { overflow-wrap: anywhere; }
   table.fields td.fname { font-size: 1.05rem; }
   .checks .chip { display: block; width: max-content; margin-bottom: 4px; }
 }
+.card[tabindex="-1"]:focus { outline: none; }

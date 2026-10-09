@@ -5,11 +5,23 @@
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
   // --- tabs -----------------------------------------------------------------------------------
-  $$(".tab").forEach((tab) => {
+  const tabs = $$(".tab");
+  tabs.forEach((tab, i) => {
     tab.addEventListener("click", () => {
-      $$(".tab").forEach((t) => { t.classList.toggle("active", t === tab); t.setAttribute("aria-selected", t === tab); });
+      tabs.forEach((t) => {
+        t.classList.toggle("active", t === tab);
+        t.setAttribute("aria-selected", t === tab);
+        t.tabIndex = t === tab ? 0 : -1;
+      });
       $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + tab.dataset.tab));
       try { localStorage.setItem("labelcheck.tab", tab.dataset.tab); } catch (e) { /* ignore */ }
+    });
+    tab.addEventListener("keydown", (e) => {  // arrow keys move between tabs (WAI-ARIA tabs pattern)
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (!step) return;
+      const next = tabs[(i + step + tabs.length) % tabs.length];
+      next.click();
+      next.focus();
     });
   });
   try {
@@ -19,19 +31,40 @@
   } catch (e) { /* ignore */ }
 
   // --- helpers --------------------------------------------------------------------------------
-  async function postForm(form, slot) {
+  function errorCard(title, detail) {
+    return `<div class="card error" role="alert" tabindex="-1"><strong>${title}</strong><p>${detail}</p></div>`;
+  }
+
+  // The app answers every request with an HTML card, errors included. Anything else (a proxy's
+  // error page during a redeploy, say) must not be pasted into the page.
+  async function cardFrom(resp) {
+    const text = await resp.text();
+    if (text.trim().startsWith("<div class=\"card")) return text;
+    return errorCard("The server did not answer properly.", `Please try again in a moment (HTTP ${resp.status}).`);
+  }
+
+  function show(slot, html) {
+    slot.innerHTML = html;
+    const card = slot.querySelector(".card");
+    if (card && card.hasAttribute("tabindex")) card.focus();  // keyboard and screen-reader users land on the result
+  }
+
+  async function post(url, body, slot, button) {
     slot.classList.add("busy");
-    const submit = form.querySelector('button[type="submit"]');
-    if (submit) submit.disabled = true;
+    if (button) button.disabled = true;
     try {
-      const resp = await fetch(form.action, { method: "POST", body: new FormData(form) });
-      slot.innerHTML = await resp.text();
+      const resp = await fetch(url, { method: "POST", body });
+      show(slot, await cardFrom(resp));
     } catch (err) {
-      slot.innerHTML = '<div class="card error" role="alert"><strong>We couldn\'t reach the server.</strong><p>Check your connection and try again.</p></div>';
+      show(slot, errorCard("We couldn't reach the server.", "Check your connection and try again."));
     } finally {
       slot.classList.remove("busy");
-      if (submit) submit.disabled = false;
+      if (button) button.disabled = false;
     }
+  }
+
+  function postForm(form, slot) {
+    return post(form.action, new FormData(form), slot, form.querySelector('button[type="submit"]'));
   }
 
   // --- single label ---------------------------------------------------------------------------
@@ -42,8 +75,10 @@
   const preview = $("#preview");
 
   function showPreview(src) {
-    if (!src) { preview.hidden = true; preview.querySelector("img").src = ""; return; }
-    preview.querySelector("img").src = src;
+    const img = preview.querySelector("img");
+    if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+    if (!src) { preview.hidden = true; img.removeAttribute("src"); return; }
+    img.src = src;
     preview.hidden = false;
   }
 
@@ -88,12 +123,18 @@
       pollTimer = setTimeout(async () => {
         try {
           const resp = await fetch(`/batch/${box.dataset.job}`);
-          batchSlot.innerHTML = await resp.text();
-        } catch (err) { /* keep the last state, retry next tick */ }
+          // 404: the job is gone (restart), show the app's message. Other errors (a proxy during a
+          // redeploy): keep the last state and try again on the next tick.
+          if (resp.ok || resp.status === 404) {
+            const html = await cardFrom(resp);
+            if (resp.ok) batchSlot.innerHTML = html; else show(batchSlot, html);
+          }
+        } catch (err) { /* network blip: retry next tick */ }
         wireBatch();
       }, 1000);
       return;
     }
+    if (!box.dataset.wired) { box.dataset.wired = "1"; box.focus(); }
     // filters
     const rows = $$("tr.row", batchSlot);
     const search = $(".search", batchSlot);
@@ -109,7 +150,10 @@
     }
     $$(".filter", batchSlot).forEach((btn) => btn.addEventListener("click", () => {
       active = btn.dataset.filter;
-      $$(".filter", batchSlot).forEach((b) => b.classList.toggle("active", b === btn));
+      $$(".filter", batchSlot).forEach((b) => {
+        b.classList.toggle("active", b === btn);
+        b.setAttribute("aria-pressed", b === btn);
+      });
       apply();
     }));
     if (search) search.addEventListener("input", apply);
@@ -126,7 +170,7 @@
         r.after(d);
         try {
           const resp = await fetch(`/batch/${box.dataset.job}/item/${r.dataset.index}`);
-          d.firstElementChild.innerHTML = await resp.text();
+          d.firstElementChild.innerHTML = await cardFrom(resp);
         } catch (err) { d.firstElementChild.textContent = "Could not load this result."; }
       };
       r.addEventListener("click", open);
@@ -148,15 +192,7 @@
       fd.append("sample", "1");
       const reader = batchForm.querySelector('[name="reader"]:checked');
       if (reader) fd.append("reader", reader.value);
-      batchSlot.classList.add("busy");
-      sampleBtn.disabled = true;
-      try {
-        const resp = await fetch("/batch", { method: "POST", body: fd });
-        batchSlot.innerHTML = await resp.text();
-      } finally {
-        batchSlot.classList.remove("busy");
-        sampleBtn.disabled = false;
-      }
+      await post("/batch", fd, batchSlot, sampleBtn);
       wireBatch();
     });
   }

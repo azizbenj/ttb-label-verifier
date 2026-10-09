@@ -1,5 +1,5 @@
 {% set r = result %}
-<div class="card result">
+<div class="card result" tabindex="-1">
   <div class="banner {{ r.overall|chip }}">
     <div class="banner-text">
       <strong>{{ r.overall|headline }}</strong>
@@ -32,10 +32,10 @@
       <p class="note">{{ w.wording_note }}</p>
     {% else %}
       <ul class="checks">
-        <li><span class="chip ok">PRESENT</span> The statement was found on the label.</li>
-        <li><span class="chip {{ w.wording|chip }}">WORDING</span> {{ w.wording_note }}</li>
-        <li><span class="chip {{ w.heading_caps|chip }}">CAPITALS</span> {{ w.heading_caps_note }}</li>
-        <li><span class="chip {{ w.heading_bold|chip }}">BOLD</span> {{ w.heading_bold_note }}</li>
+        <li><span class="chip ok">Pass</span> <strong>Present.</strong> The statement was found on the label.</li>
+        <li><span class="chip {{ w.wording|chip }}">{{ w.wording|short }}</span> <strong>Wording.</strong> {{ w.wording_note }}</li>
+        <li><span class="chip {{ w.heading_caps|chip }}">{{ w.heading_caps|short }}</span> <strong>Capitals.</strong> {{ w.heading_caps_note }}</li>
+        <li><span class="chip {{ w.heading_bold|chip }}">{{ w.heading_bold|short }}</span> <strong>Bold.</strong> {{ w.heading_bold_note }}</li>
       </ul>
       {% if w.diff %}
       <table class="diff">

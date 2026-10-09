@@ -1,12 +1,12 @@
 {% if not job.is_done %}
 <div class="card progress" data-job="{{ job.id }}" data-status="running">
   <strong>Checking {{ job.total }} labels…</strong>
-  <div class="bar"><div class="fill" style="width: {{ (100 * job.done / job.total) if job.total else 100 }}%"></div></div>
+  <div class="bar" role="progressbar" aria-label="Labels checked" aria-valuemin="0" aria-valuemax="{{ job.total }}" aria-valuenow="{{ job.done }}"><div class="fill" style="width: {{ (100 * job.done / job.total) if job.total else 100 }}%"></div></div>
   <p class="muted">{{ job.done }} of {{ job.total }} done · {{ job.elapsed_ms|seconds }} elapsed</p>
 </div>
 {% else %}
 {% set c = job.counts() %}
-<div class="card batch" data-job="{{ job.id }}" data-status="done">
+<div class="card batch" data-job="{{ job.id }}" data-status="done" tabindex="-1">
   <div class="batch-head">
     <div>
       <strong>{{ job.total }} labels checked</strong>
@@ -15,11 +15,11 @@
     <a class="secondary" href="/batch/{{ job.id }}/export.csv" download>Download results (CSV)</a>
   </div>
   <div class="filters" role="group" aria-label="Filter results">
-    <button class="filter active" data-filter="">All <b>{{ job.total }}</b></button>
-    <button class="filter ok" data-filter="PASS">Pass <b>{{ c.PASS }}</b></button>
-    <button class="filter warn" data-filter="REVIEW">Review <b>{{ c.REVIEW }}</b></button>
-    <button class="filter bad" data-filter="FAIL">Fail <b>{{ c.FAIL }}</b></button>
-    {% if c.ERROR %}<button class="filter bad" data-filter="ERROR">Error <b>{{ c.ERROR }}</b></button>{% endif %}
+    <button class="filter active" data-filter="" aria-pressed="true">All <b>{{ job.total }}</b></button>
+    <button class="filter ok" data-filter="PASS" aria-pressed="false">Pass <b>{{ c.PASS }}</b></button>
+    <button class="filter warn" data-filter="REVIEW" aria-pressed="false">Review <b>{{ c.REVIEW }}</b></button>
+    <button class="filter bad" data-filter="FAIL" aria-pressed="false">Fail <b>{{ c.FAIL }}</b></button>
+    {% if c.ERROR %}<button class="filter bad" data-filter="ERROR" aria-pressed="false">Error <b>{{ c.ERROR }}</b></button>{% endif %}
     <input type="search" class="search" placeholder="Search brand or file name…" aria-label="Search results">
   </div>
   {% if job.issues %}
@@ -50,6 +50,6 @@
     </tbody>
   </table>
   </div>
-  <p class="muted small">Click a row to see the full comparison.</p>
+  <p class="muted small">Click a row (or press Enter on it) to see the full comparison.</p>
 </div>
 {% endif %}

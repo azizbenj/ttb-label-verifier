@@ -36,8 +36,8 @@ def summarize(status: Status, fields: list[FieldResult], warning: WarningResult)
     if problems:
         parts.append(f"{len(problems)} problem{'s' if len(problems) > 1 else ''}: {', '.join(problems)}")
     if reviews:
-        parts.append(f"needs a look: {', '.join(reviews)}")
-    return ". ".join(parts).capitalize() + "."
+        parts.append(f"Needs a look: {', '.join(reviews)}")
+    return ". ".join(parts) + "."
 
 
 def verify(app: Application, image: Image.Image, reader: LabelReader, image_name: str = "") -> VerificationResult:

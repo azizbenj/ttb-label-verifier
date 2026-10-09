@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<nav class="tabs" role="tablist">
-  <button class="tab active" role="tab" data-tab="single" aria-selected="true">Check one label</button>
-  <button class="tab" role="tab" data-tab="batch" aria-selected="false">Check a batch</button>
-  <button class="tab" role="tab" data-tab="help" aria-selected="false">How it works</button>
+<nav class="tabs" role="tablist" aria-label="Label Check">
+  <button class="tab active" role="tab" id="tab-btn-single" data-tab="single" aria-selected="true" aria-controls="tab-single">Check one label</button>
+  <button class="tab" role="tab" id="tab-btn-batch" data-tab="batch" aria-selected="false" aria-controls="tab-batch" tabindex="-1">Check a batch</button>
+  <button class="tab" role="tab" id="tab-btn-help" data-tab="help" aria-selected="false" aria-controls="tab-help" tabindex="-1">How it works</button>
 </nav>
 
-<section id="tab-single" class="panel active">
+<section id="tab-single" class="panel active" role="tabpanel" aria-labelledby="tab-btn-single">
   <div class="cols">
     <form id="single-form" class="card form" method="post" action="/verify" enctype="multipart/form-data" novalidate>
       <h2>1. What the application says</h2>
@@ -20,14 +20,14 @@
       {% for f in fields %}
       <label class="field">
         <span>{{ f.label }}{% if f.required %} <b class="req" title="required">*</b>{% else %} <em class="muted">(optional)</em>{% endif %}</span>
-        <input type="text" name="{{ f.key }}" placeholder="{{ f.hint }}" autocomplete="off">
+        <input type="text" name="{{ f.key }}" placeholder="{{ f.hint }}" autocomplete="off"{% if f.required %} aria-required="true"{% endif %}>
       </label>
       {% endfor %}
       <input type="hidden" name="application_id" value="">
       <h2>2. The label image</h2>
       <label class="field file">
         <span>Label image <b class="req">*</b> <em class="muted">PNG, JPG, TIFF or WEBP</em></span>
-        <input type="file" name="image" id="image-input" accept="image/*">
+        <input type="file" name="image" id="image-input" accept="image/*" aria-required="true">
       </label>
       <div id="preview" class="preview" hidden><img alt="Label preview"><button type="button" class="link" id="clear-image">Remove</button></div>
       {% if cloud %}
@@ -50,21 +50,21 @@
   </div>
 </section>
 
-<section id="tab-batch" class="panel">
+<section id="tab-batch" class="panel" role="tabpanel" aria-labelledby="tab-btn-batch">
   <div class="cols">
     <form id="batch-form" class="card form" method="post" action="/batch" enctype="multipart/form-data" novalidate>
       <h2>Check many labels at once</h2>
       <p class="muted">Upload a CSV with one row per application and the label images (select them all, or a zip).
         Images are matched to rows by file name. <a href="/batch/template.csv">Download the CSV template</a>.</p>
       <label class="field file"><span>Application data (CSV) <b class="req">*</b></span>
-        <input type="file" name="csv_file" accept=".csv,text/csv"></label>
+        <input type="file" name="csv_file" accept=".csv,text/csv" aria-required="true"></label>
       <label class="field file"><span>Label images <b class="req">*</b> <em class="muted">up to 500 images, or a zip</em></span>
-        <input type="file" name="files" multiple accept="image/*,.zip,application/zip"></label>
+        <input type="file" name="files" multiple accept="image/*,.zip,application/zip" aria-required="true"></label>
       {% if cloud %}
       <fieldset class="field">
         <legend>Reader</legend>
-        <label class="radio"><input type="radio" name="reader" value="tesseract" checked> Local OCR</label>
-        <label class="radio"><input type="radio" name="reader" value="claude"> Claude Vision (cloud)</label>
+        <label class="radio"><input type="radio" name="reader" value="tesseract" {% if default_reader != 'claude' %}checked{% endif %}> Local OCR</label>
+        <label class="radio"><input type="radio" name="reader" value="claude" {% if default_reader == 'claude' %}checked{% endif %}> Claude Vision (cloud)</label>
       </fieldset>
       {% endif %}
       <div class="actions">
@@ -81,7 +81,7 @@
   </div>
 </section>
 
-<section id="tab-help" class="panel">
+<section id="tab-help" class="panel" role="tabpanel" aria-labelledby="tab-btn-help">
   <div class="card prose">
     <h2>How a label is checked</h2>
     <ol>
@@ -105,7 +105,7 @@
       <li><strong>Wording</strong>: compared word for word with the required text. Differences are listed. A small difference ({{ thresholds.warning_near }}% similar or more) is flagged for review because it may be a reading error; anything bigger fails.</li>
       <li><strong>Heading in capitals</strong>: "GOVERNMENT WARNING:" must be printed in capitals.</li>
       <li><strong>Heading bold</strong>: estimated by comparing the thickness of the heading's letter strokes with the rest of the statement
-        (bold when at least {{ thresholds.bold_ratio }}× thicker). This is a heuristic, so a doubtful result asks for a look rather than failing the label.</li>
+        (bold when at least {{ thresholds.bold_ratio }}× thicker). The rest of the statement must not be bold. This is a heuristic, so a doubtful result asks for a look rather than failing the label.</li>
     </ul>
     <p class="muted">Required text: “{{ warning_text }}”</p>
     <h3>Good to know</h3>
