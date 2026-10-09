@@ -60,6 +60,7 @@ platform's health check at it. Optional environment variables:
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Model used by the cloud reader |
 | `CLAUDE_TIMEOUT_S` | `30` | Per-attempt timeout of a cloud read (one retry) |
 | `BATCH_WORKERS` | `min(4, CPUs)` | Parallel OCR workers for batch jobs |
+| `DECISION_LOG` | unset | JSON-lines file that records every review decision with what the tool had concluded about the label, never the image (see "Learning from decisions") |
 | `TESSERACT_PSM` | `4+11` | Tesseract page-segmentation mode(s); two modes joined with `+` are merged (see "OCR choice") |
 | `TESSERACT_CMD` | unset | Path to the tesseract binary if it is not on PATH |
 
@@ -114,12 +115,14 @@ Code map:
 | `app/pipeline.py` | One label end to end with timings and the overall verdict |
 | `app/evidence.py` | What the result page shows as evidence: crops of the label, unit conversions, misread explanations |
 | `app/decisions.py` | The one question a label that needs a look asks the agent (review queue and single result) |
+| `app/decision_log.py` | The decision log: one JSON line per review answer and undo when `DECISION_LOG` is set (never the image) |
 | `app/batch.py` | CSV parsing, image/zip intake, thread-pool jobs, CSV export |
 | `app/main.py` + `templates/` + `static/` | FastAPI routes, server-rendered UI (no build step, no CDN, no external assets); `review.html` is the review queue, `report.html` the printable reports |
 | `design/` | The UI design spec: 23 boards, tokens, the implementation order |
 | `scripts/generate_labels.py` | Synthetic label generator (Pillow) |
 | `scripts/bench.py`, `scripts/stress_test.py` | Accuracy and timing on the synthetic sets; the same labels in other typefaces and degraded images |
 | `scripts/fetch_registry_labels.py`, `scripts/real_labels.py`, `scripts/real_labels.csv` | Real approved labels: download, ground truth, field-level scoring |
+| `scripts/decisions_report.py` | Pass rates per rule and a calibration CSV from the decision log |
 | `data/samples/`, `data/batch/` | 15 sample labels (one per failure type) and a 250-label batch, each with its application CSV |
 | `tests/` | Unit tests for every module plus end-to-end and API tests |
 
@@ -298,6 +301,31 @@ batch has a link of its own (`/batch/<id>`) that opens the page on the batch tab
   its numbered regions, the table, the warning checks, and a reviewer decision block (approve / return /
   second look, signature, notes).
 
+#### Learning from decisions
+
+Set `DECISION_LOG=/path/decisions.jsonl` and every answer from the review queue (and every undo) is appended
+to that file as one JSON object per line, with what the tool had concluded about the label: the job, the
+batch's source name, the application id and image name, the decision (`pass`: the label is fine and our flag
+was a false alarm, `fail`: the label is wrong, `skip`, `clear`: undone), the overall verdict, every question
+the label raised (key, what, verdict, question, the two readings) with the one the queue asked first marked,
+each field's verdict / expected / found / note, the four warning statuses and the wording score, the read
+confidence, the words read, the reader and the timings. Never the image, its preview or the text read from
+it. Writes are append-only behind a lock (the server's workers share it; keep one process per log file), and
+a write that fails (a missing directory, a full disk) is a warning in the server log, never an error for the
+agent. Off when the variable is unset.
+
+`python scripts/decisions_report.py decisions.jsonl` keeps the last decision per job and application (an
+undone one drops out) and prints, per question (`brand_name`, `net_contents`, `warning_wording`,
+`warning_bold`...), how many labels raised it, how many times the queue asked it first, the pass / fail / skip
+answers and the pass rate: pass ÷ (pass + fail), the share of that rule's flags the agents found to be false
+alarms. A rule with a high pass rate costs agents time for nothing; one with a low pass rate catches real
+problems. Then the ten most frequent notes behind `pass` answers and the ten behind `fail`. `--csv
+calibration.csv` writes one row per label answered pass or fail in the layout of `scripts/real_labels.csv`
+(the application id as `ttbid`, the application values, `<field>=review` in `expect` when the agent confirmed
+a NEAR MATCH, nothing after a `fail`, the decision and the question in `notes`), ready for
+`scripts/real_labels.py` once the images are in `data/real/`. The script needs only the standard library, so
+it runs on a copy of the log anywhere.
+
 ### Error states
 
 Errors are inline, where the result would have been, and say what happened in one line and what to do in the
@@ -375,6 +403,7 @@ pytest -q
 - `test_multi_image.py`: several images per application, in the form and in batch rows
 - `test_errors.py`: every error state (missing fields with and without JavaScript, bad or oversized image, CSV headers, batch limits, reader failure with retry) and the unreadable-image card and ERROR row
 - `test_decisions.py`: review prompts (Yes always means the label is fine), decisions kept with a batch, the review queue (with and without JavaScript), export scopes and column groups, printable reports, the shared batch link
+- `test_decision_log.py`: the decision log (one compact line per answer and undo with the documented keys, never the image, concurrent writes, an unwritable path never fails the request) and the report script (the last decision wins, pass rates per question, the notes behind the answers, the calibration CSV in the `real_labels.csv` layout)
 - `test_nojs.py`: the batch flow as a browser without JavaScript runs it: post, redirect, self-reloading progress page, row links, whole-page errors
 - `test_claude_reader.py`: the cloud reader's mapping, error handling, refusal fallbacks and client limits, with the SDK mocked
 

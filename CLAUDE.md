@@ -14,6 +14,8 @@ Tesseract must be on PATH (or set `TESSERACT_CMD`). Templates: `app/templates/` 
 
 Real-label testing: `scripts/real_labels.py` scores 20 approved labels from the public registry (images in the gitignored `data/real/`, fetched with `scripts/fetch_registry_labels.py`); `scripts/stress_test.py` renders the samples in other typefaces and degraded images. Numbers are in the README under "Measured results".
 
+Decision log: with `DECISION_LOG=<file>` every review answer and undo is appended as one JSON line (`app/decision_log.py`, never the image); `scripts/decisions_report.py LOG [--csv OUT]` turns it into pass rates per rule and a calibration CSV in the `scripts/real_labels.csv` layout (README, "Learning from decisions").
+
 ## UI redesign spec
 
 Before any change under `app/templates/` or `app/static/`, read `design/README.md`. It points to the 23 design boards in `design/boards/`, the tokens in `design/tokens.css`, the implementation order, and the interactive canvas (https://claude.ai/artifact/QRoVDnra5hD8R6jGh6JAk3), which a session can also read with the Artifact tool. Match the boards' markup, copy and tokens rather than inventing new ones.
