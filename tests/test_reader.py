@@ -118,3 +118,21 @@ def test_transparent_label_reads_like_the_original():
                       alcohol_content="45% Alc./Vol.", net_contents="750 mL")
     result = verify(app, _transparent_label(), T.TesseractReader())
     assert result.overall == Status.PASS, (result.summary, result.ocr_text[:200])
+
+
+def test_deskew_estimates_a_known_tilt():
+    from PIL import Image as _I
+    from app.readers.tesseract import estimate_skew
+    img = _I.open(Path(__file__).resolve().parents[1] / "data" / "samples" / "old_tom_clean.png").convert("L")
+    assert abs(estimate_skew(img)) < 0.3
+    tilted = img.rotate(-3, resample=_I.BICUBIC, expand=True, fillcolor=255)
+    assert abs(estimate_skew(tilted) - 3) <= 0.3
+
+
+def test_previews_follow_the_straightened_image():
+    from PIL import Image as _I
+    from app.batch import make_preview
+    from app.main import preview_data_url
+    img = _I.new("RGB", (400, 600), "white")
+    assert make_preview(img, 3.0)
+    assert preview_data_url(img, 3.0).startswith("data:image/jpeg;base64,")

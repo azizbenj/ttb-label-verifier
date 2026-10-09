@@ -76,6 +76,7 @@ class OCRResult:
     views: list[View] = field(default_factory=list)   # views[0] is the upright image
     extended: bool = False          # the extra rotated / inverted passes have run
     source: object = None           # the preprocessed upright image, kept so extra passes need not redo it
+    skew: float = 0.0               # degrees the image was turned to straighten it (boxes refer to the straightened image)
 
 
 @dataclass

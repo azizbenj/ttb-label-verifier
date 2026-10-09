@@ -70,6 +70,7 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
                         total_ms=round((t_end - t0) * 1000, 1)),
         reader=ocr.engine or reader.name, ocr_text=ocr.text, image_name=image_name, application_id=app.application_id,
         read_confidence=round(ocr.mean_conf, 1) if ocr.mean_conf is not None else None,
+        skew_deg=round(ocr.skew, 2),
         image_aspect=round(ocr.ink.shape[0] / ocr.ink.shape[1], 4) if ocr.ink is not None and ocr.ink.shape[1] else
         (round(image.height / image.width, 4) if image.width else None),
     )

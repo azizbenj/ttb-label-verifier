@@ -241,11 +241,14 @@ def error_response(request: Request, message: str, status: int = 400, title: str
 PREVIEW_MAX_SIDE = 1000
 
 
-def preview_data_url(image: Image.Image) -> str:
-    """A downscaled JPEG of the label, inlined so the result can show it without storing the upload."""
+def preview_data_url(image: Image.Image, skew: float = 0.0) -> str:
+    """A downscaled JPEG of the label, inlined so the result can show it without storing the upload.
+    Straightened by the same angle as the image the reader used, so the highlights line up."""
     img = ImageOps.exif_transpose(image)
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")
+    if skew:
+        img = img.convert("RGB").rotate(skew, resample=Image.BICUBIC, expand=True, fillcolor=(255, 255, 255))
     img.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE))
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=82, optimize=True)
@@ -316,7 +319,8 @@ async def _verify_from_form(brand_name, class_type, alcohol_content, net_content
     # OCR takes about a second of CPU: run it off the event loop so other agents, batch polling and
     # /healthz are not queued behind it.
     result = await run_in_threadpool(verify, app_data, img, get_reader(reader, psm), name)
-    image_url = f"/samples/{sample.strip()}.png" if sample.strip() else await run_in_threadpool(preview_data_url, img)
+    image_url = (f"/samples/{sample.strip()}.png" if sample.strip() and not result.skew_deg
+                 else await run_in_threadpool(preview_data_url, img, result.skew_deg))
     return result, app_data, image_url
 
 

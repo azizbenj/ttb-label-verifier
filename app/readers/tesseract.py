@@ -12,8 +12,9 @@ import pytesseract
 from PIL import Image, ImageFilter, ImageOps
 from pytesseract import Output
 
-from ..config import (TESSERACT_CMD, TESSERACT_MAX_PIXELS, TESSERACT_MAX_SIDE, TESSERACT_MAX_WIDTH,
-                      TESSERACT_MIN_WIDTH, TESSERACT_PSM, TESSERACT_PSM_EXTRA, TESSERACT_TIMEOUT_S)
+from ..config import (DESKEW_MAX_DEG, DESKEW_MIN_DEG, TESSERACT_CMD, TESSERACT_EXTRA_TIMEOUT_S, TESSERACT_MAX_PIXELS,
+                      TESSERACT_MAX_SIDE, TESSERACT_MAX_WIDTH, TESSERACT_MIN_WIDTH, TESSERACT_PSM, TESSERACT_PSM_EXTRA,
+                      TESSERACT_TIMEOUT_S)
 from ..images import flatten
 from ..normalize import normalize_loose
 from .base import LabelReading, OCRResult, OCRWord, ReaderError, View
@@ -100,6 +101,29 @@ def local_contrast(gray: Image.Image, radius: int = 24, gain: float = 2.2) -> Im
     return Image.fromarray(np.clip(128 + (a - bg) * gain, 0, 255).astype(np.uint8))
 
 
+def estimate_skew(gray: Image.Image, max_deg: float = DESKEW_MAX_DEG) -> float:
+    """Tilt of the text lines in degrees (positive = counter-clockwise), from the projection profile:
+    when the image is turned so that lines are level, the row sums of ink are most uneven."""
+    small = gray.copy()
+    small.thumbnail((700, 700))
+    arr = np.asarray(small)
+    ink = (arr < otsu_threshold(arr))
+    if ink.mean() > 0.5:
+        ink = ~ink
+    if ink.mean() < 0.002:
+        return 0.0
+    mask = Image.fromarray((ink * 255).astype(np.uint8))
+
+    def sharpness(angle: float) -> float:
+        rows = np.asarray(mask.rotate(angle, resample=Image.NEAREST, expand=False), dtype=np.float32).sum(axis=1)
+        return float(np.var(np.diff(rows)))
+
+    coarse = np.arange(-max_deg, max_deg + 1e-6, 0.5)
+    best = max(coarse, key=sharpness)
+    fine = np.arange(best - 0.5, best + 0.5 + 1e-6, 0.1)
+    return float(max(fine, key=sharpness))
+
+
 def ink_mask(gray: Image.Image) -> np.ndarray:
     arr = np.asarray(gray)
     ink = arr < otsu_threshold(arr)
@@ -108,6 +132,12 @@ def ink_mask(gray: Image.Image) -> np.ndarray:
 
 def preprocess(image: Image.Image, min_width: int = TESSERACT_MIN_WIDTH,
                max_width: int = TESSERACT_MAX_WIDTH) -> tuple[Image.Image, np.ndarray]:
+    img, ink, _, _ = preprocess_with_skew(image, min_width, max_width)
+    return img, ink
+
+
+def preprocess_with_skew(image: Image.Image, min_width: int = TESSERACT_MIN_WIDTH,
+                         max_width: int = TESSERACT_MAX_WIDTH) -> tuple[Image.Image, np.ndarray, float, tuple[int, int]]:
     """Grayscale, scale into Tesseract's comfort zone, stretch contrast, and build an ink mask.
 
     Returns (image for OCR, boolean ink array in the same coordinates).
@@ -116,13 +146,20 @@ def preprocess(image: Image.Image, min_width: int = TESSERACT_MIN_WIDTH,
     scale = ocr_scale(img.width, img.height, min_width, max_width)
     if abs(scale - 1.0) > 1e-3:
         img = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
+    # A scan or photo a few degrees off breaks lines apart; straighten it first (about 0.1 s).
+    scaled_size = img.size
+    skew = estimate_skew(img)
+    if abs(skew) >= DESKEW_MIN_DEG:
+        img = img.rotate(skew, resample=Image.BICUBIC, expand=True, fillcolor=255)
+    else:
+        skew = 0.0
     img = ImageOps.autocontrast(img, cutoff=1)
     arr = np.asarray(img)
     ink = arr < otsu_threshold(arr)
     if ink.mean() > 0.5:  # light text on a dark label: flip so Tesseract sees dark-on-light
         img = ImageOps.invert(img)
         ink = ~ink
-    return img, ink
+    return img, ink, skew, scaled_size
 
 
 def _group_words(data: dict) -> tuple[list[str], list[OCRWord], float | None]:
@@ -174,21 +211,21 @@ class TesseractReader:
         self.psm = psm
         self.extra_psm = extra_psm
 
-    def _pass(self, img: Image.Image, psm: int):
+    def _pass(self, img: Image.Image, psm: int, timeout: float = TESSERACT_TIMEOUT_S):
         try:
             data = pytesseract.image_to_data(img, config=f"--psm {psm} --oem 1", output_type=Output.DICT,
-                                             timeout=TESSERACT_TIMEOUT_S)
+                                             timeout=timeout)
         except pytesseract.TesseractNotFoundError:
             raise ReaderError("Local OCR (Tesseract) is not installed on this server. "
                               "Please tell the administrator.") from None
         except RuntimeError as e:  # pytesseract reports its timeout as RuntimeError
-            raise ReaderError(f"Reading the label took longer than {TESSERACT_TIMEOUT_S} s and was stopped. "
+            raise ReaderError(f"Reading the label took longer than {timeout:g} s and was stopped. "
                               "Please try a smaller or cleaner image.") from e
         return _group_words(data)
 
     def read(self, image: Image.Image) -> LabelReading:
         t0 = perf_counter()
-        img, ink = preprocess(image)
+        img, ink, skew, scaled_size = preprocess_with_skew(image)
         second = None
         if self.extra_psm is not None and self.extra_psm != self.psm:
             second = _PASSES.submit(self._pass, img, self.extra_psm)
@@ -213,7 +250,8 @@ class TesseractReader:
         mode = f"psm {self.psm}" + (f"+{self.extra_psm}" if self.extra_psm is not None else "")
         ocr = OCRResult(text="\n".join(lines), lines=lines, words=words, ink=ink, mean_conf=mean_conf,
                         engine=f"tesseract {tesseract_version() or '?'} ({mode})", ms=(perf_counter() - t0) * 1000,
-                        views=[View(rot=0, inverted=False, ink=ink, size=img.size)], source=(img, image))
+                        views=[View(rot=0, inverted=False, ink=ink, size=img.size)], source=(img, image, skew, scaled_size),
+                        skew=skew)
         return LabelReading(ocr=ocr)
 
     # Lines from the extra passes must look like text: reading horizontal print sideways produces
@@ -231,24 +269,31 @@ class TesseractReader:
             return False
         ocr.extended = True
         t0 = perf_counter()
-        img, original = ocr.source
+        img, original, skew, scaled_size = ocr.source
         base_ink = ocr.views[0].ink
         # Chosen by measurement on 20 real approved labels (scripts/real_labels.py): the two turned
         # views read sideways warnings and bottler lines, the color-aware local-contrast view reads
         # light or colored text on colored panels. Inverting the image added nothing (Tesseract
         # already handles light-on-dark text), and further views added nothing either.
-        rgb = flatten(original).convert("RGB").resize(img.size, Image.LANCZOS)
-        contrast = local_contrast(principal_channel(rgb))
+        rgb = flatten(original).convert("RGB").resize(scaled_size, Image.LANCZOS)
+        if skew:
+            rgb = rgb.rotate(skew, resample=Image.BICUBIC, expand=True, fillcolor=(255, 255, 255))
+        # A light median filter first: local contrast would otherwise turn sensor noise into
+        # thousands of specks that make a sparse-text pass crawl.
+        contrast = local_contrast(principal_channel(rgb).filter(ImageFilter.MedianFilter(3)))
         variants = [
             (90, False, img.rotate(90, expand=True), np.rot90(base_ink, 1)),
             (270, False, img.rotate(270, expand=True), np.rot90(base_ink, -1)),
             (0, False, contrast, ink_mask(contrast)),
         ]
-        futures = [_PASSES.submit(self._pass, v[2], 11) for v in variants]
+        futures = [_PASSES.submit(self._pass, v[2], 11, TESSERACT_EXTRA_TIMEOUT_S) for v in variants]
         seen = {normalize_loose(l) for l in ocr.lines}
         added = False
         for (rot, inverted, view_img, view_ink), fut in zip(variants, futures):
-            lines2, words2, _ = fut.result()
+            try:
+                lines2, words2, _ = fut.result()
+            except ReaderError:
+                continue   # an optional pass that is too slow or fails is skipped, never fatal
             view_index = len(ocr.views)
             ocr.views.append(View(rot=rot, inverted=inverted, ink=view_ink, size=view_img.size))
             by_line: dict[int, list[OCRWord]] = {}

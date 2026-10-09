@@ -101,16 +101,18 @@ def needs_phrase(result: VerificationResult) -> tuple[str, list[float] | None]:
     return "A look at the warning statement", w.box
 
 
-def make_preview(image) -> bytes | None:
+def make_preview(image, skew: float = 0.0) -> bytes | None:
     """A small JPEG of the label for the detail panel, within the process-wide memory budget."""
     global _preview_bytes
     if _preview_bytes >= PREVIEW_BUDGET_BYTES:
         return None
     try:
-        from PIL import ImageOps
+        from PIL import Image, ImageOps
         img = ImageOps.exif_transpose(image)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
+        if skew:
+            img = img.convert("RGB").rotate(skew, resample=Image.BICUBIC, expand=True, fillcolor=(255, 255, 255))
         img.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE))
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=80, optimize=True)
@@ -408,7 +410,7 @@ def _process(job: BatchJob, item: BatchItem, data: list[bytes], reader: LabelRea
         image = stitch([open_image(d, n) for d, n in zip(data, names)])
         item.result = verify(item.application, image, reader, image_name=item.image_name)
         item.needs, item.focus_box = needs_phrase(item.result)
-        item.preview = make_preview(image)
+        item.preview = make_preview(image, item.result.skew_deg)
     except (ImageError, ReaderError) as e:
         item.error = str(e)
     except Exception as e:  # keep the batch going; surface the reason
