@@ -7,7 +7,7 @@ import statistics
 from ..matching import compare_alcohol, compare_country, compare_volume, locate_and_compare, not_found
 from ..models import Application, FieldResult, Verdict
 from ..normalize import normalize_loose, normalize_strict
-from .base import OCRResult, OCRWord
+from .base import OCRResult, OCRWord, upright_box
 
 
 def line_heights(ocr: OCRResult) -> dict[int, float]:
@@ -69,12 +69,13 @@ def compare_from_fields(app: Application, fields: dict[str, str | None]) -> list
 
 
 # --- evidence boxes: where on the label each value was read ----------------------------------------
-def word_box(words: list[OCRWord], width: int, height: int) -> list[float] | None:
-    """Union of word boxes as [left, top, width, height] in percent of the image."""
+def word_box(words: list[OCRWord], width: int, height: int, views=None) -> list[float] | None:
+    """Union of word boxes as [left, top, width, height] in percent of the upright image."""
     if not words or width <= 0 or height <= 0:
         return None
-    left, top = min(w.left for w in words), min(w.top for w in words)
-    right, bottom = max(w.right for w in words), max(w.bottom for w in words)
+    boxes = [upright_box(w, views or []) for w in words]
+    left, top = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    right, bottom = max(b[0] + b[2] for b in boxes), max(b[1] + b[3] for b in boxes)
     return [round(100 * left / width, 2), round(100 * top / height, 2),
             round(100 * (right - left) / width, 2), round(100 * (bottom - top) / height, 2)]
 
@@ -115,4 +116,4 @@ def attach_boxes(ocr: OCRResult, fields: list[FieldResult]) -> None:
         if not f.found or f.verdict in (Verdict.NOT_FOUND, Verdict.SKIPPED):
             continue
         rng = (f.lines[0], f.lines[1]) if f.lines else None
-        f.box = word_box(words_for_text(ocr, f.found, rng), width, height)
+        f.box = word_box(words_for_text(ocr, f.found, rng), width, height, ocr.views)

@@ -154,3 +154,18 @@ def test_all_bold_statement_asks_for_review(fonts):
     # 27 CFR 16.22(a)(2): the rest of the statement may not be bold. An all-bold statement measures ~1.0.
     ink, head, body = _render(fonts[0], fonts[1], 30, heading_bold=True, body_bold=True)
     assert estimate_heading_bold(ink, head, body)[0] == Status.REVIEW
+
+
+def test_statement_assembled_past_an_interleaved_line_and_a_neighbouring_column():
+    lines = ["GOVERNMENT WARNING: (1) ACCORDING TO THE SURGEON GENERAL, WOMEN SHOULD NOT",
+             "DRINK ALCOHOLIC BEVERAGES DURING PREGNANCY BECAUSE OF THE RISK OF BIRTH",
+             "For Sale Only In Ohio",
+             "DEFECTS. (2) CONSUMPTION OF ALCOHOLIC BEVERAGES IMPAIRS YOUR ABILITY TO DRIVE A",
+             "CAR OR OPERATE MACHINERY, AND MAY CAUSE HEALTH PROBLEMS. KEEP COLD AT ALL TIMES"]
+    r = check_warning(lines, bold_hint=True)
+    assert r.present and r.heading_caps == Status.PASS
+    assert r.wording == Status.REVIEW and "KEEP COLD" in r.wording_note   # the beside-text is shown, never silently dropped
+
+
+def test_unreadable_first_heading_word_asks_for_review():
+    assert check_heading_caps("\\Noee WARNING: (1) ACCORDING TO THE SURGEON")[0] == Status.REVIEW

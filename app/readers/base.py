@@ -29,6 +29,7 @@ class OCRWord:
     height: int
     conf: float
     line_index: int  # index into OCRResult.lines
+    view: int = 0    # index into OCRResult.views: the coordinates are those of that view's image
 
     @property
     def right(self) -> int:
@@ -40,14 +41,41 @@ class OCRWord:
 
 
 @dataclass
+class View:
+    """One image the OCR read: the label as is, turned 90 degrees either way (sideways text), or
+    inverted (light text on a dark panel). Word boxes are in the coordinates of their view."""
+
+    rot: int                      # 0, 90 (turned counter-clockwise) or 270 (turned clockwise)
+    inverted: bool
+    ink: np.ndarray               # True = ink, in this view's coordinates
+    size: tuple[int, int]         # (width, height) of this view
+
+
+def upright_box(word: "OCRWord", views: list[View]) -> tuple[int, int, int, int]:
+    """(left, top, width, height) of a word in the upright view's coordinates."""
+    if not views or word.view == 0 or word.view >= len(views):
+        return word.left, word.top, word.width, word.height
+    v, base = views[word.view], views[0]
+    w0, h0 = base.size
+    if v.rot == 90:      # image turned counter-clockwise: x' = y, y' = W - x
+        return w0 - word.top - word.height, word.left, word.height, word.width
+    if v.rot == 270:     # image turned clockwise: x' = H - y, y' = x
+        return word.top, h0 - word.left - word.width, word.height, word.width
+    return word.left, word.top, word.width, word.height
+
+
+@dataclass
 class OCRResult:
     text: str                       # full text, one OCR line per line
     lines: list[str]                # same, split
     words: list[OCRWord] = field(default_factory=list)
     engine: str = ""
     ms: float = 0.0
-    ink: np.ndarray | None = None   # binarized image the boxes refer to (True = ink), if available
+    ink: np.ndarray | None = None   # binarized upright image (True = ink), if available
     mean_conf: float | None = None
+    views: list[View] = field(default_factory=list)   # views[0] is the upright image
+    extended: bool = False          # the extra rotated / inverted passes have run
+    source: object = None           # the preprocessed upright image, kept so extra passes need not redo it
 
 
 @dataclass

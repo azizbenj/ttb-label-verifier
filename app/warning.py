@@ -23,7 +23,7 @@ from rapidfuzz import fuzz
 from .config import MANDATED_WARNING, THRESHOLDS, Thresholds
 from .models import DiffItem, Status, WarningResult
 from .normalize import normalize_loose, normalize_strict
-from .readers.base import OCRWord
+from .readers.base import OCRWord, upright_box
 
 _MANDATED_LOOSE = normalize_loose(MANDATED_WARNING)
 _MANDATED_WORDS = _MANDATED_LOOSE.split()
@@ -34,9 +34,18 @@ _HEIGHT_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZbdfhklt0123456789")
 # --- locating the statement -------------------------------------------------------------------
 @dataclass(frozen=True)
 class WarningSpan:
-    start: int           # first line index
-    end: int             # last line index (inclusive)
-    heading_line: int | None  # line holding "GOVERNMENT WARNING", if recognised
+    line_ids: tuple[int, ...]         # lines that make up the statement, in reading order
+    heading_line: int | None          # line holding "GOVERNMENT WARNING", if recognised
+    texts: tuple[str, ...] = ()       # those lines as read, minus text that sits beside the statement
+    beside: str = ""                  # words left out because they belong to a neighbouring column
+
+    @property
+    def start(self) -> int:
+        return self.line_ids[0]
+
+    @property
+    def end(self) -> int:
+        return self.line_ids[-1]
 
 
 def _contains_score(query: str, line: str) -> float:
@@ -46,37 +55,102 @@ def _contains_score(query: str, line: str) -> float:
     return fuzz.partial_ratio(query, line)
 
 
-def locate_warning(lines: list[str], *, th: Thresholds = THRESHOLDS) -> WarningSpan | None:
+_MAX_SKIPS = 4        # lines in a row that may be passed over (another column, a duplicate read)
+_MAX_LINES_AHEAD = 30
+
+
+_MANDATED_VOCAB = set(_MANDATED_WORDS)
+
+
+def _statement_share(line: str) -> float:
+    """Share of a line's real words (3+ letters) that occur in the mandated statement."""
+    toks = [t for t in line.split() if sum(ch.isalpha() for ch in t) >= 3]
+    if not toks:
+        return 0.0
+    return sum(1 for t in toks if t in _MANDATED_VOCAB) / len(toks)
+
+
+def _assemble(order: list[int], loose: list[str], start_pos: int) -> tuple[list[int], float]:
+    """Grow the statement from ``order[start_pos]``, taking each following line that is made mostly of
+    the statement's own words and brings the text closer to it, and passing over lines that do not
+    ("For Sale Only In Ohio" printed between two lines of a sideways warning)."""
+    ids = [order[start_pos]]
+    acc = loose[order[start_pos]]
+    best = fuzz.ratio(_MANDATED_LOOSE, acc)
+    skips = 0
+    for pos in range(start_pos + 1, min(len(order), start_pos + _MAX_LINES_AHEAD)):
+        cand = (acc + " " + loose[order[pos]]).strip()
+        r = fuzz.ratio(_MANDATED_LOOSE, cand) if _statement_share(loose[order[pos]]) >= 0.5 else -1
+        if r > best:
+            ids.append(order[pos])
+            acc, best, skips = cand, r, 0
+        else:
+            skips += 1
+            if skips > _MAX_SKIPS:
+                break
+    return ids, best
+
+
+def _trim_beside(texts: list[str]) -> tuple[list[str], str]:
+    """Drop words at the start or end of a line that belong to a neighbouring column (a keg collar's
+    "ATTENTION-READ BEFORE TAPPING" printed beside the warning). Returns the trimmed lines and the
+    real words that were left out (short OCR noise such as "7" or "—c" is dropped silently)."""
+    texts = list(texts)
+    dropped: list[str] = []
+
+    def score(ts):
+        return fuzz.ratio(_MANDATED_LOOSE, normalize_loose(" ".join(ts)))
+
+    for i, line in enumerate(texts):
+        toks = line.split()
+        if len(toks) < 2:
+            continue
+        best, best_cut = score(texts), (0, len(toks))
+        for a in range(0, min(len(toks), 8)):
+            for b in range(len(toks), max(a, len(toks) - 12), -1):
+                if (a, b) == (0, len(toks)) or b <= a:
+                    continue
+                trial = texts[:i] + [" ".join(toks[a:b])] + texts[i + 1:]
+                r = score(trial)
+                if r > best + 0.5:
+                    best, best_cut = r, (a, b)
+        a, b = best_cut
+        if (a, b) != (0, len(toks)):
+            cut = toks[:a] + toks[b:]
+            dropped += [t for t in cut if sum(ch.isalpha() for ch in t) >= 3]
+            texts[i] = " ".join(toks[a:b])
+    return texts, " ".join(dropped)
+
+
+def locate_warning(lines: list[str], *, line_views: list[int] | None = None, line_tops: list[float] | None = None,
+                   th: Thresholds = THRESHOLDS) -> WarningSpan | None:
+    """Find the statement. Each view the reader produced (upright, turned, contrast) is tried on its
+    own, its lines ordered top to bottom, and the reading that comes closest to the mandated text wins."""
     if not lines:
         return None
     loose = [normalize_loose(l) for l in lines]
-    heading_line, best = None, 0
-    for i, l in enumerate(loose):
-        if not l:
-            continue
-        s = _contains_score("government warning", l)
-        if s > best and s >= th.warning_locate:
-            heading_line, best = i, s
-    start = heading_line
-    if start is None:  # heading unreadable or missing: look for the body of the statement
-        for i, l in enumerate(loose):
-            if _contains_score("according to the surgeon general", l) >= th.warning_locate:
-                start = i
-                break
-    if start is None:
+    views = line_views or [0] * len(lines)
+    tops = line_tops or [float(i) for i in range(len(lines))]
+    best: tuple[float, WarningSpan] | None = None
+    for view in sorted(set(views)):
+        order = sorted((i for i in range(len(lines)) if views[i] == view and loose[i]), key=lambda i: (tops[i], i))
+        heads = [(pos, _contains_score("government warning", loose[i])) for pos, i in enumerate(order)]
+        heads = [(pos, sc) for pos, sc in heads if sc >= th.warning_locate]
+        starts = [pos for pos, _ in sorted(heads, key=lambda h: -h[1])[:3]]
+        if not starts:   # heading unreadable or missing: start from the body of the statement
+            starts = [pos for pos, i in enumerate(order)
+                      if _contains_score("according to the surgeon general", loose[i]) >= th.warning_locate][:2]
+        for pos in starts:
+            ids, ratio = _assemble(order, loose, pos)
+            heading = order[pos] if any(h[0] == pos for h in heads) else None
+            if best is None or ratio > best[0]:
+                best = (ratio, WarningSpan(line_ids=tuple(ids), heading_line=heading,
+                                           texts=tuple(lines[i] for i in ids)))
+    if best is None:
         return None
-    # Grow the span line by line while the similarity to the mandated text keeps improving.
-    acc = loose[start]
-    best_ratio = fuzz.ratio(_MANDATED_LOOSE, acc)
-    end = start
-    for j in range(start + 1, min(len(lines), start + 15)):
-        candidate = (acc + " " + loose[j]).strip()
-        r = fuzz.ratio(_MANDATED_LOOSE, candidate)
-        if r >= best_ratio:
-            acc, best_ratio, end = candidate, r, j
-        else:
-            break
-    return WarningSpan(start=start, end=end, heading_line=heading_line)
+    span = best[1]
+    texts, beside = _trim_beside(list(span.texts))
+    return WarningSpan(line_ids=span.line_ids, heading_line=span.heading_line, texts=tuple(texts), beside=beside)
 
 
 # --- wording ----------------------------------------------------------------------------------
@@ -145,6 +219,10 @@ def check_heading_caps(heading_line_text: str | None) -> tuple[Status, str]:
     else:
         misread = _misread_heading(text)
         if misread is None:
+            m2 = re.match(r"\s*\S{2,14}\s+(WARNING)\s*:", text)
+            if m2:   # "\Noee WARNING:": the first word is there but unreadable, "WARNING" is in capitals
+                return Status.REVIEW, ("The first word of the heading was not read clearly; 'WARNING' is in capitals. "
+                                       "Please check the heading by eye.")
             return Status.FAIL, "The words 'GOVERNMENT WARNING' were not found at the start of the statement."
         gov, warn, colon = misread
         lower = {ch for ch in gov + warn if ch.islower()}
@@ -244,16 +322,31 @@ _HEADING_TOKENS = ("government", "warning")
 
 
 def check_warning(lines: list[str], words: list[OCRWord] | None = None, ink: np.ndarray | None = None,
-                  *, bold_hint: bool | None = None, th: Thresholds = THRESHOLDS) -> WarningResult:
-    span = locate_warning(lines, th=th)
+                  *, bold_hint: bool | None = None, views=None, th: Thresholds = THRESHOLDS) -> WarningResult:
+    line_views: list[int] = [0] * len(lines)
+    line_tops: list[float] = [float(i) for i in range(len(lines))]
+    if words:
+        by_line: dict[int, list[OCRWord]] = {}
+        for w in words:
+            if 0 <= w.line_index < len(lines):
+                by_line.setdefault(w.line_index, []).append(w)
+        for i, ws in by_line.items():
+            line_views[i] = ws[0].view
+            line_tops[i] = sum(w.top for w in ws) / len(ws)
+    span = locate_warning(lines, line_views=line_views, line_tops=line_tops if words else None, th=th)
     if span is None:
         return WarningResult(present=False, wording=Status.FAIL, wording_note="No government warning statement was found on the label.",
                              heading_caps=Status.FAIL, heading_caps_note="Not found.",
                              heading_bold=Status.FAIL, heading_bold_note="Not found.", overall=Status.FAIL)
-    found_text = "\n".join(lines[span.start: span.end + 1])
+    found_text = "\n".join(span.texts) if span.texts else "\n".join(lines[i] for i in span.line_ids)
     wording, score, wording_note, diff = check_wording(found_text, th=th)
-    heading_text = lines[span.heading_line] if span.heading_line is not None else None
+    if span.beside and wording == Status.PASS:
+        wording = Status.REVIEW
+        wording_note = (f"Wording matches, but text printed beside the statement was left out ('{span.beside}'). "
+                        "Please check it is not part of the warning.")
+    heading_text = lines[span.heading_line] if span.heading_line is not None else lines[span.line_ids[0]]
     caps, caps_note = check_heading_caps(heading_text)
+    in_span = set(span.line_ids)
 
     if bold_hint is not None:
         if bold_hint:
@@ -264,9 +357,12 @@ def check_warning(lines: list[str], words: list[OCRWord] | None = None, ink: np.
     elif words is not None and ink is not None and span.heading_line is not None:
         heading_words = [w for w in words if w.line_index == span.heading_line
                          and normalize_loose(w.text) in _HEADING_TOKENS]
-        body_words = [w for w in words if span.start <= w.line_index <= span.end
+        # Measure in the view the heading was read in (a sideways warning is measured turned upright).
+        view = heading_words[0].view if heading_words else 0
+        view_ink = views[view].ink if views and view < len(views) else ink
+        body_words = [w for w in words if w.line_index in in_span and w.view == view
                       and w not in heading_words and len(normalize_loose(w.text)) >= 3]
-        bold, ratio, bold_note = estimate_heading_bold(ink, heading_words, body_words, th=th)
+        bold, ratio, bold_note = estimate_heading_bold(view_ink, heading_words, body_words, th=th)
     else:
         bold, ratio, bold_note = Status.REVIEW, None, "Could not measure the heading's weight. Please check it by eye."
 
@@ -279,11 +375,12 @@ def check_warning(lines: list[str], words: list[OCRWord] | None = None, ink: np.
         overall = Status.PASS
     box = None
     if words is not None and ink is not None:
-        span_words = [w for w in words if span.start <= w.line_index <= span.end]
+        span_words = [w for w in words if w.line_index in in_span]
         if span_words:
             h, w_ = ink.shape
-            left, top = min(w.left for w in span_words), min(w.top for w in span_words)
-            right, bottom = max(w.right for w in span_words), max(w.bottom for w in span_words)
+            boxes = [upright_box(w, views or []) for w in span_words]
+            left, top = min(b[0] for b in boxes), min(b[1] for b in boxes)
+            right, bottom = max(b[0] + b[2] for b in boxes), max(b[1] + b[3] for b in boxes)
             box = [round(100 * left / w_, 2), round(100 * top / h, 2),
                    round(100 * (right - left) / w_, 2), round(100 * (bottom - top) / h, 2)]
     return WarningResult(present=True, found_text=found_text, wording=wording, wording_score=score,

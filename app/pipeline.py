@@ -45,13 +45,23 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
     reading = reader.read(image)
     t_read = perf_counter()
     ocr = reading.ocr
+    hint = reading.warning_hint
     if reading.fields is not None:
         fields = compare_from_fields(app, reading.fields)
+        warning = check_warning(ocr.lines, ocr.words, ocr.ink, bold_hint=hint.heading_bold if hint else None)
     else:
         fields = extract_and_compare(app, ocr)
+        warning = check_warning(ocr.lines, ocr.words, ocr.ink, views=ocr.views)
+        # Something missing or different: read the label again turned sideways and inverted before
+        # concluding (warnings and bottler lines on cans are often printed at 90 degrees).
+        missing = any(f.verdict in (Verdict.NOT_FOUND, Verdict.MISMATCH) for f in fields) or \
+            warning.overall != Status.PASS
+        extend = getattr(reader, "extend", None)
+        if missing and extend is not None and extend(reading):
+            t_read = perf_counter()
+            fields = extract_and_compare(app, ocr)
+            warning = check_warning(ocr.lines, ocr.words, ocr.ink, views=ocr.views)
         attach_boxes(ocr, fields)
-    hint = reading.warning_hint
-    warning = check_warning(ocr.lines, ocr.words, ocr.ink, bold_hint=hint.heading_bold if hint else None)
     status = overall_status(fields, warning)
     t_end = perf_counter()
     return VerificationResult(

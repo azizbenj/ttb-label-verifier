@@ -17,7 +17,10 @@ from rapidfuzz import fuzz
 
 from .config import FIELD_BY_KEY, THRESHOLDS, FieldSpec, Thresholds
 from .models import FieldResult, Verdict
-from .normalize import normalize_loose, normalize_strict, parse_alcohol, parse_net_contents
+from rapidfuzz.distance import Levenshtein
+
+from .normalize import (alcohol_candidates, normalize_loose, normalize_strict, parse_alcohol, parse_net_contents,
+                        volume_candidates)
 
 _EDGE_PUNCT = " ,.;:-|'\"()[]"
 _SEPARATORS = set(",;:|/·•-()[].")  # punctuation that ends a phrase on a label line ("RUM · AGED 4 YEARS")
@@ -98,8 +101,47 @@ def locate_text(expected: str, lines: list[str], *, max_window: int | None = Non
                         best = Located(text=text, score=score, line_start=i, line_end=j,
                                        joined=_joined(first_line[:a], raw[a:b], after))
                         best_rank = rank
+    if best is None or best.score < th.near_match:
+        spaced = _locate_letter_spaced(exp_loose, raw_tokens, loose_tokens, max_window)
+        if spaced is not None and (best is None or spaced.score > best.score):
+            best = spaced
     if best is None or best.score < floor:
         return None
+    return best
+
+
+def _despaced(s: str) -> str:
+    return s.replace(" ", "")
+
+
+def _letter_spaced(s: str) -> bool:
+    """Mostly single characters: "S O U T H  C O A S T"."""
+    toks = s.split()
+    return len(toks) >= 4 and sum(1 for t in toks if len(t) == 1) >= 0.6 * len(toks)
+
+
+def _locate_letter_spaced(exp_loose: str, raw_tokens: list[list[str]], loose_tokens: list[list[str]],
+                          max_window: int) -> Located | None:
+    """Brands set with wide letter spacing come back as single letters. Compare without spaces, on
+    lines made mostly of single characters."""
+    exp_ds = _despaced(exp_loose)
+    if len(exp_ds) < 4:
+        return None
+    best: Located | None = None
+    for i in range(len(raw_tokens)):
+        raw: list[str] = []
+        loose: list[str] = []
+        for j in range(i, min(len(raw_tokens), i + max_window)):
+            raw += raw_tokens[j]
+            loose += [t for t in loose_tokens[j] if t]
+            if not _letter_spaced(" ".join(loose)):
+                continue
+            joined = "".join(loose)
+            if len(joined) > 1.6 * len(exp_ds):
+                break
+            score = int(round(fuzz.partial_ratio(exp_ds, joined)))
+            if best is None or score > best.score:
+                best = Located(text=" ".join(raw).strip(_EDGE_PUNCT), score=score, line_start=i, line_end=j)
     return best
 
 
@@ -130,6 +172,10 @@ def compare_text(key: str, expected: str, found: str | None, *, th: Thresholds =
         return FieldResult(key=key, label=label, expected=expected, found=found, verdict=Verdict.MATCH,
                            score=100, note="Exact match.")
     exp_loose, found_loose = normalize_loose(expected), normalize_loose(found)
+    if exp_loose != found_loose and _letter_spaced(found_loose) and _despaced(exp_loose) == _despaced(found_loose):
+        # Letter-spaced on the label ("S O U T H  C O A S T  W I N E R Y"): the same letters in order.
+        return FieldResult(key=key, label=label, expected=expected, found=found, verdict=Verdict.MATCH,
+                           score=100, note="Matches (the label spaces the letters out).")
     if exp_loose == found_loose:
         if key in th.case_review_fields:
             return FieldResult(key=key, label=label, expected=expected, found=found, verdict=Verdict.NEAR_MATCH,
@@ -137,6 +183,12 @@ def compare_text(key: str, expected: str, found: str | None, *, th: Thresholds =
         return FieldResult(key=key, label=label, expected=expected, found=found, verdict=Verdict.MATCH,
                            score=100, note="Matches (capitalization and punctuation ignored).")
     score = int(round(max(fuzz.ratio(exp_loose, found_loose), fuzz.token_sort_ratio(exp_loose, found_loose) - 2)))
+    if score < th.near_match and len(exp_loose) >= 5 and Levenshtein.distance(exp_loose, found_loose) == 1:
+        # One letter apart ("CON PAZ" / "CON FAZ"): as likely a misread as a different name. Never a
+        # silent match, but not a hard failure either: the agent looks at the crop.
+        return FieldResult(key=key, label=label, expected=expected, found=found, verdict=Verdict.NEAR_MATCH,
+                           score=score, note="One letter differs. This may be a reading error or a different name. "
+                                             "Please confirm.")
     if score >= th.near_match:
         return FieldResult(key=key, label=label, expected=expected, found=found, verdict=Verdict.NEAR_MATCH,
                            score=score, note=f"Very similar ({score}% alike) but not identical. Please confirm.")
@@ -180,22 +232,35 @@ def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_fo
 
 
 def compare_alcohol(expected: str, label_text: str, *, th: Thresholds = THRESHOLDS) -> FieldResult:
+    """Alcohol content compared as numbers, over every alcohol statement read on the label."""
     key = "alcohol_content"
     exp = parse_alcohol(expected)
     if exp is None or exp.abv is None:
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=None, verdict=Verdict.NOT_FOUND,
                            note="The application value could not be read as an alcohol content "
                                 "(try '45% Alc./Vol.' or '90 Proof').")
-    got = parse_alcohol(label_text)
-    if got is None or got.abv is None:
+    cands = alcohol_candidates(label_text)
+    if not cands:
+        got = parse_alcohol(label_text)
+        cands = [got] if got is not None and got.abv is not None else []
+    if not cands:
         return not_found(key, expected, note="No alcohol content (e.g. '45% Alc./Vol.' or '90 Proof') was found on the label.")
+    matching = [c for c in cands if abs(c.abv - exp.abv) <= th.abv_tolerance]
+    got = matching[0] if matching else cands[0]
     notes = []
     if got.abv_from_proof:
         notes.append(f"Label states {got.proof:g} proof, which is {got.abv:g}% ABV.")
     inconsistent = got.proof is not None and not got.abv_from_proof and abs(got.proof - 2 * got.abv) > th.proof_tolerance
     if inconsistent:
         notes.append(f"The label's proof ({got.proof:g}) does not agree with its percentage ({got.abv:g}%).")
-    if abs(got.abv - exp.abv) <= th.abv_tolerance:
+    others = sorted({round(c.abv, 2) for c in cands if abs(c.abv - exp.abv) > th.abv_tolerance})
+    if matching and others:
+        return FieldResult(key=key, label=_spec(key).label, expected=expected,
+                           found="; ".join(dict.fromkeys(c.text for c in cands)), verdict=Verdict.NEAR_MATCH, score=80,
+                           note=f"{exp.abv:g}% ABV is on the label, but it also reads "
+                                f"{', '.join(f'{v:g}%' for v in others)}. This may be a reading error or a second "
+                                "statement. Please confirm.")
+    if matching:
         # A label contradicting itself is never a silent match, even when its percentage agrees.
         verdict, score = (Verdict.NEAR_MATCH, 90) if inconsistent else (Verdict.MATCH, 100)
         notes.insert(0, f"{exp.abv:g}% ABV on both.")
@@ -208,23 +273,57 @@ def compare_alcohol(expected: str, label_text: str, *, th: Thresholds = THRESHOL
                        score=score, note=" ".join(notes))
 
 
+# Standard container sizes (27 CFR 5.203 spirits, 4.72 wine, common malt beverage packages), in mL.
+_STANDARD_ML = {50, 100, 180, 187, 200, 250, 300, 331, 350, 355, 365, 375, 473, 475, 500, 568, 570, 600, 620, 650,
+                700, 710, 720, 750, 900, 945, 946, 1000, 1500, 1750, 1800, 2000, 2250, 3000, 3750}
+
+
+def _one_digit_apart(a: int, b: int) -> bool:
+    sa, sb = str(a), str(b)
+    return len(sa) == len(sb) and sum(x != y for x, y in zip(sa, sb)) == 1
+
+
 def compare_volume(expected: str, label_text: str, *, th: Thresholds = THRESHOLDS) -> FieldResult:
+    """Net contents compared in millilitres, over every volume statement read on the label."""
     key = "net_contents"
     exp = parse_net_contents(expected)
     if exp is None:
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=None, verdict=Verdict.NOT_FOUND,
                            note="The application value could not be read as a volume (try '750 mL' or '1.75 L').")
-    got = parse_net_contents(label_text)
-    if got is None:
+    cands = volume_candidates(label_text)
+    if not cands:
         return not_found(key, expected, note="No net contents (e.g. '750 mL') was found on the label.")
-    if abs(got.ml - exp.ml) <= th.volume_tolerance_ml:
-        return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.MATCH,
+
+    def same(a: float, b: float) -> bool:   # US customary figures on labels are rounded ("750 mL / 25.4 OZ")
+        return abs(a - b) <= max(th.volume_tolerance_ml, 0.005 * b)
+
+    matching = [c for c in cands if same(c.ml, exp.ml)]
+    if matching:
+        shown = next((c for c in matching if c.unit in ("mL", "L", "cL")), matching[0])
+        # A reading with the same digits and no decimal point ("15L" beside "1.5L") is the same
+        # statement with the point lost by one pass, not a second statement.
+        lost_point = {(m.unit, m.digits) for m in matching}
+        others = [c for c in cands if abs(c.ml - exp.ml) > 0.02 * exp.ml
+                  and not ((c.unit, c.digits) in lost_point and "." not in c.text)]
+        if others:
+            return FieldResult(key=key, label=_spec(key).label, expected=expected,
+                               found="; ".join(dict.fromkeys(c.text for c in cands)), verdict=Verdict.NEAR_MATCH,
+                               score=80, note=f"{exp.describe()} is on the label, but it also reads "
+                                              f"{others[0].describe()}. This may be a reading error or a second "
+                                              "statement. Please confirm.")
+        return FieldResult(key=key, label=_spec(key).label, expected=expected, found=shown.text, verdict=Verdict.MATCH,
                            score=100, note=f"{exp.describe()} on both.")
+    got = next((c for c in cands if c.unit in ("mL", "L", "cL")), cands[0])
     if got.unit == exp.unit and got.digits == exp.digits and "." not in got.text:
         # Same digits and unit, but the label read has no decimal point ("L5L" for "1.5 L"): the
         # point was probably lost by OCR. Never silently accept it; ask the agent to look.
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.NEAR_MATCH,
                            score=90, note=f"Reads like {expected} but the decimal point was not read clearly. Please confirm.")
+    if round(exp.ml) in _STANDARD_ML and round(got.ml) not in _STANDARD_ML and _one_digit_apart(round(got.ml), round(exp.ml)):
+        # "760 mL" is not a size anyone fills; "750 mL" is, and it is one digit away: most likely a misread.
+        return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.NEAR_MATCH,
+                           score=85, note=f"Reads {got.describe()}, which is not a standard size; the application's "
+                                          f"{exp.describe()} is one digit away. Probably a reading error. Please confirm.")
     return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.MISMATCH,
                        score=0, note=f"Label says {got.describe()}, application says {exp.describe()}.")
 

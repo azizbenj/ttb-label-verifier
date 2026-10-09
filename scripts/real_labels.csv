@@ -1,0 +1,21 @@
+ttbid,kind,brand_name,class_type,alcohol_content,net_contents,bottler_name_address,country_of_origin,expect,notes
+26203001000533,spirits,BACKROADS DISTILLING COMPANY,Bourbon Whiskey,51% Alc./Vol. (102 Proof),750 mL,"Country Heritage Winery & Vineyard, Inc., LaOtto, Indiana",,,light text over a photo; PROOF 102 written proof-first
+26162001000137,spirits,WOODY CREEK DISTILLERS,Colorado Straight Rye Whiskey,50% Alc./Vol.,750 mL,"Woody Creek Distillers, Basalt, Colorado",,brand_name=review,brand only in the bottler statement; whole warning in caps
+26188001000731,spirits,LEIPER'S FORK DISTILLERY,Blended Whiskey,57% Alc./Vol. (114 Proof),750 mL,"Leiper's Fork Distillery, 3381 Southhall Road, Franklin, TN 37064",,,brand in a distressed display face; warning on a slanted panel
+26184001000215,spirits,OLD TENNESSEE DISTILLING CO.,Gin,48% Alc./Vol. (96 Proof),750 mL,"Old Tennessee Distilling Co., Sevierville, TN",,class_type=review,white text over a painting; class inside 'THE SPIRIT OF TENNESSEE GIN'
+17007001000031,spirits,DAMPFWERK DISTILLING,Gin,43% Alc. by Vol.,750 mL,"Dampfwerk Distilling, St Louis Park, MN 55416",,,three images incl. an emboss drawing with circular text
+26179001000033,spirits,TOBACCO BARN DISTILLERY,Navy Style Rum,40% Alc. by Vol. (80 Proof),375 mL,"Tobacco Barn Distillery, Hollywood, MD",,,warning printed sideways
+26183001000567,import,PEARSE LYONS DISTILLERY,Irish Whiskey,57.7% Alc./Vol.,700 mL,"Lexington Distilling Co., Lexington, KY",Ireland,,widely letter-spaced type; dimension marks around the art
+23287001000048,import,EMERALD SPEAR,Tequila Blanco,40% Alc./Vol. (80 Proof),750 mL,"CNS Spirits, San Diego, CA",Mexico,,small white text on dark green
+26209001000507,import,CAPE HORN,Tequila,40% Alc./Vol. (80 Proof),700 mL,"Worldwide Libations LLC, Lyndhurst, NJ",Mexico,country_of_origin=review,brand on a curve; origin only as HECHO EN MEXICO
+26205001000418,import,CON PAZ,Tequila Blanco,40% Alc./Vol. (80 Proof),750 mL,"Aerotyne Imports & Distribution LLC, Vista, California",Mexico,,clean black on white
+12048001000331,wine,SOUTH COAST WINERY,White Table Wine,11.0% Alc. by Vol.,750 mL,"South Coast Winery, Temecula CA",,,script fanciful name; condensed warning
+11145001000540,wine,SOUTH COAST WINERY,Merlot Rosé,10.6% Alc. by Vol.,750 mL,"South Coast Winery, Temecula, CA",,net_contents=absent,no net contents on the label
+15117001000284,wine,ROCKSIDE WINERY & VINEYARDS,Apple Fruit Wine,12% Alc. by Vol.,750 mL,"RockSide Winery and Vineyards LLC, 2363 Lancaster Newark Rd, Lancaster, Ohio 43130",,net_contents=absent,warning printed sideways; no net contents
+12306001000038,wine,SOUTH COAST WINERY,Rosé,11.0% Alc. by Vol.,750 mL,"South Coast Winery, Temecula CA",,class_type=review,class only inside 'RADICAL ROSÉ'
+15117001000279,wine,ROCKSIDE WINERY & VINEYARDS,Sweet White Wine,12% Alc. by Vol.,750 mL,"RockSide Winery and Vineyards LLC, 2363 Lancaster Newark Rd, Lancaster, Ohio 43130",,net_contents=absent,warning printed sideways; no net contents
+26189001000502,beer,PROGRESSION BREWING COMPANY,West Coast Style IPA,6.5% Alc./Vol.,16 fl oz,"Progression Brewing Co., 9 Pearl St. Northampton, MA 01060",,,net contents as ONE PINT; bottler and warning sideways
+26209001000730,beer,OSKAR BLUES BREWERY,Juicy IPA,7.0% Alc./Vol.,568 mL,"Oskar Blues Brewery, Longmont, Colorado",,,display-face fanciful name; bottler and warning sideways
+26204001000524,beer,BARN BREW CO.,Beer,6% Alc./Vol.,5.16 U.S. gallons,"East Rock Brewing Company, New Haven, CT",,,handwritten keg collar; circular print; gallons
+26210001000108,beer,MUNKLE BREWING CO.,Brown Sugar Stout,6.1% Alc./Vol.,12 fl oz,"Munkle Brewing Co., Charleston, SC",,,light text on purple
+26202001000368,beer,TOPPLING GOLIATH BREWING CO.,Black India Pale Ale,6.2% Alc. by Vol.,16 fl oz,"Toppling Goliath Brewing Co, Decorah, IA",,,brand on a curve; bottler and warning sideways

@@ -261,3 +261,35 @@ def test_volume_compound_and_thousands_compare_as_numbers():
     assert compare_volume("22 fl oz", "1 PINT 6 FL. OZ.").verdict == Verdict.MATCH
     assert compare_volume("1,000 mL", "1 L").verdict == Verdict.MATCH
     assert compare_volume("750 mL", "GROWN IN VOLCANIC SOIL 750 mL").verdict == Verdict.MATCH
+
+
+def test_volume_reading_with_lost_decimal_beside_the_right_one_is_a_match():
+    assert compare_volume("1.5 L", "1.5L\n15L").verdict == Verdict.MATCH
+
+
+def test_volume_two_different_readings_ask_for_review():
+    r = compare_volume("750 mL", "750 mL\n1 L")
+    assert r.verdict == Verdict.NEAR_MATCH and "also reads" in r.note
+
+
+def test_volume_misread_non_standard_size_is_near_match_but_real_wrong_size_is_mismatch():
+    assert compare_volume("750 mL", "760ML").verdict == Verdict.NEAR_MATCH
+    assert compare_volume("750 mL", "700 mL").verdict == Verdict.MISMATCH
+
+
+def test_volume_us_customary_forms():
+    assert compare_volume("16 fl oz", "DRINK FRESH ONE PINT 6.5% ALC/VOL").verdict == Verdict.MATCH
+    assert compare_volume("568 mL", "1 PINT 3.2 FL. OZ. (568 mL)").verdict == Verdict.MATCH
+    assert compare_volume("750 mL", "750 mL/25.4 OZ").verdict == Verdict.MATCH
+
+
+def test_alcohol_proof_written_first_and_disagreeing_readings():
+    assert compare_alcohol("51% Alc./Vol.", "PROOF 102\nALC/VOL 51%").verdict == Verdict.MATCH
+    r = compare_alcohol("57.7% Alc./Vol.", "ALC 07.7% /VOL\nALC 57.7%/VOL")
+    assert r.verdict == Verdict.NEAR_MATCH and "also reads" in r.note
+
+
+def test_brand_letter_spaced_trademark_and_one_letter_misread():
+    assert locate_and_compare("brand_name", "SOUTH COAST WINERY", ["S O U T H C O A S T W I N E R Y"]).verdict == Verdict.MATCH
+    assert compare_text("brand_name", "TOBACCO BARN DISTILLERY", "TOBACCO BARN DISTILLERY®").verdict == Verdict.MATCH
+    assert compare_text("brand_name", "CON PAZ", "CON FAZ").verdict == Verdict.NEAR_MATCH

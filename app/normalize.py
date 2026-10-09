@@ -52,9 +52,12 @@ def collapse_ws(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
 
+_MARKS_RE = re.compile(r"\s*[\u00ae\u2122\u00a9\u2120]")   # (R) TM (C) SM marks: not part of a name
+
+
 def normalize_strict(text: str) -> str:
-    """Case and punctuation preserved; only unicode and whitespace are cleaned."""
-    return collapse_ws(unify_unicode(text))
+    """Case and punctuation preserved; only unicode, whitespace and trademark marks are cleaned."""
+    return collapse_ws(_MARKS_RE.sub("", unify_unicode(text)))
 
 
 def unify_abv_phrases(text: str) -> str:
@@ -118,13 +121,19 @@ class AlcoholValue:
 
 _PERCENT_RE = re.compile(r"(?<![\d.,])(\d{1,3}(?:[.,]\d{1,2})?)\s*%")
 _MAX_PLAUSIBLE_ABV = 96.0  # anything above this is not an alcohol content ("100% agave")
-_PROOF_RE = re.compile(r"(\d{1,3}(?:[.,]\d)?)\s*(?:°\s*)?proof\b", re.IGNORECASE)
+# "90 Proof" or, as some labels print it, "PROOF 102".
+_PROOF_RE = re.compile(r"(\d{1,3}(?:[.,]\d)?)\s*(?:°\s*)?proof\b|\bproof\s*:?\s*(\d{2,3}(?:[.,]\d)?)\b",
+                       re.IGNORECASE)
 _BARE_NUMBER_RE = re.compile(r"^\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*$")
 _ALC_CONTEXT_RE = re.compile(r"alc|abv|vol", re.IGNORECASE)
 
 
 def _to_float(s: str) -> float:
     return float(s.replace(",", "."))
+
+
+def _proof_value(m: re.Match) -> float:
+    return _to_float(m.group(1) or m.group(2))
 
 
 def parse_alcohol(text: str) -> AlcoholValue | None:
@@ -150,12 +159,19 @@ def parse_alcohol(text: str) -> AlcoholValue | None:
         if percent_match is None:
             percent_match = percents[0]
 
-    proof_val = _to_float(proofs[0].group(1)) if proofs else None
+    proof_val = _proof_value(proofs[0]) if proofs else None
 
     if percent_match is not None:
         abv = _to_float(percent_match.group(1))
         start = percent_match.start()
-        end = max(percent_match.end(), proofs[0].end()) if proofs else percent_match.end()
+        end = percent_match.end()
+        # The proof belongs to this statement only when it is printed right next to the percentage.
+        near = [m for m in proofs if 0 <= m.start() - percent_match.end() <= 25]
+        if near:
+            proof_val = _proof_value(near[0])
+            end = near[0].end()
+        elif not (len(proofs) == 1 and len(percents) == 1):
+            proof_val = None
         # Show the whole statement ("45% Alc./Vol.", "ALC. 14.5% BY VOL.") rather than the bare number.
         left = t[max(0, start - 14):start]
         m_left = None
@@ -177,6 +193,38 @@ def parse_alcohol(text: str) -> AlcoholValue | None:
     if bare:
         return AlcoholValue(abv=_to_float(bare.group(1)), proof=None, abv_from_proof=False, text=t.strip())
     return None
+
+
+def alcohol_candidates(text: str) -> list[AlcoholValue]:
+    """Every alcohol statement read on the label: each percentage next to an alc/abv/vol word, and
+    each proof figure with no percentage beside it. Several OCR passes can read the same statement
+    differently, and labels often state it twice, so the matcher looks at all of them."""
+    if not text:
+        return []
+    t = fix_ocr_digits(unify_unicode(text))
+    out: list[AlcoholValue] = []
+    used: set[int] = set()
+    proofs = list(_PROOF_RE.finditer(t))
+    for m in _PERCENT_RE.finditer(t):
+        value = _to_float(m.group(1))
+        if value > _MAX_PLAUSIBLE_ABV:
+            continue
+        if not _ALC_CONTEXT_RE.search(t[max(0, m.start() - 30): m.end() + 30]):
+            continue
+        proof = None
+        for pm in proofs:
+            if 0 <= pm.start() - m.end() <= 25 or 0 <= m.start() - pm.end() <= 6:
+                proof = _proof_value(pm)
+                used.add(pm.start())
+                break
+        piece = parse_alcohol(t[max(0, m.start() - 14): m.end() + 40])
+        shown = piece.text if piece is not None and piece.abv == value else collapse_ws(m.group(0))
+        out.append(AlcoholValue(abv=value, proof=proof, abv_from_proof=False, text=shown))
+    for pm in proofs:
+        p = _proof_value(pm)
+        if pm.start() not in used and 20 <= p <= 192:
+            out.append(AlcoholValue(abv=p / 2.0, proof=p, abv_from_proof=True, text=collapse_ws(pm.group(0))))
+    return out
 
 
 # --- Net contents -----------------------------------------------------------------------------
@@ -208,7 +256,7 @@ _CANON_UNIT = {
 _METRIC_UNITS = ("mL", "L", "cL")
 # The number must not be glued to a digit look-alike ("7S0 mL" is not "0 mL"; the repair below reads it).
 _VOLUME_RE = re.compile(
-    r"(?<![0-9.,LlIOoSsB])(\d{1,3}(?:,\d{3})+|\d+(?:[.,]\d+)?)\s*"
+    r"(?<![0-9.,LlIOoSsB])(\d{1,3}(?:,\d{3})+|\d+(?:[.,]\d+)?)\s*(?:u\.?\s?s\.?\s+)?"
     r"(m\s?l|milliliters?|millilitres?|c\s?l|centiliters?|centilitres?|"
     r"fl\.?\s*oz\.?|fluid\s*ounces?|oz\.?|ounces?|liters?|litres?|l|"
     r"pints?|pt\.?|quarts?|qt\.?|gallons?|gal\.?)\b\.?",
@@ -255,7 +303,15 @@ def _repair_mangled_volumes(t: str) -> str:
     return _MANGLED_VOLUME_RE.sub(fix, t)
 
 
+_WORD_NUMBER_RE = re.compile(
+    r"\b(one|two|three|four|five|half(?:\s+a)?)\s+(?=(?:u\.?s\.?\s+)?(?:pints?|quarts?|gallons?|liters?|litres?)\b)",
+    re.IGNORECASE)
+_WORD_NUMBERS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "half": "0.5", "half a": "0.5"}
+
+
 def _volume_candidates(t: str) -> list[VolumeValue]:
+    # "ONE PINT", "HALF A GALLON"
+    t = _WORD_NUMBER_RE.sub(lambda m: _WORD_NUMBERS[" ".join(m.group(1).lower().split())] + " ", t)
     found: list[tuple[re.Match, VolumeValue]] = []
     for m in _VOLUME_RE.finditer(t):
         key = _canon_unit_key(m.group(2))
@@ -279,6 +335,14 @@ def _volume_candidates(t: str) -> list[VolumeValue]:
         out.append(v)
         i += 1
     return out
+
+
+def volume_candidates(text: str) -> list[VolumeValue]:
+    """Every net contents statement read on the label (compound US statements combined)."""
+    if not text:
+        return []
+    t = fix_ocr_digits(unify_unicode(text))
+    return _volume_candidates(t) or _volume_candidates(_repair_mangled_volumes(t))
 
 
 def parse_net_contents(text: str) -> VolumeValue | None:
