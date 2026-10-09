@@ -191,11 +191,15 @@ def compare_alcohol(expected: str, label_text: str, *, th: Thresholds = THRESHOL
     notes = []
     if got.abv_from_proof:
         notes.append(f"Label states {got.proof:g} proof, which is {got.abv:g}% ABV.")
-    if got.proof is not None and not got.abv_from_proof and abs(got.proof / 2.0 - got.abv) > th.abv_tolerance:
+    inconsistent = got.proof is not None and not got.abv_from_proof and abs(got.proof - 2 * got.abv) > th.proof_tolerance
+    if inconsistent:
         notes.append(f"The label's proof ({got.proof:g}) does not agree with its percentage ({got.abv:g}%).")
     if abs(got.abv - exp.abv) <= th.abv_tolerance:
-        verdict, score = Verdict.MATCH, 100
+        # A label contradicting itself is never a silent match, even when its percentage agrees.
+        verdict, score = (Verdict.NEAR_MATCH, 90) if inconsistent else (Verdict.MATCH, 100)
         notes.insert(0, f"{exp.abv:g}% ABV on both.")
+        if inconsistent:
+            notes.append("Please confirm.")
     else:
         verdict, score = Verdict.MISMATCH, 0
         notes.insert(0, f"Label says {got.abv:g}% ABV, application says {exp.abv:g}% ABV.")

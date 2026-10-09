@@ -56,6 +56,7 @@ class Thresholds:
     brand_small_print_ratio: float = 0.5
     # Numeric fields.
     abv_tolerance: float = 0.05   # percentage points of alcohol by volume
+    proof_tolerance: float = 0.5  # proof degrees: a label's proof may be rounded to a whole number (46.3% -> 93)
     volume_tolerance_ml: float = 0.5
     # Government warning.
     warning_locate: int = 75      # similarity needed to recognise the "GOVERNMENT WARNING" line

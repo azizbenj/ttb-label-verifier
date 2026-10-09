@@ -106,6 +106,13 @@ def test_alcohol_proof_only_on_label():
     assert r.verdict == Verdict.MATCH and "proof" in r.note.lower()
 
 
+def test_label_proof_contradicting_its_percentage_needs_review():
+    r = compare_alcohol("45%", "45% Alc./Vol. (80 Proof)")
+    assert r.verdict == Verdict.NEAR_MATCH and "80" in r.note
+    assert compare_alcohol("90 Proof", "45% Alc./Vol. (86 Proof)").verdict == Verdict.NEAR_MATCH
+    assert compare_alcohol("45%", "45% Alc./Vol. (90 Proof)").verdict == Verdict.MATCH
+
+
 def test_alcohol_mismatch():
     r = compare_alcohol("40% Alc./Vol.", "45% ALC./VOL.")
     assert r.verdict == Verdict.MISMATCH and "45%" in r.note
@@ -248,3 +255,4 @@ def test_brand_found_only_in_small_print_needs_review():
     assert brand.verdict == Verdict.NEAR_MATCH and "small print" in brand.note and "HAZY DAZE" in brand.note
     app = app.model_copy(update={"brand_name": "HAZY DAZE"})
     assert extract_and_compare(app, ocr)[0].verdict == Verdict.MATCH
+
