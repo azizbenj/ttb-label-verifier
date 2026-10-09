@@ -7,6 +7,13 @@
 {% set problem_fields = r.fields|selectattr('verdict.value', 'in', ['MISMATCH', 'NOT FOUND'])|list %}
 {% set review_fields = r.fields|selectattr('verdict.value', 'equalto', 'NEAR MATCH')|list %}
 <div class="result-wrap" data-app-card data-status="{{ r.overall.value }}"{% if job_id %} data-job="{{ job_id }}" data-index="{{ item_index }}"{% endif %}>
+{% if not r.unreadable %}
+<div class="report-head" aria-hidden="true">
+  <span class="mark">{{ icon('mark', 20) }}</span>
+  <div class="grow"><h2>Label verification report</h2><p>Label Check · label approval review prototype{% if 'sample' in (image_url or '') %} · sample data{% endif %}</p></div>
+  <div class="when">Checked {{ now_text() }}<br>{{ r.reader }} · {{ r.timings.total_ms|seconds }}</div>
+</div>
+{% endif %}
 {% if application and not compact %}
 <div class="card appbar" id="appbar">
   <div class="kvs">
@@ -55,11 +62,6 @@
 </section>
 {% else %}
 <section class="card result {{ cls }}" role="status" tabindex="-1" aria-label="Result: {{ r.overall|headline }}">
-  <div class="report-head" aria-hidden="true">
-    <span class="mark">{{ icon('mark', 20) }}</span>
-    <div class="grow"><h2>Label verification report</h2><p>Label Check · label approval review prototype{% if r.image_name and r.image_name.endswith('.png') and 'sample' in (image_url or '') %} · sample data{% endif %}</p></div>
-    <div class="when">Checked {{ now_text() }}<br>{{ r.reader }} · {{ r.timings.total_ms|seconds }}</div>
-  </div>
   <div class="banner {{ cls }}">
     <span class="badge {{ cls }}">{{ icon(r.overall|glyph, 24) }}</span>
     <div class="text">
