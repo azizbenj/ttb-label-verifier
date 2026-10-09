@@ -1,4 +1,4 @@
-<div class="card error" role="alert" tabindex="-1">
-  <strong>We couldn't run this check.</strong>
-  <p>{{ message }}</p>
+<div class="card alert err" role="alert" tabindex="-1" data-app-card>
+  {{ icon('alert', 20) }}
+  <div><strong>{{ title or "We couldn't run this check." }}</strong><div class="detail">{{ message }}</div></div>
 </div>

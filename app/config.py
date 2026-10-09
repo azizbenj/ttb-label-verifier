@@ -74,7 +74,9 @@ THRESHOLDS = Thresholds()
 
 # --- OCR / runtime settings (environment overrides) --------------------------------------------
 OCR_ENGINE = os.getenv("OCR_ENGINE", "tesseract").lower()
-TESSERACT_CMD = os.getenv("TESSERACT_CMD", "")          # empty -> use the one on PATH
+_LOCAL_TESSERACT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".tesseract", "bin", "tesseract")
+# TESSERACT_CMD env var, else a project-local install (.tesseract/, e.g. a conda env: see README), else PATH.
+TESSERACT_CMD = os.getenv("TESSERACT_CMD") or (_LOCAL_TESSERACT if os.access(_LOCAL_TESSERACT, os.X_OK) else "")
 _psm_spec = os.getenv("TESSERACT_PSM", "4+11").split("+")  # "4+11": block mode, then sparse mode merged (see README)
 TESSERACT_PSM = int(_psm_spec[0])
 TESSERACT_PSM_EXTRA = int(_psm_spec[1]) if len(_psm_spec) > 1 else None

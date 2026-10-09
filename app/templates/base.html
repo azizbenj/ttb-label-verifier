@@ -3,22 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Label Check · TTB</title>
+<meta name="color-scheme" content="light dark">
+<title>{% block title %}Label Check{% endblock %}</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="wrap bar">
-    <div class="brand">
-      <span class="seal" aria-hidden="true">TTB</span>
-      <div><h1>Label Check</h1><p>Compare a label with its application in seconds.</p></div>
-    </div>
-    <span class="muted small">{{ reader_info }}</span>
+<div class="strip"><div class="wrap">
+  <b>Label Check</b><span aria-hidden="true">·</span><span>COLA compliance review</span><span aria-hidden="true">·</span><span>Prototype</span>
+  <span class="right">{{ icon('lock', 12) }}Internal tool · sample data only</span>
+</div></div>
+<header class="masthead"><div class="wrap">
+  <span class="mark" aria-hidden="true">{{ icon('mark', 26) }}</span>
+  <div><h1>Label Check</h1><p class="tagline">Verify a label against its COLA (Certificate of Label Approval) application.</p></div>
+  <div class="right">
+    <span>{{ reader_info }} · nothing you upload is stored</span>
+    <button class="btn icon" type="button" id="help-btn" aria-label="How it works (help)" aria-expanded="false" aria-controls="help-drawer">{{ icon('help', 20) }}</button>
   </div>
-</header>
-<main class="wrap">{% block content %}{% endblock %}</main>
-<footer class="wrap muted small">Prototype for the TTB Compliance Division · nothing you upload is stored ·
-  <a href="/healthz">service status</a></footer>
+</div></header>
+<main class="wrap page">{% block content %}{% endblock %}</main>
+<footer class="wrap page-foot">Prototype · Mandatory label information under 27 CFR parts 4, 5 and 7; health warning statement under 27 CFR part 16 · Uploads are processed in memory and not stored · <a href="/healthz">service status</a></footer>
+{% block drawer %}{% endblock %}
 <script src="/static/app.js"></script>
 </body>
 </html>
