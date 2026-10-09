@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import io
 import logging
 import re
 from pathlib import Path
@@ -12,11 +11,11 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 from . import batch as batchmod
-from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELDS, MANDATED_WARNING, MAX_IMAGE_BYTES, OCR_ENGINE,
-                     THRESHOLDS)
+from .config import CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELDS, MANDATED_WARNING, MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS
+from .images import ImageError, open_image
 from .models import Application, Status, Verdict
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
@@ -125,17 +124,13 @@ async def read_image(upload: UploadFile | None, sample: str) -> tuple[Image.Imag
         return Image.open(SAMPLES_DIR / f"{sample}.png"), f"{sample}.png"
     if upload is None or not upload.filename:
         raise UserError("Please choose a label image (PNG, JPG, TIFF or WEBP), or pick a sample.")
-    data = await upload.read()
+    data = await upload.read(MAX_IMAGE_BYTES + 1)
     if len(data) > MAX_IMAGE_BYTES:
         raise UserError(f"That image is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB. Please use a smaller file.")
-    if not data:
-        raise UserError("The uploaded file is empty.")
     try:
-        image = Image.open(io.BytesIO(data))
-        image.load()
-    except (UnidentifiedImageError, OSError):
-        raise UserError(f"'{upload.filename}' could not be read as an image. Please upload a PNG or JPG of the label.") from None
-    return image, upload.filename
+        return open_image(data, upload.filename), upload.filename
+    except ImageError as e:
+        raise UserError(str(e)) from None
 
 
 def build_application(**values: str) -> Application:

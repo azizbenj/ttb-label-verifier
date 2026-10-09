@@ -40,6 +40,16 @@ def test_not_an_image_is_friendly():
     assert r.status_code == 400 and "could not be read as an image" in r.text
 
 
+def test_decompression_bomb_is_friendly():
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("1", (20000, 20000)).save(buf, format="PNG")  # 48 KB file, 400 megapixels decoded
+    r = client.post("/verify", data=OLD_TOM, files={"image": ("bomb.png", buf.getvalue(), "image/png")})
+    assert r.status_code == 400 and ("too large" in r.text or "megapixels" in r.text)
+
+
 def test_no_image_is_friendly():
     r = client.post("/verify", data=OLD_TOM)
     assert r.status_code == 400 and "choose a label image" in r.text

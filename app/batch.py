@@ -16,13 +16,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
-from PIL import Image, UnidentifiedImageError
-
-from .config import (BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS,
-                     MAX_ZIP_UNCOMPRESSED)
+from .config import (
+    BATCH_WORKERS,
+    FIELDS,
+    IMAGE_EXTENSIONS,
+    MAX_BATCH_IMAGES,
+    MAX_IMAGE_BYTES,
+    MAX_ZIP_MEMBERS,
+    MAX_ZIP_UNCOMPRESSED,
+)
+from .images import ImageError, open_image
 from .models import Application, Status, VerificationResult
 from .pipeline import verify
-from .readers.base import LabelReader
+from .readers.base import LabelReader, ReaderError
 
 ROOT = Path(__file__).resolve().parents[1]
 BATCH_DIR = ROOT / "data" / "batch"
@@ -240,13 +246,9 @@ def build_items(rows: list[dict], images: dict[str, bytes]) -> tuple[list[BatchI
 
 def _process(job: BatchJob, item: BatchItem, data: bytes, reader: LabelReader) -> None:
     try:
-        try:
-            image = Image.open(io.BytesIO(data))
-            image.load()
-        except (UnidentifiedImageError, OSError):
-            raise BatchError(f"'{item.image_name}' could not be read as an image.") from None
+        image = open_image(data, item.image_name)
         item.result = verify(item.application, image, reader, image_name=item.image_name)
-    except BatchError as e:
+    except (ImageError, ReaderError) as e:
         item.error = str(e)
     except Exception as e:  # keep the batch going; surface the reason
         item.error = f"Could not check this label ({type(e).__name__}: {e})."

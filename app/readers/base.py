@@ -16,6 +16,10 @@ import numpy as np
 from PIL import Image
 
 
+class ReaderError(RuntimeError):
+    """The reader could not read this label (timeout, cloud error, refusal); the message is for the agent."""
+
+
 @dataclass
 class OCRWord:
     text: str

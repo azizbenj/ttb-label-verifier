@@ -80,12 +80,17 @@ TESSERACT_PSM = int(_psm_spec[0])
 TESSERACT_PSM_EXTRA = int(_psm_spec[1]) if len(_psm_spec) > 1 else None
 TESSERACT_MIN_WIDTH = 1600                              # upscale smaller images before OCR
 TESSERACT_MAX_WIDTH = 2400                              # downscale huge images (speed)
+TESSERACT_MAX_PIXELS = 10_000_000                       # never hand Tesseract more than this (a 40 x 4000 strip
+TESSERACT_MAX_SIDE = 10_000                             # would otherwise be upscaled to 1600 x 160000)
+TESSERACT_TIMEOUT_S = 30                                # per pass; a pathological image must not hold a worker
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLOUD_READER_AVAILABLE = bool(ANTHROPIC_API_KEY)
 
 BATCH_WORKERS = int(os.getenv("BATCH_WORKERS", str(min(4, os.cpu_count() or 2))))
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_IMAGE_PIXELS = 40_000_000                           # decoded size limit (a 20 MB PNG can decode to gigabytes)
+MIN_IMAGE_SIDE = 50                                     # smaller images cannot be read
 MAX_BATCH_IMAGES = 500
 MAX_ZIP_MEMBERS = 1000
 MAX_ZIP_UNCOMPRESSED = 1024 * 1024 * 1024
