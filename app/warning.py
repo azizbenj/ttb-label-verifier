@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from rapidfuzz import fuzz
+from rapidfuzz.distance import Levenshtein
 
 from .config import MANDATED_WARNING, THRESHOLDS, Thresholds
 from .models import DiffItem, Status, WarningResult
@@ -197,12 +198,19 @@ _LOOKALIKE_LETTERS = str.maketrans({"0": "o", "1": "i", "|": "i", "l": "i"})  # 
 
 
 def _misread_heading(text: str) -> tuple[str, str, bool] | None:
-    """The two words that read most like 'GOVERNMENT WARNING' when OCR garbled a letter ("WARNlNG")."""
+    """The two words that read most like 'GOVERNMENT WARNING' when OCR garbled a letter or two ("WARNlNG",
+    "G0VERNMENT"), or cut at the edge of the image ("ERNMENT WARMING"). Each word must be a near spelling
+    or a long fragment of its target: "GOVT WARNING" is an abbreviation printed on the label, not a
+    misread, and must fail."""
     tokens = text.split()
     best, best_score = None, 0.0
     for i in range(len(tokens) - 1):
         gov, warn = tokens[i], tokens[i + 1].rstrip(":;.")
-        score = fuzz.ratio("government warning", f"{gov} {warn}".lower().translate(_LOOKALIKE_LETTERS))
+        g, w = gov.lower().translate(_LOOKALIKE_LETTERS), warn.lower().translate(_LOOKALIKE_LETTERS)
+        near_gov = Levenshtein.distance(g, "government") <= 2 or (len(g) >= 6 and g in "government")
+        if not near_gov or Levenshtein.distance(w, "warning") > 2:
+            continue
+        score = fuzz.ratio("government warning", f"{g} {w}")
         if score > best_score:
             colon = tokens[i + 1].endswith(":") or (i + 2 < len(tokens) and tokens[i + 2].startswith(":"))
             best, best_score = (gov, warn, colon), score
@@ -219,10 +227,13 @@ def check_heading_caps(heading_line_text: str | None) -> tuple[Status, str]:
     else:
         misread = _misread_heading(text)
         if misread is None:
-            m2 = re.match(r"\s*\S{2,14}\s+(WARNING)\s*:", text)
-            if m2:   # "\Noee WARNING:": the first word is there but unreadable, "WARNING" is in capitals
+            m2 = re.match(r"\s*(\S{2,14})\s+(WARNING)\s*:", text)
+            if m2 and not m2.group(1).isalpha():
+                # "\Noee WARNING:": the first word is there but garbled, "WARNING" is in capitals
                 return Status.REVIEW, ("The first word of the heading was not read clearly; 'WARNING' is in capitals. "
                                        "Please check the heading by eye.")
+            if m2:   # a clean word that is not GOVERNMENT: "HEALTH WARNING:", "GOVT WARNING:"
+                return Status.FAIL, (f"The heading reads '{m2.group(1)} WARNING:'. It must read 'GOVERNMENT WARNING:'.")
             return Status.FAIL, "The words 'GOVERNMENT WARNING' were not found at the start of the statement."
         gov, warn, colon = misread
         lower = {ch for ch in gov + warn if ch.islower()}

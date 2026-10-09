@@ -169,3 +169,17 @@ def test_statement_assembled_past_an_interleaved_line_and_a_neighbouring_column(
 
 def test_unreadable_first_heading_word_asks_for_review():
     assert check_heading_caps("\\Noee WARNING: (1) ACCORDING TO THE SURGEON")[0] == Status.REVIEW
+
+
+def test_a_clearly_read_wrong_heading_word_fails():
+    for heading in ("HEALTH WARNING: (1) According", "SURGEON WARNING: (1) According", "GOVT WARNING: (1) According"):
+        status, note = check_heading_caps(heading)
+        assert status == Status.FAIL and "must read 'GOVERNMENT WARNING:'" in note, (heading, note)
+    # Garbled by OCR (non-letters in the word) or a near spelling: a look, not a failure.
+    assert check_heading_caps("\\Noee WARNING: (1) According")[0] == Status.REVIEW
+    assert check_heading_caps("GOVERNMNT WARNING: (1) According")[0] == Status.REVIEW
+
+
+def test_a_heading_cut_at_the_image_edge_is_a_misread_not_a_wrong_word():
+    # A real light-on-purple can: OCR lost "GOV" at the edge and read N as M.
+    assert check_heading_caps("ERNMENT WARMING: (1) ACCORDING TO THE SURGEON")[0] == Status.REVIEW
