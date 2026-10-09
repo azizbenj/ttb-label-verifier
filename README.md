@@ -43,17 +43,21 @@ network calls at runtime, so it can run inside the agency network.
 ```bash
 railway login
 railway init -n ttb-label-verifier
-railway up --detach
 railway domain
+./scripts/deploy.sh          # railway up, then waits until /healthz reports the new deployment id
 ```
 
-Railway builds the Dockerfile on its side. Optional environment variables:
+Railway builds the Dockerfile on its side. The container runs as an unprivileged user, has a Docker
+`HEALTHCHECK`, and must run as **one instance with one process**: batch jobs live in that process's memory.
+`/healthz` returns 503 when the default reader cannot run (for example no Tesseract binary), so point the
+platform's health check at it. Optional environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `OCR_ENGINE` | `tesseract` | Default reader (`tesseract` or `claude`) |
 | `ANTHROPIC_API_KEY` | unset | When set, the UI shows a "Reader" toggle and the cloud reader can be selected per request |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Model used by the cloud reader |
+| `CLAUDE_TIMEOUT_S` | `30` | Per-attempt timeout of a cloud read (one retry) |
 | `BATCH_WORKERS` | `min(4, CPUs)` | Parallel OCR workers for batch jobs |
 | `TESSERACT_PSM` | `4+11` | Tesseract page-segmentation mode(s); two modes joined with `+` are merged (see "OCR choice") |
 | `TESSERACT_CMD` | unset | Path to the tesseract binary if it is not on PATH |
@@ -67,7 +71,8 @@ label image ──> LabelReader ──> text + word boxes ──> locate each ap
 application ─────────────────────────────────────────┘
 ```
 
-1. **Read.** The image is converted to grayscale, scaled so the width is at least 1600 px, contrast-stretched and
+1. **Read.** The image is flattened (EXIF rotation applied, transparent backgrounds put on white, 16-bit scans
+   rescaled), converted to grayscale, scaled so the width is at least 1600 px (never above 10 megapixels), contrast-stretched and
    handed to Tesseract 5 (LSTM engine) twice: once in "single column" mode (PSM 4) and once in "sparse text" mode
    (PSM 11). No single mode reads every label (block modes drop oversized brand lines, sparse mode occasionally
    misses short centred lines), so lines the first pass did not produce are appended from the second. The two passes
@@ -76,6 +81,9 @@ application ──────────────────────�
 2. **Find each field.** We know what we are looking for, so instead of parsing an arbitrary label we search for the
    span of consecutive label words (across up to three lines) that best matches each application value. This is far
    more robust than blind extraction: "Bottled by OLD TOM DISTILLERY, Bardstown" still yields "OLD TOM DISTILLERY".
+   The other side of that coin is guarded: for the brand and the class/type, a value that is only part of a longer
+   phrase ("Rum" on a label reading "SPICED RUM") or a brand found only in small print (inside "Bottled by ...") is
+   a NEAR MATCH, never a silent MATCH.
    Alcohol content and net contents are picked up with patterns (`45% Alc./Vol.`, `90 Proof`, `750 mL`, `12 FL OZ`)
    and compared as numbers. If nothing resembles the brand name, the most prominent line on the label is shown as the
    mismatch so the agent sees what the label actually says.
@@ -88,6 +96,7 @@ Code map:
 | Path | Role |
 |---|---|
 | `app/config.py` | Every threshold, the mandated warning text, field definitions, runtime settings |
+| `app/images.py` | Safe image opening (size, pixel and decompression-bomb limits) and flattening of any image mode to plain pixels |
 | `app/normalize.py` | Unicode/case/punctuation normalization, ABV-phrase unification, proof→ABV, volume→mL, OCR digit repair |
 | `app/matching.py` | Guided fuzzy location of a value on the label, verdict rules, numeric comparison, country of origin |
 | `app/warning.py` | Warning statement location, wording diff, heading caps, stroke-width bold heuristic |
@@ -130,8 +139,11 @@ Normalization applied before any text comparison (`app/normalize.py`):
 - Unicode NFKC; curly quotes and apostrophes → straight; dashes → `-`; non-breaking spaces → spaces
 - Whitespace collapsed; case folded; punctuation dropped except inside numbers (`45.5`, `1,000`)
 - `Alc./Vol.`, `Alc. by Vol.`, `Alcohol by Volume`, `ABV` → one token
-- Proof → ABV (`90 Proof` = 45%); `mL`/`ml`/`ML`/`milliliters`, `L`/`liter(s)`, `cl`, `fl oz`/`oz` → millilitres
-- OCR digit repair inside numbers only: `75O mL` → `750 mL`, `l0` → `10`
+- Proof → ABV (`90 Proof` = 45%); `mL`/`ml`/`ML`/`milliliters`, `L`/`liter(s)`, `cl`, `fl oz`/`oz`, pints, quarts
+  and gallons → millilitres, including compound statements (`1 PINT 6 FL. OZ.` = 22 fl oz); `1,000 mL` is a
+  thousands separator, `1,5 L` a decimal comma
+- OCR digit repair inside numbers only: `75O mL` → `750 mL`, `l0` → `10`; volumes whose digits were all read as
+  look-alike letters (`LSL` for `1.5 L`) are repaired only when the label has no ordinary volume
 
 Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 
@@ -141,17 +153,23 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | loose equality | — | Identical after full normalization → **MATCH**, except for fields in `case_review_fields` (`brand_name`) where a capitalization/punctuation-only difference is a **NEAR MATCH** ("STONE'S THROW" vs "Stone's Throw": trivial, but an agent should confirm) |
 | `near_match` | 88 | rapidfuzz similarity (0-100) at or above this → **NEAR MATCH**, below → **MISMATCH** |
 | `find_floor` | 60 | Best-matching span on the label scores below this → **NOT FOUND** |
+| `locate_max_lines` | 3 | A value may wrap over up to this many OCR lines (addresses, long class names) |
+| `whole_phrase_fields` | brand, class/type | A MATCH inside a longer phrase on its line ("Rum" in "SPICED RUM", no punctuation between) → **NEAR MATCH** showing the whole line |
+| `brand_small_print_ratio` | 0.5 | A brand found only in text under half the height of the label's largest line → **NEAR MATCH** |
 | `abv_tolerance` | 0.05 pp | Alcohol content compared as numbers; any larger difference is a **MISMATCH** |
+| `proof_tolerance` | 0.5 proof | A label whose proof disagrees with its own percentage by more than this ("45% (80 Proof)") → **NEAR MATCH** |
 | `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`). Same digits and unit but no decimal point on the label (`15 L` read for `1.5 L`) → NEAR MATCH, never a silent match |
 | `warning_locate` | 75 | Similarity needed to recognise the "GOVERNMENT WARNING" line |
 | `warning_near` | 97 | Warning wording at or above this (but not exact) → NEEDS REVIEW with a diff; below → FAIL |
-| `bold_ratio` | 1.30 | Heading stroke width ÷ body stroke width at or above this → "looks bold" (measured: bold headings 1.46-2.12, regular 0.99-1.14) |
+| `bold_ratio` | 1.30 | Heading stroke width ÷ body stroke width at or above this → "looks bold" (measured: bold headings 1.51-2.04, regular 1.03-1.14) |
 | `bold_min_text_px` | 14 | Below this text height the stroke measurement is not attempted |
 | `bold_failure_is_fail` | false | A "does not look bold" result asks for review instead of failing the label |
 
 Blank optional fields on the application (bottler, country) are **SKIPPED**, not failed. Country of origin is
-matched against "Product of X" style statements; a different country on the label is a MISMATCH that shows what
-the label says.
+decided by the label's origin statements ("Product of X", "Imported from X", "Distilled in X"): only an identical
+country name is a MATCH; a close spelling (an OCR slip, or Austria vs Australia) is a NEAR MATCH; a different
+country, including one that merely contains the expected name ("Equatorial Guinea" for "Guinea"), is a MISMATCH
+that shows what the label says. Without an origin statement, only the country name on a line of its own matches.
 
 Overall label status: **FAIL** if any field is MISMATCH/NOT FOUND or the warning fails; **REVIEW** if any field is
 NEAR MATCH or a warning check needs a look; otherwise **PASS**.
@@ -172,16 +190,18 @@ Four separate results are shown so the agent sees exactly what is wrong:
    ≥ 97 is flagged for **review** (it may be a misprint or an OCR error; the diff lets the agent decide in a second);
    anything larger (missing sentence, paraphrase) **fails**.
 3. **Heading in capitals**: the OCR text of the heading must read `GOVERNMENT WARNING:`; title case fails, a missing
-   colon asks for review.
+   colon asks for review, and capitals with a letter OCR could not read cleanly (`WARNlNG`) ask for review.
 4. **Heading bold (heuristic)**: from the word boxes, we take the heading words and the body words of the statement
    and estimate each group's mean stroke width as 2 × ink area ÷ ink perimeter on the binarized image (for a stroke
    of width w and length L the area is wL and the perimeter about 2L, so the estimate does not depend on stroke
    orientation or letter case), normalized by cap height. If the heading's strokes are at least `bold_ratio`
-   (1.30×) thicker than the body's it "looks bold". Calibrated with `scripts/calibrate_bold.py` on 240 rendered
-   statements (both font families, with and without blur): bold headings measure 1.46-2.12, regular ones
-   0.99-1.14. It is still a heuristic that assumes the body is set in regular weight at a similar size, which is
-   how the statement is printed in practice; doubtful results ask for a look rather than failing the label. With
-   the cloud reader the model answers the bold question directly.
+   (1.30×) thicker than the body's it "looks bold". Ink polarity is decided per word, so a light-on-dark warning
+   panel is measured correctly. Calibrated with `scripts/calibrate_bold.py`, which renders the 243 warning
+   statements of the batch set twice, with a bold and a regular heading (both font families, with and without
+   blur): bold headings measure 1.51-2.04, regular ones 1.03-1.14. It is still a heuristic that assumes the body
+   is set in regular weight at a similar size; 27 CFR 16.22(a)(2) also forbids a bold body, and an all-bold
+   statement measures about 1.0, so it asks for a look. Doubtful results ask for a look rather than failing the
+   label. With the cloud reader the model answers the bold question directly.
 
 ## Batch mode
 
@@ -200,12 +220,16 @@ aliases are accepted (`brand`, `abv`, `volume`, `bottler`, `country`...):
 | `country_of_origin` | no (imports) | `Scotland` |
 | `application_id` | no | `APP-0001` |
 
-A template is downloadable from the UI. Rows with blank required values, rows without an image, and images without
-a row are reported in plain language and the rest of the batch still runs. Jobs run in a thread pool
-(`BATCH_WORKERS`) and the page polls every second; results have Pass/Review/Fail filters, a search box, click-to-expand
-details, and a CSV export with every field's verdict, found text, note, the four warning results and timings.
+Comma-, semicolon- and tab-separated files are accepted. A template is downloadable from the UI. Rows with blank
+required values or an alcohol content / net contents that cannot be read, rows without an image, images without a
+row, and file names shared by several different images (`lot1/label.png` and `lot2/label.png`: never guessed) are
+reported in plain language and the rest of the batch still runs. Jobs run in a thread pool (`BATCH_WORKERS`) and
+the page polls every second; results have Pass/Review/Fail filters, a search box, click-to-expand details, and a
+CSV export with every field's verdict, found text, note, the four warning results and timings (cells that would
+start a spreadsheet formula are prefixed with an apostrophe).
 
-Limits: 500 labels per batch, 20 MB per image, zip-bomb guards. Jobs live in memory for the life of the process.
+Limits: 500 labels and 1 GB of images per batch, 20 MB and 40 megapixels per image, zip-bomb guards. Jobs live in
+memory; finished ones are kept for 24 hours (at most the 50 most recent) and disappear on restart.
 
 ## Test data
 
@@ -222,8 +246,10 @@ warning heading not bold, brand capitalization differs, wrong net contents, diff
 changed, warning cut short, net contents missing, wrong country. Every row carries the application values plus the
 expected outcome, so the same files drive the end-to-end tests and the "Try a sample" menu.
 
-Batch set: 250 random labels across spirits, wine, beer and imports; about 80% clean, the rest spread over the failure
-types; `expected_overall` is in the CSV so accuracy can be measured.
+Batch set: 250 random labels across spirits, wine, beer and imports: 202 clean and 48 with a planted defect (wrong
+ABV 11, heading not in capitals 10, missing warning 7, brand capitalization 6, wrong net contents 5, missing net
+contents 4, altered warning 3, heading not bold 2). Wrong brand and wrong country appear only in the sample set.
+`expected_overall` is in the CSV so accuracy can be measured.
 
 ## Tests
 
@@ -235,12 +261,17 @@ pytest -q
 - `test_matching.py`: every verdict boundary, the brand-name case rule, numeric tolerances, multi-line addresses, country of origin
 - `test_warning.py`: exact/altered/truncated wording with diffs, heading capitalization, the bold heuristic on rendered bold vs regular text in both font families and two sizes
 - `test_e2e.py`: every sample label through the real Tesseract pipeline must produce its expected outcome in under 5 s
-- `test_api.py`: the HTTP surface, friendly errors (missing fields, bad values, non-image files), a small batch with a missing image and a stray file, CSV export
-- `test_batch_flow.py`: the single and batch HTTP flows with a fake reader, so templates and job handling are covered without Tesseract
+- `test_api.py`: the HTTP surface, friendly errors (missing fields, bad values, non-image files, decompression bombs), a small batch with a missing image and a stray file, CSV export
+- `test_batch_flow.py`: the single and batch HTTP flows with a fake reader, so templates and job handling are covered without Tesseract; CSV dialects, unreadable rows, same-named images, encrypted zips, export escaping, job retention
+- `test_http.py`: concurrent checks do not queue behind each other, reader failures map to readable 502/500 errors, upload size guard, `/healthz` 503
+- `test_reader.py`: transparent / 16-bit / palette / CMYK images, size and pixel limits, the two-pass merge bookkeeping, Tesseract timeouts
+- `test_claude_reader.py`: the cloud reader's mapping, error handling, refusal fallbacks and client limits, with the SDK mocked
 
 OCR-dependent tests skip automatically when the Tesseract binary is absent. `.github/workflows/ci.yml` runs the whole
-suite on Ubuntu with Tesseract installed and benchmarks the sample set. `scripts/bench.py` reports accuracy and timing
-for the sample or batch set, locally or against a deployed URL (`--url`).
+suite on Ubuntu with Tesseract installed, then benchmarks both sets and fails the build if a sample misses its
+expected verdict, if batch accuracy drops below 95%, or if any label with a planted defect comes back PASS.
+`scripts/bench.py` reports accuracy, missed defects and timing for the sample or batch set, locally (`-j N` to run
+labels in parallel) or against a deployed URL (`--url`).
 
 ## Measured results
 
@@ -268,21 +299,41 @@ changes; the default row is the final build. Timings vary with Railway's load: t
 
 Of the 8 misses with the default reader, 7 are conservative: the tool asked for a look (REVIEW) on a label the
 generator marked clean, because Tesseract dropped the decimal point in a litre volume ("1.5 L" read as "15L") or
-misread a capital in the brand line and matched the title-case bottler mention instead. The remaining one is a
-genuine OCR error ("750 mL" read as "790 mL", reported as a MISMATCH an agent resolves from the image). No clean
-label was failed for a wrong reason and, more importantly, no planted defect was reported as a PASS: every wrong
-ABV, wrong or missing volume, missing or altered warning, non-capital or non-bold heading and wrong brand was
-caught, and every brand-capitalization case was flagged for review.
+misread a capital in the brand line and matched the title-case bottler mention instead. The remaining one is a clean
+label failed by a genuine OCR error ("750 mL" read as "790 mL", reported as a MISMATCH that shows the misread text,
+so an agent resolves it from the image in seconds). More importantly, no planted defect was reported as a PASS: every wrong
+ABV, wrong or missing volume, missing or altered warning and non-capital or non-bold heading was caught, and every
+brand-capitalization case was flagged for review (the wrong-brand and wrong-country cases are in the sample set,
+where all 15 labels get their expected verdict).
 
 Throughput: the 250-label sample batch completes in about 90 s through the UI with four workers, i.e. 0.35 s per
 label of wall-clock time.
+
+**After the code review (October 2026), measured locally** (Tesseract 5.5.3, 11-core Mac, `scripts/bench.py`, one
+label at a time; the Railway figures above are from the build before the review and should be re-measured with
+`--url` after the next deploy):
+
+| Set | Expected verdict | Planted defects reported as PASS | Median | p95 |
+|---|---|---|---|---|
+| Samples, before the review | 15/15 | 0 | 1.30 s | 1.35 s |
+| Samples, after | 15/15 | 0 | 0.67 s | 0.75 s |
+| Batch, before the review | 243/250 | 0 | 1.24 s | 1.33 s |
+| Batch, after | 243/250 (same seven labels) | 0 | 0.68 s | 0.74 s |
+
+The review's fixes (country of origin, whole-phrase brand and class/type, label proof consistency, volume parsing,
+warning heading, image intake) change no verdict on these two sets: their labels never exercise the cases that were
+wrong, which is why each fix comes with its own tests. The speed-up comes from running Tesseract with one OpenMP
+thread per process (`OMP_THREAD_LIMIT=1`); with four batch workers the 250-label batch takes 44 s instead of 157 s
+on the same machine.
 
 ## Assumptions
 
 - Labels arrive as flat artwork files or straight-on scans, the way they are attached to applications.
 - The application data is trusted; the label is what is being verified.
 - "Exact wording" of the warning means the words; punctuation and line breaks are not judged.
-- The regulation requires only the heading to be bold and in capitals; the body's weight is not checked.
+- The regulation (27 CFR 16.22(a)(2)) requires the heading in capitals and bold and the rest of the statement not
+  bold. The bold check compares the two, so an all-bold statement asks for review; a heading heavier than an
+  already-bold body is not detected. Type size (16.22(b)) is not checked: the image does not carry a physical scale.
 - A capitalization-only difference matters for the brand name (flagged for review) but not for the other fields.
 - English-language labels.
 
@@ -298,8 +349,17 @@ label of wall-clock time.
 - Batch jobs are kept in memory and disappear on restart; for production they would go to a queue and a database.
 - No authentication: the prototype assumes it runs on an internal network.
 - Vertical or rotated text is not read.
+- A "GOVERNMENT WARNING" heading split across two lines is not recognised, so the capitals check fails (a false
+  FAIL, never a false PASS).
+- The brand's small-print rule assumes the brand is printed larger than the bottler statement. A label whose
+  brand is deliberately small next to a large fanciful name gets a NEAR MATCH for the agent to confirm.
+- Uploads are size-checked from their Content-Length; a chunked upload without one is only limited per file after
+  it arrives. A reverse proxy limit is the production answer.
 
 ## Security notes
 
-Uploads are validated (image type, 20 MB limit, zip member and size limits), processed in memory and never written
-to disk. Sample file names are whitelisted. The app makes no outbound calls unless the cloud reader is enabled.
+Uploads are validated (image type, 20 MB and 40 megapixel limits, decompression-bomb and zip member/size limits)
+and processed in memory; the app itself never writes them to disk, but the web framework spools any upload over
+1 MB to a temporary file in `/tmp` for the duration of the request. Sample file names are whitelisted, the CSV
+export neutralises spreadsheet formulas, and the container runs as an unprivileged user. The app makes no outbound
+calls unless the cloud reader is enabled.

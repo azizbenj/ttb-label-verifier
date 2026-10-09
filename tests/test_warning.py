@@ -83,10 +83,10 @@ def test_check_warning_no_bold_info_asks_for_review():
 
 
 # --- bold heuristic on rendered text -----------------------------------------------------------
-def _render(font_regular: str, font_bold: str, size: int, heading_bold: bool):
+def _render(font_regular: str, font_bold: str, size: int, heading_bold: bool, body_bold: bool = False):
     """Render a two-line statement and return (ink array, heading words, body words)."""
-    reg = ImageFont.truetype(str(FONTS / font_regular), size)
     bold = ImageFont.truetype(str(FONTS / font_bold), size)
+    reg = bold if body_bold else ImageFont.truetype(str(FONTS / font_regular), size)
     img = Image.new("L", (size * 40, size * 6), 255)
     draw = ImageDraw.Draw(img)
     words: list[tuple[str, ImageFont.FreeTypeFont, int]] = []
@@ -146,3 +146,10 @@ def test_bold_heuristic_on_light_text_over_a_dark_panel(heading_bold):
     # The same statement printed light-on-dark: the global ink mask now marks the panel, not the letters.
     _, ratio_dark, _ = estimate_heading_bold(~ink, head, body)
     assert ratio_dark == pytest.approx(ratio, abs=0.05), (ratio, ratio_dark)
+
+
+@pytest.mark.parametrize("fonts", [("DejaVuSans.ttf", "DejaVuSans-Bold.ttf"), ("DejaVuSerif.ttf", "DejaVuSerif-Bold.ttf")])
+def test_all_bold_statement_asks_for_review(fonts):
+    # 27 CFR 16.22(a)(2): the rest of the statement may not be bold. An all-bold statement measures ~1.0.
+    ink, head, body = _render(fonts[0], fonts[1], 30, heading_bold=True, body_bold=True)
+    assert estimate_heading_bold(ink, head, body)[0] == Status.REVIEW
