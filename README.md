@@ -1,8 +1,9 @@
-# TTB Label Check
+# Label Check
 
-A prototype that verifies an alcohol beverage label image against the application data filed with
-TTB, built for the Treasury take-home. An agent types (or uploads a CSV of) the application values,
-adds the label image(s), and gets a per-field verdict in a few seconds, plus a strict check of the
+A prototype that verifies an alcohol beverage label image against the data in its label approval
+application, built for a take-home exercise. It is an independent prototype, not affiliated with or
+endorsed by any government agency. An agent types (or uploads a CSV of) the application values, adds
+the label image(s), and gets a per-field verdict in a few seconds, plus a strict check of the
 government health warning.
 
 - **Live demo:** https://ttb-label-verifier-production-28e6.up.railway.app
@@ -11,7 +12,7 @@ government health warning.
 | What you give it | What you get back |
 |---|---|
 | Brand name, class/type, alcohol content, net contents, bottler name & address, country of origin (imports) | One row per field: the application value, the text found on the label, and a verdict: **MATCH**, **NEAR MATCH** (agent decides), **MISMATCH** or **NOT FOUND**, with a one-line reason |
-| The label image (PNG/JPG/TIFF/WEBP), or a CSV + 200-300 images for a batch | Government warning: present / exact wording (with a word diff) / heading in capitals / heading bold |
+| The label image (PNG/JPG/TIFF/WEBP), or several (front, back, neck) for one application, or a CSV + 200-300 images for a batch | Government warning: present / exact wording (with a word diff) / heading in capitals / heading bold |
 | | Timing for every label, and for batches a filterable table and a CSV export |
 
 ## Quick start (local)
@@ -31,8 +32,8 @@ If Tesseract is not on your PATH, point the app at it with `TESSERACT_CMD=/path/
 ## Run with Docker
 
 ```bash
-docker build -t ttb-label-check .
-docker run --rm -p 8000:8000 ttb-label-check
+docker build -t label-check .
+docker run --rm -p 8000:8000 label-check
 ```
 
 The image is `python:3.12-slim` plus the Debian `tesseract-ocr` package (about 30 MB). It makes no
@@ -78,6 +79,15 @@ application ──────────────────────�
    misses short centred lines), so lines the first pass did not produce are appended from the second. The two passes
    cost about 1 s together on Railway's shared CPU. We keep the word boxes and a binarized copy of the image for the
    bold check. OCR digit confusions are repaired in context (`75O` → `750`, `L.75 L` → `1.75 L`).
+   Before reading, a scan tilted by 0.8° to 6° is straightened (the angle at which the rows of ink are most
+   uneven); smaller tilts are left alone because Tesseract copes with them and resampling costs detail.
+   When the first read leaves a field missing or different, or the warning is not a clean pass, the label is
+   read again three more ways, in parallel: turned 90° each way (warnings and bottler lines printed sideways on
+   cans and wine labels) and as a color-aware local-contrast image (light or colored text on colored panels).
+   Only lines that look like real text are kept from these passes, and a pass that fails or takes longer than
+   8 s is skipped rather than failing the label.
+   Several images for one application (front, back, neck) are stacked into one before reading, because the
+   warning is usually on the back.
 2. **Find each field.** We know what we are looking for, so instead of parsing an arbitrary label we search for the
    span of consecutive label words (across up to three lines) that best matches each application value. This is far
    more robust than blind extraction: "Bottled by OLD TOM DISTILLERY, Bardstown" still yields "OLD TOM DISTILLERY".
@@ -102,9 +112,12 @@ Code map:
 | `app/warning.py` | Warning statement location, wording diff, heading caps, stroke-width bold heuristic |
 | `app/readers/` | `base.py` (interface), `tesseract.py` (local OCR), `claude_vision.py` (cloud), `extract.py` (rules over OCR) |
 | `app/pipeline.py` | One label end to end with timings and the overall verdict |
+| `app/evidence.py` | What the result page shows as evidence: crops of the label, unit conversions, misread explanations |
 | `app/batch.py` | CSV parsing, image/zip intake, thread-pool jobs, CSV export |
 | `app/main.py` + `templates/` + `static/` | FastAPI routes, server-rendered UI (no build step, no CDN) |
 | `scripts/generate_labels.py` | Synthetic label generator (Pillow) |
+| `scripts/bench.py`, `scripts/stress_test.py` | Accuracy and timing on the synthetic sets; the same labels in other typefaces and degraded images |
+| `scripts/fetch_registry_labels.py`, `scripts/real_labels.py`, `scripts/real_labels.csv` | Real approved labels: download, ground truth, field-level scoring |
 | `data/samples/`, `data/batch/` | 15 sample labels (one per failure type) and a 250-label batch, each with its application CSV |
 | `tests/` | Unit tests for every module plus end-to-end and API tests |
 
@@ -165,6 +178,19 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `bold_min_text_px` | 14 | Below this text height the stroke measurement is not attempted |
 | `bold_failure_is_fail` | false | A "does not look bold" result asks for review instead of failing the label |
 
+Real labels taught a few more rules, each covered by tests:
+
+- **Every reading is considered.** A label often states the alcohol content or the volume more than once
+  (`750 mL` on the front, `75 cl` on the back), and OCR may produce two readings of one statement. If any
+  reading agrees with the application and another one disagrees, the result is a NEAR MATCH that lists both.
+  A reading that only lost its decimal point is treated as the same statement, and US and metric figures within
+  0.5% of each other (`16 FL OZ` and `473 mL`) agree.
+- **A likely misread is not a mismatch.** A volume that is not a standard size and is one digit away from the
+  application's (`760 mL` for `750 mL`) is a NEAR MATCH explained as a probable reading error.
+- **Letter-spaced brands** (`B A R N  B R E W`) are matched with the spaces closed up; a single-letter
+  difference in the brand is a NEAR MATCH, and trademark signs (® ™ ©) are ignored.
+- **`U.S.` before a unit and words for numbers** (`ONE PINT`) are understood.
+
 Blank optional fields on the application (bottler, country) are **SKIPPED**, not failed. Country of origin is
 decided by the label's origin statements ("Product of X", "Imported from X", "Distilled in X"): only an identical
 country name is a MATCH; a close spelling (an OCR slip, or Austria vs Australia) is a NEAR MATCH; a different
@@ -184,7 +210,11 @@ Required text (27 CFR 16.21):
 
 Four separate results are shown so the agent sees exactly what is wrong:
 
-1. **Present**: the statement (or its body) was found on the label.
+1. **Present**: the statement (or its body) was found on the label. Each reading of the label (upright, turned,
+   contrast) is searched on its own, its lines in top-to-bottom order; the statement is grown line by line while
+   that brings it closer to the required text, passing over up to four lines that belong to something else (a
+   neighbouring column, "For sale only in Ohio"). Words at the start or end of a line that belong to text printed
+   beside the statement are left out, and the wording result then asks for a look, quoting them.
 2. **Wording**: compared word for word after normalization. Punctuation is ignored because OCR drops commas and
    periods unreliably. Any difference is listed as "required text says / label says". A difference with similarity
    ≥ 97 is flagged for **review** (it may be a misprint or an OCR error; the diff lets the agent decide in a second);
@@ -220,7 +250,8 @@ aliases are accepted (`brand`, `abv`, `volume`, `bottler`, `country`...):
 | `country_of_origin` | no (imports) | `Scotland` |
 | `application_id` | no | `APP-0001` |
 
-Comma-, semicolon- and tab-separated files are accepted. A template is downloadable from the UI. Rows with blank
+Several images for one application go in one cell, separated by `;` or `|` (`front.png; back.png`, up to six);
+they are stacked and read as one label. Comma-, semicolon- and tab-separated files are accepted. A template is downloadable from the UI. Rows with blank
 required values or an alcohol content / net contents that cannot be read, rows without an image, images without a
 row, and file names shared by several different images (`lot1/label.png` and `lot2/label.png`: never guessed) are
 reported in plain language and the rest of the batch still runs. Jobs run in a thread pool (`BATCH_WORKERS`) and
@@ -251,6 +282,28 @@ ABV 11, heading not in capitals 10, missing warning 7, brand capitalization 6, w
 contents 4, altered warning 3, heading not bold 2). Wrong brand and wrong country appear only in the sample set.
 `expected_overall` is in the CSV so accuracy can be measured.
 
+### Real approved labels
+
+Synthetic labels only prove the tool reads its own generator. To test it on what agents actually see,
+`scripts/real_labels.py` runs it on 20 approved labels taken from the public registry of approved label
+applications: 6 domestic spirits, 4 imports, 5 wines and 5 beers, chosen to be hard (light text over photos,
+sideways warnings, curved display type, a handwritten keg collar, colored panels). The images belong to the
+brand owners, so they are not in the repository; `scripts/fetch_registry_labels.py` downloads them into the
+gitignored `data/real/`. `scripts/real_labels.csv` records what each label really says, so every field should come
+back MATCH unless its `expect` column says otherwise (4 fields are legitimate NEAR MATCHes, 3 are not on the
+label). `--defects` also checks every label against a wrong alcohol content and a wrong net contents, which must
+never come back MATCH.
+
+```bash
+python scripts/fetch_registry_labels.py $(cut -d, -f1 scripts/real_labels.csv | tail -n +2)
+python scripts/real_labels.py --stitch       # each record's images into one file
+python scripts/real_labels.py --defects
+```
+
+`scripts/stress_test.py` renders the 15 sample labels again in eleven other typefaces, six display faces for the
+brand, and degraded images (JPEG quality 35, a half and a third of the resolution, tilted 1.5° and 4°, blur,
+sensor noise). It only uses fonts already installed on the machine and writes nothing to the repository.
+
 ## Tests
 
 ```bash
@@ -264,7 +317,10 @@ pytest -q
 - `test_api.py`: the HTTP surface, friendly errors (missing fields, bad values, non-image files, decompression bombs), a small batch with a missing image and a stray file, CSV export
 - `test_batch_flow.py`: the single and batch HTTP flows with a fake reader, so templates and job handling are covered without Tesseract; CSV dialects, unreadable rows, same-named images, encrypted zips, export escaping, job retention
 - `test_http.py`: concurrent checks do not queue behind each other, reader failures map to readable 502/500 errors, upload size guard, `/healthz` 503
-- `test_reader.py`: transparent / 16-bit / palette / CMYK images, size and pixel limits, the two-pass merge bookkeeping, Tesseract timeouts
+- `test_reader.py`: transparent / 16-bit / palette / CMYK images, size and pixel limits, the two-pass merge bookkeeping, Tesseract timeouts, tilt estimation, straightened previews
+- `test_boxes.py`: highlight boxes for each field, including text read from a turned view mapped back onto the upright image
+- `test_formats.py`: JPG, TIFF, WEBP and BMP uploads and zips of them, single and batch
+- `test_multi_image.py`: several images per application, in the form and in batch rows
 - `test_claude_reader.py`: the cloud reader's mapping, error handling, refusal fallbacks and client limits, with the SDK mocked
 
 OCR-dependent tests skip automatically when the Tesseract binary is absent. `.github/workflows/ci.yml` runs the whole
@@ -326,9 +382,51 @@ wrong, which is why each fix comes with its own tests. The speed-up comes from r
 thread per process (`OMP_THREAD_LIMIT=1`); with four batch workers the 250-label batch takes 44 s instead of 157 s
 on the same machine.
 
+**Real approved labels (October 2026, local, `scripts/real_labels.py --defects`).** The 20 labels carry 104 filled
+application fields:
+
+| | Before the real-label work | Now |
+|---|---|---|
+| Fields with the expected verdict | 54/104 | 59/104 |
+| Flagged for review (NEAR MATCH where MATCH was expected) | not measured | 29 |
+| False alarms: MISMATCH or NOT FOUND for text that is on the label | 32 | 16 |
+| Government warning: pass / review / fail (all 20 carry it) | 13 fail | 5 / 11 / 4 |
+| Planted wrong alcohol content or net contents reported as MATCH | 0 of 40 | 0 of 40 |
+| Time per label: median / max | | 2.4 s / 4.3 s |
+
+Read this honestly: no real label passes untouched. 8 come back REVIEW and 12 FAIL, so on real artwork the tool is a
+fast first pass that points the agent at what to look at, not an unattended approver. What it does not do is let a
+wrong value through: all 40 planted defects were caught. The remaining false alarms come from brand names in
+display or curved typefaces, light text over photographs, a handwritten keg collar, and single-digit misreads
+(`57.7%` read as `07.7%`); each shows the misread text and its place on the label, so the agent settles it from the
+image. Real labels take longer than the synthetic ones (median 2.4 s against under 1 s) because most of them need the
+extra turned and contrast passes; the slowest was 4.3 s, inside the 5-second budget on a laptop. Re-measure on
+Railway before relying on that there.
+
+**Stress test (`scripts/stress_test.py`, the 15 sample labels per condition, local).**
+
+| Condition | Expected verdict | Planted defect reported as PASS |
+|---|---|---|
+| DejaVu (baseline), Georgia, Times, Baskerville, Helvetica Neue, Optima, Gill Sans, Avenir Next Condensed | 15/15 each | 0 |
+| Futura / Rockwell | 14/15 / 13/15 | 0 |
+| Didot (hairline serifs) | 8/15 | 0 |
+| Brand in Papyrus, Trattatello or Impact | 15/15 each | 0 |
+| Brand in Chalkduster / Herculanum | 12/15 each | 0 |
+| Brand in Copperplate | 13/15 | 1, see below |
+| JPEG quality 35, half or a third of the resolution | 14/15 each | 0 |
+| Tilted 1.5° / 4° (10/15 and 8/15 before straightening was added) | 15/15 / 14/15 | 0 |
+| Blur radius 1.2 | 15/15 | 0 |
+| Sensor noise (failed by time-out before the optional passes got their own limit) | 14/15 | 0 |
+
+The one defect counted as missed is the brand-capitalization sample ("Stone's Throw Cellars" against "STONE'S
+THROW CELLARS"). Copperplate has no lowercase letters: it draws them as small capitals, so the rendered label really
+does read in capitals and the planted difference disappears. Every other miss is either a clean label flagged for
+a look or a defect caught with a different severity (FAIL where REVIEW was expected, or the reverse).
+
 ## Assumptions
 
-- Labels arrive as flat artwork files or straight-on scans, the way they are attached to applications.
+- Labels arrive as flat artwork files or straight-on scans, the way they are attached to applications. Scans
+  tilted by up to 6° are straightened.
 - The application data is trusted; the label is what is being verified.
 - "Exact wording" of the warning means the words; punctuation and line breaks are not judged.
 - The regulation (27 CFR 16.22(a)(2)) requires the heading in capitals and bold and the rest of the statement not
@@ -340,7 +438,9 @@ on the same machine.
 ## Known limitations
 
 - Photos taken at an angle, with glare, shadows or poor lighting are out of scope; expect NOT FOUND results and a
-  warning-statement failure on such images. Deskewing and perspective correction would be the first thing to add.
+  warning-statement failure on such images. Tilt up to 6° is corrected; perspective correction would be next.
+- On real approved labels the tool asks for a look on every label (see "Measured results"): brand names in display
+  or curved typefaces, light text over photographs, handwriting and single-digit misreads produce false alarms.
 - Tesseract struggles with decorative, script or outlined brand typography and with text on busy backgrounds. The
   guided matching tolerates a fair amount of noise, but a brand set in a script face may come back NOT FOUND
   (the cloud reader handles these).
@@ -348,7 +448,8 @@ on the same machine.
   real-world calibration set would be needed before trusting it unattended, which is why it only asks for review.
 - Batch jobs are kept in memory and disappear on restart; for production they would go to a queue and a database.
 - No authentication: the prototype assumes it runs on an internal network.
-- Vertical or rotated text is not read.
+- Text at 90° is read only when the first, upright read leaves something missing; text at other angles (curved
+  around a seal, set diagonally) is not read.
 - A "GOVERNMENT WARNING" heading split across two lines is not recognised, so the capitals check fails (a false
   FAIL, never a false PASS).
 - The brand's small-print rule assumes the brand is printed larger than the bottler statement. A label whose
