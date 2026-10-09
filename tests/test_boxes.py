@@ -68,3 +68,24 @@ def test_attach_boxes_is_a_no_op_without_image_data():
     fields = extract_and_compare(app, ocr)
     attach_boxes(ocr, fields)
     assert all(f.box is None for f in fields)
+
+
+def test_boxes_read_in_a_turned_view_map_back_onto_the_upright_image():
+    """Draw a block at a known place, turn the image as the reader does, find the block where Tesseract
+    would report it in that view, and map it back: it must land where it was drawn."""
+    from PIL import Image, ImageDraw
+
+    from app.readers.base import View, upright_box
+    W, H = 400, 300
+    drawn = (50, 200, 120, 30)   # left, top, width, height on the upright image
+    img = Image.new("L", (W, H), 255)
+    ImageDraw.Draw(img).rectangle([drawn[0], drawn[1], drawn[0] + drawn[2] - 1, drawn[1] + drawn[3] - 1], fill=0)
+    views = [View(rot=0, inverted=False, ink=np.zeros((H, W), bool), size=(W, H))]
+    for rot in (90, 270):
+        turned = img.rotate(rot, expand=True)        # what TesseractReader.extend reads
+        ys, xs = np.nonzero(np.asarray(turned) < 128)
+        box = (int(xs.min()), int(ys.min()), int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1))
+        views.append(View(rot=rot, inverted=False, ink=np.zeros(turned.size[::-1], bool), size=turned.size))
+        word = OCRWord(text="x", left=box[0], top=box[1], width=box[2], height=box[3], conf=90, line_index=0,
+                       view=len(views) - 1)
+        assert upright_box(word, views) == drawn, (rot, box, upright_box(word, views))
