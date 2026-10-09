@@ -26,3 +26,21 @@ jobs:
         run: python scripts/bench.py --verbose --fail-under 1.0
       - name: Benchmark the 250-label batch set (accuracy floor, no planted defect reported as PASS)
         run: python scripts/bench.py --set batch -j 2 --fail-under 0.95
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t ttb-label-check .
+      - name: Run it as deployed and wait for a healthy /healthz
+        run: |
+          docker run -d --name app -e PORT=8080 -p 8080:8080 ttb-label-check
+          for i in $(seq 1 30); do
+            if curl -fsS localhost:8080/healthz; then
+              test "$(docker exec app id -u)" != "0" && exit 0
+              echo "container runs as root"; exit 1
+            fi
+            sleep 2
+          done
+          docker logs app; exit 1
