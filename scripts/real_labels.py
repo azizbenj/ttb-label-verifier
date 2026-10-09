@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the verifier on real approved labels from TTB's public registry and score it field by field.
+"""Run the verifier on real approved labels from the public registry and score it field by field.
 
 Fetch the images first (they are not in the repository):
     python scripts/fetch_registry_labels.py $(cut -d, -f1 scripts/real_labels.csv | tail -n +2)
@@ -92,7 +92,7 @@ def main() -> None:
     with ThreadPoolExecutor(a.j) as pool:
         results = list(pool.map(run, rows))
 
-    tally = {"right": 0, "conservative": 0, "false_alarm": 0}
+    tally = {"right": 0, "conservative": 0, "false_alarm": 0, "accepted": 0}
     warn = {"PASS": 0, "REVIEW": 0, "FAIL": 0}
     times = []
     print(f"{'record':16} {'kind':8} {'overall':7} {'time':>6}  fields that did not come back as expected")
@@ -106,9 +106,14 @@ def main() -> None:
             got = f.verdict.value
             if want == "skip":
                 continue
-            if (want == "match" and got == "MATCH") or (want == "review" and got in ("NEAR MATCH", "MATCH")) or \
+            if (want == "match" and got == "MATCH") or (want == "review" and got == "NEAR MATCH") or \
                (want == "absent" and got == "NOT FOUND"):
                 tally["right"] += 1
+            elif want == "review" and got == "MATCH":
+                # The ground truth says this needs a look (the brand only in the bottler statement, the class
+                # inside a longer phrase): a MATCH is the silent acceptance the rules exist to prevent.
+                tally["accepted"] += 1
+                problems.append(f"{f.key}: MATCH where a look was expected ({f.found!r})")
             elif got == "NEAR MATCH":
                 tally["conservative"] += 1
                 problems.append(f"{f.key}: NEAR MATCH ({f.found!r})")
@@ -124,7 +129,8 @@ def main() -> None:
             print("      " + row["notes"])
     n = sum(tally.values())
     print(f"\nfields: {tally['right']}/{n} as expected, {tally['conservative']} flagged for review, "
-          f"{tally['false_alarm']} false alarms (MISMATCH or NOT FOUND for text that is on the label)")
+          f"{tally['false_alarm']} false alarms (MISMATCH or NOT FOUND for text that is on the label), "
+          f"{tally['accepted']} accepted without the look the ground truth expects")
     print(f"government warning: {warn['PASS']} pass, {warn['REVIEW']} review, {warn['FAIL']} fail (all {len(rows)} labels carry the warning)")
     print(f"timing: median {statistics.median(times) / 1000:.2f} s, max {max(times) / 1000:.2f} s")
 
