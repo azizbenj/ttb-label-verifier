@@ -23,6 +23,35 @@
 </div>
 {% endif %}
 
+{% if r.unreadable %}
+{#- The image opened but almost nothing could be read: no verdict, never a FAIL (Errors board). -#}
+{% set n = r.words_read or 0 %}
+<section class="card result none unreadable" role="status" tabindex="-1" aria-label="Result: we couldn't read this label">
+  <div class="banner none">
+    <span class="badge none">{{ icon('question', 24) }}</span>
+    <div class="text">
+      <h2>We couldn't read this label</h2>
+      <p>No verdict. {% if n %}Only {{ n }} word{{ 's' if n != 1 }} could be read clearly{% else %}No words could be read{% endif %}, so nothing could be compared. This is not a FAIL.</p>
+    </div>
+    <div class="timing"><b>{{ r.timings.total_ms|seconds }}</b><small>reading {{ r.timings.read_ms|seconds }}</small></div>
+  </div>
+  <div class="unread-body">
+    {% if image_url %}<img class="unread-thumb" src="{{ image_url }}" alt="The image that was checked">{% endif %}
+    <div class="fixes">
+      <strong>What usually fixes it</strong>
+      <ul>
+        <li>Use the artwork file or a flat, straight-on scan instead of a photo.</li>
+        <li>Make sure the label fills most of the image and the text is at least 1,600 px wide.</li>
+        <li>Avoid glare, shadows and busy backgrounds behind the text.</li>
+      </ul>
+      <div class="acts">
+        <a class="btn" href="/" data-act="another">Try another image</a>
+        {% if r.ocr_text.strip() %}<details class="words"><summary class="btn secondary">Show the text we read</summary><pre class="ocr">{{ r.ocr_text }}</pre></details>{% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% else %}
 <section class="card result {{ cls }}" role="status" tabindex="-1" aria-label="Result: {{ r.overall|headline }}">
   <div class="banner {{ cls }}">
     <span class="badge {{ cls }}">{{ icon(r.overall|glyph, 24) }}</span>
@@ -139,4 +168,5 @@
     </div>
   </div>
 </section>
+{% endif %}
 </div>

@@ -67,6 +67,11 @@ class Thresholds:
     # Fields where a capitalization/punctuation-only difference is flagged for human review
     # instead of being accepted silently ("STONE'S THROW" vs "Stone's Throw").
     case_review_fields: tuple[str, ...] = ("brand_name",)
+    # Unreadable image: fewer than this many words (3+ letters) read with at least this confidence, and
+    # none of the application's values found. Shown as "We couldn't read this label", never as a FAIL.
+    # (A mean-confidence floor alone is not used: a real beer can averages 41% and still matches 4 of 5 fields.)
+    unreadable_min_words: int = 8
+    unreadable_word_conf: int = 70
 
 
 THRESHOLDS = Thresholds()

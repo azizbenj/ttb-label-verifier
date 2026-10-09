@@ -20,7 +20,7 @@ from PIL import Image, ImageOps
 
 from . import batch as batchmod
 from .evidence import bold_meter_percent, evidence_for, pin_labels
-from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELDS, MANDATED_WARNING, MAX_BATCH_UPLOAD_BYTES,
+from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELD_BY_KEY, FIELDS, MANDATED_WARNING, MAX_BATCH_UPLOAD_BYTES,
                      MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS)
 from .images import MAX_LABEL_PARTS, ImageError, open_image, stitch
 from .models import Application, Status, VerificationResult, Verdict
@@ -35,16 +35,29 @@ APP_DIR = Path(__file__).resolve().parent
 SAMPLES_DIR = ROOT / "data" / "samples"
 _SAFE_NAME = re.compile(r"[a-z0-9_\-]+")  # used with fullmatch: "$" would also accept a trailing newline
 
-app = FastAPI(title="TTB Label Check", docs_url="/api/docs", redoc_url=None)
+app = FastAPI(title="Label Check", docs_url="/api/docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+
+
+def _static_version() -> str:
+    """Changes whenever a static file changes, so a browser never keeps a stale script after a redeploy."""
+    import hashlib
+    h = hashlib.sha1()
+    for f in sorted((APP_DIR / "static").glob("*")):
+        if f.is_file():
+            h.update(f.name.encode()); h.update(str(f.stat().st_mtime_ns).encode())
+    return h.hexdigest()[:10]
+
+
+STATIC_VERSION = _static_version()
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
 # Verdict and status -> design token class (pass / review / fail / none). NOT FOUND shares FAIL colours.
 _CHIP = {Verdict.MATCH: "pass", Verdict.NEAR_MATCH: "review", Verdict.MISMATCH: "fail", Verdict.NOT_FOUND: "fail",
-         Verdict.SKIPPED: "none", Status.PASS: "pass", Status.REVIEW: "review", Status.FAIL: "fail", Status.ERROR: "fail"}
+         Verdict.SKIPPED: "none", Status.PASS: "pass", Status.REVIEW: "review", Status.FAIL: "fail", Status.ERROR: "none"}
 # Glyphs are fixed per verdict so colour is never the only signal.
 _GLYPH = {Verdict.MATCH: "check", Verdict.NEAR_MATCH: "bang", Verdict.MISMATCH: "cross", Verdict.NOT_FOUND: "question",
-          Verdict.SKIPPED: "dash", Status.PASS: "check", Status.REVIEW: "bang", Status.FAIL: "cross", Status.ERROR: "cross"}
+          Verdict.SKIPPED: "dash", Status.PASS: "check", Status.REVIEW: "bang", Status.FAIL: "cross", Status.ERROR: "alert"}
 _ICON_PATHS = {
     "check": ('0 0 16 16', '<path d="M3 8.5l3 3 7-7"/>', 2.5),
     "bang": ('0 0 16 16', '<path d="M8 3v6"/><path d="M8 12.5h.01"/>', 2.5),
@@ -91,11 +104,24 @@ templates.env.filters["short"] = lambda v: _SHORT.get(v, str(v))
 templates.env.filters["headline"] = lambda v: _HEADLINE.get(v, "")
 templates.env.filters["seconds"] = lambda ms: f"{(ms or 0) / 1000:.1f} s"
 templates.env.globals.update(icon=icon, chip=chip, evidence_for=evidence_for, pin_labels=pin_labels,
+                             static_version=STATIC_VERSION,
                              bold_meter_percent=bold_meter_percent, thresholds=THRESHOLDS)
 
 
 class UserError(Exception):
-    """A message we can show the agent as-is."""
+    """A message we can show the agent as-is, plus what it is about, so the page can point at it:
+    ``fields`` (inputs to mark), ``drop`` (title and text for the image drop zone)."""
+
+    def __init__(self, message: str, *, title: str | None = None, kind: str = "",
+                 fields: list[dict] | None = None, drop: tuple[str, str] | None = None):
+        super().__init__(message)
+        self.title, self.kind, self.fields, self.drop = title, kind, fields or [], drop
+
+    def context(self) -> dict:
+        return {"message": str(self), "title": self.title, "kind": self.kind, "fields": self.fields, "drop": self.drop}
+
+
+_ACCEPTED = "PNG, JPG, TIFF or WEBP"
 
 
 # --- readers --------------------------------------------------------------------------------------
@@ -204,7 +230,9 @@ async def read_image(uploads: list[UploadFile] | UploadFile | None, sample: str)
         uploads = [uploads] if uploads is not None else []
     uploads = [u for u in uploads if u is not None and u.filename]
     if not uploads:
-        raise UserError("Please choose a label image (PNG, JPG, TIFF or WEBP), or pick a sample.")
+        raise UserError(f"Please add a label image ({_ACCEPTED}), or pick a sample.", kind="image_missing",
+                        drop=("The label image is missing",
+                              f"Drop it here or choose a file · {_ACCEPTED} · up to {MAX_IMAGE_BYTES // (1024 * 1024)} MB"))
     if len(uploads) > MAX_LABEL_PARTS:
         raise UserError(f"That is {len(uploads)} images for one label; up to {MAX_LABEL_PARTS} are accepted "
                         "(front, back, neck...). Use the batch tab for several applications.")
@@ -212,30 +240,62 @@ async def read_image(uploads: list[UploadFile] | UploadFile | None, sample: str)
     for upload in uploads:
         data = await upload.read(MAX_IMAGE_BYTES + 1)
         if len(data) > MAX_IMAGE_BYTES:
-            raise UserError(f"'{upload.filename}' is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB. "
-                            "Please use a smaller file.")
+            raise image_too_large(upload.filename, getattr(upload, "size", None))
         try:
             images.append(open_image(data, upload.filename))
         except ImageError as e:
-            raise UserError(str(e)) from None
+            title = "That isn't an image we can read" if "could not be read" in str(e) else "We couldn't use this image"
+            raise UserError(str(e), title=title + ".", kind="image_unreadable", drop=(title, str(e))) from None
     return stitch(images), " + ".join(u.filename for u in uploads)
+
+
+def image_too_large(name: str, size: int | None) -> UserError:
+    limit = MAX_IMAGE_BYTES // (1024 * 1024)
+    size_txt = f"is {size / (1024 * 1024):.0f} MB" if size and size > MAX_IMAGE_BYTES else f"is larger than {limit} MB"
+    msg = (f"'{name}' {size_txt}; the limit is {limit} MB. A 300 dpi scan is plenty: export it as a PNG or JPG "
+           "and try again.")
+    return UserError(msg, title="This image is too big to check.", kind="image_too_large",
+                     drop=("That image is too big to check", msg))
+
+
+_FORMAT_HELP = {
+    "alcohol_content": "should look like '45% Alc./Vol.', '45%' or '90 Proof'.",
+    "net_contents": "should look like '750 mL', '1.75 L' or '12 fl oz'.",
+}
 
 
 def build_application(**values: str) -> Application:
     app_data = Application(**values)
-    missing = [f.label for f in FIELDS if f.required and not getattr(app_data, f.key)]
-    if missing:
-        raise UserError("Please fill in: " + ", ".join(missing) + ".")
-    if parse_alcohol(app_data.alcohol_content) is None:
-        raise UserError("Alcohol content should look like '45% Alc./Vol.', '45%' or '90 Proof'.")
-    if parse_net_contents(app_data.net_contents) is None:
-        raise UserError("Net contents should look like '750 mL', '1.75 L' or '12 fl oz'.")
+    problems = [{"key": f.key, "label": f.label, "missing": True,
+                 "message": f"Please fill in the {f.label.lower()}, {f.hint}." if f.hint else f"Please fill in the {f.label.lower()}."}
+                for f in FIELDS if f.required and not getattr(app_data, f.key)]
+    if problems:
+        raise UserError("Please fill in: " + ", ".join(p["label"] for p in problems) + ".", kind="fields",
+                        fields=problems)
+    parsers = {"alcohol_content": parse_alcohol, "net_contents": parse_net_contents}
+    bad = [{"key": k, "label": FIELD_BY_KEY[k].label, "missing": False, "rest": _FORMAT_HELP[k],
+            "message": f"{FIELD_BY_KEY[k].label} {_FORMAT_HELP[k]}"}
+           for k, parse in parsers.items() if parse(getattr(app_data, k)) is None]
+    if bad:
+        raise UserError(" ".join(b["message"] for b in bad), kind="fields", fields=bad)
     return app_data
 
 
-def error_response(request: Request, message: str, status: int = 400, title: str | None = None) -> HTMLResponse:
-    return templates.TemplateResponse(request, "partials/error.html", {"message": message, "title": title},
-                                      status_code=status)
+def error_response(request: Request, message: str, status: int = 400, title: str | None = None,
+                   **extra) -> HTMLResponse:
+    """The error card for the page's script. A plain form post (no JavaScript) to /verify gets the whole
+    page back instead, with the error where the result would be and the typed values kept."""
+    ctx = {"message": message, "title": title, **extra}
+    if request.url.path == "/verify" and request.headers.get("x-partial") != "1":
+        values = extra.pop("values", None) or {}
+        ctx.pop("values", None)
+        error_html = templates.get_template("partials/error.html").render(ctx)
+        page = _index_context() | {"error_html": Markup(error_html), "values": values,
+                                   "field_errors": {f["key"]: f["message"] for f in ctx.get("fields") or []},
+                                   "drop_error": ctx.get("drop")}
+        return templates.TemplateResponse(request, "index.html", page, status_code=status)
+    ctx.pop("values", None)
+    return templates.TemplateResponse(request, "partials/error.html", ctx, status_code=status)
 
 
 PREVIEW_MAX_SIDE = 1000
@@ -273,23 +333,34 @@ async def limit_upload_size(request: Request, call_next):
     limit = _UPLOAD_LIMITS.get(request.url.path) if request.method == "POST" else None
     length = request.headers.get("content-length", "")
     if limit and length.isdigit() and int(length) > limit:
-        mb = (MAX_BATCH_UPLOAD_BYTES if request.url.path == "/batch" else MAX_IMAGE_BYTES) // (1024 * 1024)
-        message = f"That upload is larger than {mb} MB. Please send smaller files" + (
-            " or split the batch." if request.url.path == "/batch" else ".")
+        is_batch = request.url.path == "/batch"
+        mb = (MAX_BATCH_UPLOAD_BYTES if is_batch else MAX_IMAGE_BYTES) // (1024 * 1024)
+        if is_batch:
+            title = "That's more than one batch can take."
+            message = (f"The upload is {int(length) / (1024 * 1024):.0f} MB; the limit is {mb} MB per batch. Split the "
+                       "folder in two and run them one after the other; results export separately.")
+            extra = {}
+        else:
+            e = image_too_large("That image", int(length))
+            title, message, extra = e.title, str(e).replace("'That image'", "That image"), {"kind": e.kind, "drop": e.drop}
         if request.url.path.startswith("/api/"):
             return JSONResponse({"error": message}, status_code=413)
-        return error_response(request, message, 413)
+        return error_response(request, message, 413, title=title, **extra)
     return await call_next(request)
 
 
 # --- pages -----------------------------------------------------------------------------------------
-@app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {
+def _index_context() -> dict:
+    return {
         "fields": FIELDS, "samples": SAMPLES, "cloud": CLOUD_READER_AVAILABLE, "default_reader": OCR_ENGINE,
         "thresholds": THRESHOLDS, "warning_text": MANDATED_WARNING, "reader_info": reader_info(),
-        "batch_sample": (batchmod.BATCH_DIR / "applications.csv").exists(),
-    })
+        "batch_sample": (batchmod.BATCH_DIR / "applications.csv").exists(), "max_image_bytes": MAX_IMAGE_BYTES,
+    }
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    return templates.TemplateResponse(request, "index.html", _index_context())
 
 
 @app.get("/healthz")
@@ -330,18 +401,22 @@ async def verify_html(request: Request, brand_name: str = Form(""), class_type: 
                       bottler_name_address: str = Form(""), country_of_origin: str = Form(""),
                       application_id: str = Form(""), sample: str = Form(""), reader: str = Form(""),
                       image: list[UploadFile] = File([])):
+    typed = {"brand_name": brand_name, "class_type": class_type, "alcohol_content": alcohol_content,
+             "net_contents": net_contents, "bottler_name_address": bottler_name_address,
+             "country_of_origin": country_of_origin, "application_id": application_id, "sample": sample}
     try:
         result, app_data, image_url = await _verify_from_form(brand_name, class_type, alcohol_content, net_contents,
                                                               bottler_name_address, country_of_origin, application_id,
                                                               sample, reader, image)
     except UserError as e:
-        return error_response(request, str(e))
+        return error_response(request, **e.context(), values=typed)
     except ReaderError as e:
         log.warning("reader failed: %s", e)
-        return error_response(request, str(e), 502, title="We couldn't read this label.")
+        return error_response(request, str(e), 502, title="We couldn't read this label.", values=typed, retry=True)
     except Exception:
         log.exception("verify failed")
-        return error_response(request, "Something went wrong while reading this label. Please try another image.", 500)
+        return error_response(request, "Something went wrong while reading this label. Please try another image.",
+                              500, values=typed)
     # The page's script asks for the partial; a plain form post (no JavaScript) gets a whole page.
     full_page = request.headers.get("x-partial") != "1"
     return result_response(request, result, app_data, image_url, full_page=full_page)
@@ -391,8 +466,10 @@ async def batch_start(request: Request, csv_file: UploadFile | None = File(None)
             if not images:
                 raise UserError("None of the uploaded files were images. Use PNG, JPG, TIFF or WEBP, or a zip of them.")
             job = batchmod.start_job(rows, images, rd, source=csv_file.filename, issues=issues + more)
-    except (UserError, batchmod.BatchError) as e:
-        return error_response(request, str(e))
+    except UserError as e:
+        return error_response(request, **e.context())
+    except batchmod.BatchError as e:
+        return error_response(request, str(e), title=e.title, kind=e.kind, columns=e.columns, found=e.found)
     except Exception:
         log.exception("batch start failed")
         return error_response(request, "Something went wrong starting this batch. Please check the files and try again.", 500)

@@ -97,3 +97,7 @@ class VerificationResult(BaseModel):
     read_confidence: float | None = None   # mean OCR word confidence (0-100), when the reader reports one
     image_aspect: float | None = None      # height / width of the label image, for the evidence crops
     skew_deg: float = 0.0                  # the reader straightened the image by this much; previews must match
+    # The image opened but almost no text could be read: no verdict is shown (``overall`` stays FAIL so an
+    # API client that ignores this flag never takes the label as approved).
+    unreadable: bool = False
+    words_read: int | None = None          # words of 3+ letters read with confidence, when the reader reports it

@@ -1,4 +1,11 @@
 {% extends "base.html" %}
+{% set values = values or {} %}
+{% set field_errors = field_errors or {} %}
+{% macro field_input(f, placeholder) -%}
+{%- set err = field_errors.get(f.key) -%}
+<input class="input{{ ' err' if err }}" id="f-{{ f.key }}" name="{{ f.key }}" type="text" placeholder="{{ placeholder }}" autocomplete="off" value="{{ values.get(f.key, '') }}"{% if f.required %} aria-required="true" data-missing="Please fill in the {{ f.label|lower }}{{ ', ' ~ f.hint if f.hint }}."{% endif %}{% if err %} aria-invalid="true" aria-describedby="f-{{ f.key }}-m"{% endif %}>
+{%- if err %}<div class="msg" id="f-{{ f.key }}-m">{{ icon('alert', 14) }}{{ err }}</div>{% endif %}
+{%- endmacro %}
 {% block content %}
 <nav class="modes" role="tablist" aria-label="Mode">
   <button class="tab on" type="button" role="tab" id="tab-btn-single" data-tab="single" aria-selected="true" aria-controls="tab-single">Check one label</button>
@@ -12,24 +19,25 @@
       {% for f in fields %}
       <div{% if f.key in ('alcohol_content',) %} class="form-grid"{% endif %}>
         {% if f.key == 'alcohol_content' %}
-        <div><label class="lbl" for="f-alcohol_content">Alcohol content <span class="req" aria-hidden="true">*</span></label><input class="input" id="f-alcohol_content" name="alcohol_content" type="text" placeholder="45% Alc./Vol. or 90 Proof" autocomplete="off" aria-required="true"></div>
-        <div><label class="lbl" for="f-net_contents">Net contents <span class="req" aria-hidden="true">*</span></label><input class="input" id="f-net_contents" name="net_contents" type="text" placeholder="750 mL or 12 fl oz" autocomplete="off" aria-required="true"></div>
+        {% set fa = fields|selectattr('key', 'equalto', 'alcohol_content')|first %}{% set fn = fields|selectattr('key', 'equalto', 'net_contents')|first %}
+        <div><label class="lbl" for="f-alcohol_content">Alcohol content <span class="req" aria-hidden="true">*</span></label>{{ field_input(fa, '45% Alc./Vol. or 90 Proof') }}</div>
+        <div><label class="lbl" for="f-net_contents">Net contents <span class="req" aria-hidden="true">*</span></label>{{ field_input(fn, '750 mL or 12 fl oz') }}</div>
         {% elif f.key == 'net_contents' %}
         {% else %}
         <label class="lbl" for="f-{{ f.key }}">{{ f.label }} {% if f.required %}<span class="req" aria-hidden="true">*</span>{% elif f.key == 'country_of_origin' %}<em>(imports only)</em>{% else %}<em>(optional)</em>{% endif %}</label>
-        <input class="input" id="f-{{ f.key }}" name="{{ f.key }}" type="text" placeholder="{{ f.hint|replace('e.g. ', '') if f.key == 'bottler_name_address' else f.hint }}" autocomplete="off"{% if f.required %} aria-required="true"{% endif %}>
+        {{ field_input(f, f.hint|replace('e.g. ', '') if f.key == 'bottler_name_address' else f.hint) }}
         {% endif %}
       </div>
       {% endfor %}
-      <input type="hidden" name="application_id" value="">
-      <input type="hidden" name="sample" id="sample-field" value="">
+      <input type="hidden" name="application_id" value="{{ values.get('application_id', '') }}">
+      <input type="hidden" name="sample" id="sample-field" value="{{ values.get('sample', '') }}">
 
       <h2 class="step2">2. The label image</h2>
-      <label class="drop" for="image-input" id="drop">
+      <label class="drop{{ ' err' if drop_error }}" for="image-input" id="drop">
         {{ icon('upload', 28) }}
-        <b>Drop the label here, or choose a file</b>
-        <span class="small">Add the front, back and neck labels together if they are separate files · PNG, JPG, TIFF or WEBP · up to 20 MB each</span>
-        <input class="sr" id="image-input" name="image" type="file" accept="image/*" multiple>
+        <b data-t="Drop the label here, or choose a file">{{ drop_error[0] if drop_error else 'Drop the label here, or choose a file' }}</b>
+        <span class="small" data-t="Add the front, back and neck labels together if they are separate files · PNG, JPG, TIFF or WEBP · up to {{ max_image_bytes // 1048576 }} MB each">{{ drop_error[1] if drop_error else 'Add the front, back and neck labels together if they are separate files · PNG, JPG, TIFF or WEBP · up to ' ~ (max_image_bytes // 1048576) ~ ' MB each' }}</span>
+        <input class="sr" id="image-input" name="image" type="file" accept="image/*" multiple data-max-bytes="{{ max_image_bytes }}">
       </label>
       <div class="preview-card" id="preview" hidden>
         <img alt="" id="preview-img">
@@ -79,7 +87,7 @@
       </div>
     </section>
   </div>
-  <div id="result" class="result-slot" hidden></div>
+  <div id="result" class="result-slot"{% if not error_html %} hidden{% endif %}>{{ error_html or '' }}</div>
 </section>
 
 <section id="tab-batch" class="panel" role="tabpanel" aria-labelledby="tab-btn-batch">

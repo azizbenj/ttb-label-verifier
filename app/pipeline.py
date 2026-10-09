@@ -6,7 +6,7 @@ from time import perf_counter
 
 from PIL import Image
 
-from .config import FIELD_BY_KEY
+from .config import FIELD_BY_KEY, THRESHOLDS
 from .models import Application, FieldResult, Status, Timings, VerificationResult, Verdict, WarningResult
 from .readers.base import LabelReader
 from .readers.extract import attach_boxes, compare_from_fields, extract_and_compare
@@ -62,6 +62,13 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
             fields = extract_and_compare(app, ocr)
             warning = check_warning(ocr.lines, ocr.words, ocr.ink, views=ocr.views)
         attach_boxes(ocr, fields)
+    words_read, unreadable = None, False
+    if reading.fields is None:
+        clear = [w for w in ocr.words if w.conf >= THRESHOLDS.unreadable_word_conf
+                 and sum(ch.isalpha() for ch in w.text) >= 3]
+        words_read = len(clear)
+        found = any(f.verdict in (Verdict.MATCH, Verdict.NEAR_MATCH) for f in fields)
+        unreadable = words_read < THRESHOLDS.unreadable_min_words and not found and not warning.present
     status = overall_status(fields, warning)
     t_end = perf_counter()
     return VerificationResult(
@@ -70,7 +77,7 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
                         total_ms=round((t_end - t0) * 1000, 1)),
         reader=ocr.engine or reader.name, ocr_text=ocr.text, image_name=image_name, application_id=app.application_id,
         read_confidence=round(ocr.mean_conf, 1) if ocr.mean_conf is not None else None,
-        skew_deg=round(ocr.skew, 2),
+        skew_deg=round(ocr.skew, 2), unreadable=unreadable, words_read=words_read,
         image_aspect=round(ocr.ink.shape[0] / ocr.ink.shape[1], 4) if ocr.ink is not None and ocr.ink.shape[1] else
         (round(image.height / image.width, 4) if image.width else None),
     )

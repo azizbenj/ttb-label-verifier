@@ -57,9 +57,13 @@
 
   // --- fetch helpers --------------------------------------------------------------------------------
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-  function errorCard(title, detail) {
-    return `<div class="card alert err" role="alert" tabindex="-1" data-app-card><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg><div><strong>${escapeHtml(title)}</strong><div class="detail">${escapeHtml(detail)}</div></div></div>`;
+  const ALERT_ICON = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>`;
+  // detailHtml is trusted markup built here; everything that comes from a file name or the server is escaped.
+  function alertCard(title, detailHtml, retry) {
+    return `<div class="card alert err" role="alert" tabindex="-1" data-app-card data-kind="client">${ALERT_ICON(20)}<div class="grow"><strong>${escapeHtml(title)}</strong><p class="detail">${detailHtml}</p>${retry ? '<button class="btn small retry" type="button" data-act="retry">Try again</button>' : ""}</div></div>`;
   }
+  function errorCard(title, detail, retry) { return alertCard(title, escapeHtml(detail), retry); }
+  const OFFLINE = ["We couldn't reach the server.", "Your check was not sent. Check the network connection and try again; nothing you typed was lost."];
   // The app answers every request with one of its own cards (marked data-app-card), errors included.
   // Anything else (a proxy's error page during a redeploy) must not be pasted into the page.
   async function cardFrom(resp) {
@@ -81,7 +85,7 @@
       slot.innerHTML = await cardFrom(resp);
       return resp.ok;
     } catch (err) {
-      slot.innerHTML = errorCard("We couldn't reach the server.", "Check your connection and try again.");
+      slot.innerHTML = errorCard(OFFLINE[0], OFFLINE[1], true);
       return false;
     } finally {
       slot.classList.remove("busy");
@@ -127,6 +131,7 @@
     const s = samples.find((x) => x.name === name);
     if (!s) { clearSampleFields(); sampleField.value = ""; pressTile(""); showPreview(null); return; }
     clearSampleFields();
+    clearDropError();
     currentSample = s;
     sampleField.value = s.name;
     pressTile(s.name);
@@ -149,21 +154,91 @@
     box.hidden = !box.hidden;
     more.setAttribute("aria-expanded", String(!box.hidden));
   });
+  // --- errors: mark the inputs and the drop zone an error is about (Errors board) -------------------
+  const dropB = drop ? $("#drop b") : null, dropS = drop ? $("#drop .small") : null;
+  const maxBytes = imageInput ? +imageInput.dataset.maxBytes || 20 * 1048576 : 0;
+  const maxMb = Math.round(maxBytes / 1048576);
+  function setDropError(title, message, chooseAgain) {
+    if (!drop) return;
+    drop.classList.add("err");
+    dropB.textContent = title;
+    dropS.innerHTML = escapeHtml(message) + (chooseAgain ? '<span class="btn secondary small again">Choose another file</span>' : "");
+  }
+  function clearDropError() {
+    if (!drop || !drop.classList.contains("err")) return;
+    drop.classList.remove("err");
+    dropB.textContent = dropB.dataset.t; dropS.textContent = dropS.dataset.t;
+  }
+  function markField(key, message) {
+    const el = singleForm && singleForm.querySelector(`#f-${key}`);
+    if (!el) return null;
+    el.classList.add("err"); el.setAttribute("aria-invalid", "true");
+    let m = document.getElementById(`f-${key}-m`);
+    if (!m) { m = document.createElement("div"); m.className = "msg"; m.id = `f-${key}-m`; el.insertAdjacentElement("afterend", m); }
+    m.innerHTML = ALERT_ICON(14) + escapeHtml(message);
+    el.setAttribute("aria-describedby", m.id);
+    return el;
+  }
+  function clearField(el) {
+    el.classList.remove("err"); el.removeAttribute("aria-invalid"); el.removeAttribute("aria-describedby");
+    const m = document.getElementById(`${el.id}-m`);
+    if (m) m.remove();
+  }
+  function clearMarks() { if (singleForm) $$(".input.err, .input[aria-invalid]", singleForm).forEach(clearField); clearDropError(); }
+  function wireErrorLinks(card) {
+    $$("a[data-focus]", card).forEach((a) => a.addEventListener("click", (e) => {
+      const el = document.getElementById(a.dataset.focus);
+      if (el) { e.preventDefault(); el.focus(); }
+    }));
+  }
+  // An error card from the server says which inputs it is about: mark them, return the first one.
+  function applyErrorMarks(slot) {
+    const card = slot.querySelector(".alert[data-app-card]");
+    if (!card) return null;
+    wireErrorLinks(card);
+    let first = null;
+    if (card.dataset.fields) {
+      try { JSON.parse(card.dataset.fields).forEach((f) => { first = markField(f.key, f.message) || first; }); } catch (e) { /* ignore */ }
+    }
+    if (card.dataset.dropTitle) { setDropError(card.dataset.dropTitle, card.dataset.dropMessage, card.dataset.kind === "image_unreadable"); first = first || imageInput; }
+    return first;
+  }
+  function labelText(el) {
+    const l = singleForm.querySelector(`label[for="${el.id}"]`);
+    return l && l.firstChild ? l.firstChild.textContent.trim() : el.name;
+  }
+  function showSingleError(html) {
+    resultSlot.innerHTML = html; resultSlot.hidden = false;
+    const card = resultSlot.querySelector(".alert");
+    if (card) wireErrorLinks(card);
+  }
+  if (drop && dropB) { dropB.dataset.t = dropB.dataset.t || dropB.textContent; dropS.dataset.t = dropS.dataset.t || dropS.textContent; }
+  if (singleForm) {
+    singleForm.addEventListener("input", (e) => { if (e.target.matches(".input[aria-invalid]")) clearField(e.target); });
+    // A plain form post that came back with an error (no JavaScript on that request): wire the links.
+    if (resultSlot && !resultSlot.hidden) applyErrorMarks(resultSlot);
+  }
+
   // One file or several (front, back, neck): the server stacks them into one label.
   function fileChosen(files) {
     picker.value = ""; sampleField.value = ""; pressTile(""); currentSample = null;
-    drop.classList.remove("err");
+    clearDropError();
     const list = files ? Array.from(files.length !== undefined ? files : [files]) : [];
     if (!list.length) { showPreview(null); return; }
     const bad = list.find((f) => !/^image\//.test(f.type) && !/\.(png|jpe?g|tiff?|bmp|webp)$/i.test(f.name));
     if (bad) {
-      drop.classList.add("err");
-      $("#drop b").textContent = "That isn't an image";
-      $("#drop .small").textContent = `'${bad.name}' could not be read as an image. Please choose PNG, JPG, TIFF or WEBP files.`;
+      setDropError("That isn't an image we can read", `'${bad.name}' could not be read as an image. Please upload a PNG or JPG of the label.`, true);
       imageInput.value = "";
       return;
     }
-    $("#drop b").textContent = "Drop the label here, or choose a file";
+    const big = list.find((f) => f.size > maxBytes);
+    if (big) {   // known before upload: say so at once (the server repeats the check)
+      showSingleError(alertCard("This image is too big to check.", escapeHtml(`'${big.name}' is ${Math.round(big.size / 1048576)} MB; the limit is ${maxMb} MB. A 300 dpi scan is plenty: export it as a PNG or JPG and try again.`)));
+      imageInput.value = "";
+      showPreview(null);
+      return;
+    }
+    if (resultSlot.querySelector('.alert[data-kind^="image"], .alert[data-kind="client"]') && entry && !entry.hidden) { resultSlot.innerHTML = ""; resultSlot.hidden = true; }
     const total = list.reduce((n, f) => n + f.size, 0);
     const name = list.length === 1 ? list[0].name : `${list.length} images: ${list.map((f) => f.name).join(", ")}`;
     const meta = list.length === 1 ? `${list[0].type || "image"} · ${fmtBytes(total)}` : `read together as one label · ${fmtBytes(total)}`;
@@ -172,7 +247,7 @@
   if (imageInput) imageInput.addEventListener("change", () => fileChosen(imageInput.files));
   if (drop) {
     ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); $("#drop b").textContent = "Release to add the label"; }));
-    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, () => { drop.classList.remove("over"); $("#drop b").textContent = "Drop the label here, or choose a file"; }));
+    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, () => { drop.classList.remove("over"); if (!drop.classList.contains("err")) $("#drop b").textContent = dropB.dataset.t; }));
     drop.addEventListener("drop", (e) => {
       e.preventDefault();
       const files = e.dataTransfer && e.dataTransfer.files;
@@ -210,8 +285,9 @@
       strip.hidden = !strip.hidden;
       pin.setAttribute("aria-expanded", String(!strip.hidden));
     }));
-    $$("[data-act]", slot).forEach((b) => b.addEventListener("click", () => {
+    $$("[data-act]", slot).forEach((b) => b.addEventListener("click", (e) => {
       const act = b.dataset.act;
+      if (act === "another" || act === "edit") e.preventDefault();
       if (act === "edit") { showEntry(true); singleForm.querySelector("input.input").focus(); window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); }
       if (act === "another") { showEntry(true); singleForm.reset(); applySample(""); showPreview(null); singleForm.querySelector("input.input").focus(); window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); }
       if (act === "print") window.print();
@@ -230,15 +306,35 @@
   if (singleForm) {
     singleForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+      // Check before sending: list what is missing, mark each input, focus the first one. Nothing typed is lost.
+      clearMarks();
+      const missing = $$("input[data-missing]", singleForm).filter((el) => !el.value.trim());
+      const noImage = !sampleField.value && !(imageInput.files && imageInput.files.length);
+      if (missing.length || noImage) {
+        missing.forEach((el) => markField(el.name, el.dataset.missing));
+        const parts = [];
+        if (missing.length) parts.push("Please fill in: " + missing.map((el) => `<a href="#${el.id}" data-focus="${el.id}">${escapeHtml(labelText(el))}</a>`).join(", ") + ".");
+        if (noImage) {
+          setDropError("The label image is missing", `Drop it here or choose a file · PNG, JPG, TIFF or WEBP · up to ${maxMb} MB`);
+          parts.push("Please add a label image (PNG, JPG, TIFF or WEBP), or pick a sample.");
+        }
+        showSingleError(alertCard("We couldn't run this check.", parts.join(" ")));
+        (missing[0] || imageInput).focus();
+        return;
+      }
       const ok = await post(singleForm.action, new FormData(singleForm), resultSlot, $("#single-submit"));
       resultSlot.hidden = false;
       if (ok && resultSlot.querySelector(".result")) {
         entry.hidden = true;
         wireResult(resultSlot);
-      } else {
-        entry.hidden = false;   // keep the form in view next to the error
+        focusCard(resultSlot);
+        return;
       }
-      focusCard(resultSlot);
+      entry.hidden = false;   // keep the form in view next to the error
+      const first = applyErrorMarks(resultSlot);
+      const retry = resultSlot.querySelector("[data-act=retry]");
+      if (retry) retry.addEventListener("click", () => singleForm.requestSubmit());
+      if (first) first.focus(); else focusCard(resultSlot);
     });
   }
 
@@ -247,6 +343,7 @@
   const batchEntry = $("#batch-entry");
   const batchSlot = $("#batch-result");
   let pollTimer = null;
+  let reconnecting = false;
 
   // drop zones for the CSV and the images (the real inputs stay the accessible controls)
   $$("[data-drop]").forEach((zone) => {
@@ -283,10 +380,13 @@
             if (!resp.ok) focusCard(batchSlot);
             const again = batchSlot.querySelector(".table-scroll");
             if (again) again.scrollTop = keep;   // your place is kept while rows stream in
-          }
-        } catch (err) { /* network blip: retry next tick */ }
+            reconnecting = false;
+          } else reconnecting = true;
+        } catch (err) { reconnecting = true; }   // network blip: say so, keep polling
+        const note = batchSlot.querySelector("[data-reconnect]");
+        if (note) note.hidden = !reconnecting;
         wireBatch();
-      }, 1000);
+      }, reconnecting ? 2000 : 1000);
       return;
     }
     if (box.dataset.wired) return;
@@ -324,7 +424,7 @@
     if (search) search.addEventListener("input", apply);
     if (sort) sort.addEventListener("change", () => {
       const key = sort.value;
-      const order = { REVIEW: 0, FAIL: 1, PASS: 2 };
+      const order = { REVIEW: 0, FAIL: 1, ERROR: 2, PASS: 3 };
       const sorted = rows.slice().sort((a, b) => {
         if (key === "id") return a.dataset.id.localeCompare(b.dataset.id, undefined, { numeric: true });
         if (key === "brand") return a.dataset.brand.localeCompare(b.dataset.brand);
@@ -340,7 +440,7 @@
       detail.querySelector("[data-d=id]").textContent = r.dataset.id;
       detail.querySelector("[data-d=brand]").textContent = r.dataset.brand || "—";
       const st = detail.querySelector("[data-d=status]");
-      st.className = "chip " + { PASS: "pass", REVIEW: "review", FAIL: "fail" }[r.dataset.status];
+      st.className = "chip " + ({ PASS: "pass", REVIEW: "review", FAIL: "fail" }[r.dataset.status] || "none");
       st.textContent = r.dataset.status;
       detail.querySelector("[data-d=summary]").textContent = r.dataset.summary;
       detail.querySelector("[data-d=file]").textContent = r.dataset.file || "—";
@@ -418,7 +518,7 @@
       else if (k === "k" || k === "ArrowUp") { e.preventDefault(); move(-1); }
       else if (k === "x" && cur >= 0) { e.preventDefault(); const c = rows[cur].querySelector("input[type=checkbox]"); c.checked = !c.checked; syncBulk(); }
       else if (k === "Enter" && cur >= 0) { e.preventDefault(); openFull(rows[cur]); }
-      else if (k === "1") setFilter("REVIEW"); else if (k === "2") setFilter("FAIL"); else if (k === "3") setFilter("PASS"); else if (k === "0") setFilter("");
+      else if (k === "1") setFilter("REVIEW"); else if (k === "2") setFilter("FAIL"); else if (k === "3") setFilter("PASS"); else if (k === "4" && rows.some((r) => r.dataset.status === "ERROR")) setFilter("ERROR"); else if (k === "0") setFilter("");
       else if (k === "Escape" && cur >= 0) { setCursor(-1); if (detail) detail.hidden = true; }
     });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeFull(); });
@@ -433,7 +533,13 @@
     clearTimeout(pollTimer);
     batchSlot.hidden = false;
     const ok = await post("/batch", body, batchSlot, button);
-    if (ok) batchEntry.hidden = true; else { batchEntry.hidden = false; focusCard(batchSlot); }
+    if (ok) batchEntry.hidden = true;
+    else {
+      batchEntry.hidden = false;
+      const retry = batchSlot.querySelector("[data-act=retry]");
+      if (retry) retry.addEventListener("click", () => startBatch(body, button));
+      focusCard(batchSlot);
+    }
     wireBatch();
   }
   if (batchForm) {

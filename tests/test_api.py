@@ -53,7 +53,9 @@ def test_decompression_bomb_is_friendly():
 
 def test_no_image_is_friendly():
     r = client.post("/verify", data=OLD_TOM)
-    assert r.status_code == 400 and "choose a label image" in r.text
+    assert r.status_code == 400 and "Please add a label image" in r.text
+    assert 'class="drop err"' in r.text and "The label image is missing" in r.text   # the drop zone is the error
+    assert 'value="OLD TOM DISTILLERY"' in r.text                                     # what was typed is kept
 
 
 def test_template_csv():
@@ -65,7 +67,8 @@ def test_batch_missing_columns_is_friendly():
     csv_bytes = b"image,brand\nfoo.png,X\n"
     r = client.post("/batch", files={"csv_file": ("apps.csv", csv_bytes, "text/csv"),
                                      "files": ("foo.png", b"x", "image/png")})
-    assert r.status_code == 400 and "missing the column" in r.text
+    assert r.status_code == 400 and "missing 3 required columns" in r.text
+    assert 'class="cols-fix"' in r.text and "class_type" in r.text and "add</span>" in r.text
 
 
 def test_unknown_batch_is_friendly():

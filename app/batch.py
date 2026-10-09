@@ -46,7 +46,16 @@ REQUIRED_COLUMNS = ("image", "brand_name", "class_type", "alcohol_content", "net
 
 
 class BatchError(Exception):
-    """A problem the user can fix, phrased for them."""
+    """A problem the user can fix, phrased for them. ``columns``: for a CSV with missing headers, one
+    (expected, header in the file or None, "rename" | "add") per required column that was not found."""
+
+    def __init__(self, message: str, *, title: str | None = None, kind: str = "",
+                 columns: list[tuple[str, str | None, str]] | None = None, found: list[str] | None = None):
+        super().__init__(message)
+        self.title, self.kind, self.columns, self.found = title, kind, columns, found
+
+
+_TOO_MANY = "That's more than one batch can take."
 
 
 PREVIEW_MAX_SIDE = 900                 # px, the copy of each label kept for the detail panel
@@ -213,6 +222,32 @@ def _norm_header(h: str) -> str:
     return (h or "").strip().lower().replace("﻿", "").replace("-", "_").replace(" ", "_").replace("/", "_")
 
 
+def _missing_columns(headers: list[str], mapping: dict[str, str], missing: list[str]) -> BatchError:
+    """Name each missing column next to the header in the file that most likely meant it."""
+    from rapidfuzz import fuzz
+    unused = [h for h in headers if h and h not in mapping.values()]
+    rows: list[tuple[str, str | None, str]] = []
+    for key in missing:
+        best, best_score = None, 0.0
+        for h in unused:
+            n = _norm_header(h)
+            score = max(fuzz.ratio(n, a) for a in COLUMN_ALIASES[key] | {key})
+            if score > best_score:
+                best, best_score = h, score
+        if best is not None and best_score >= 60:
+            rows.append((key, best, "rename"))
+            unused.remove(best)
+        else:
+            rows.append((key, None, "add"))
+    n = len(missing)
+    found = [h for h in headers if h]
+    return BatchError(
+        f"The CSV is missing {n} required column{'s' if n != 1 else ''}: {', '.join(missing)}. Found: "
+        f"{', '.join(found) or 'no headers'}. Rename the headers, or download the template and paste your rows in.",
+        title=f"The CSV is missing {n} required column{'s' if n != 1 else ''}.", kind="csv_columns",
+        columns=rows, found=found)
+
+
 def parse_applications_csv(data: bytes) -> tuple[list[dict], list[str]]:
     """Return (rows, issues). Each row has canonical keys; blank optional values are ''."""
     try:
@@ -233,10 +268,7 @@ def parse_applications_csv(data: bytes) -> tuple[list[dict], list[str]]:
                 mapping[key] = raw
     missing = [c for c in REQUIRED_COLUMNS if c not in mapping]
     if missing:
-        labels = {f.key: f.label for f in FIELDS}
-        labels["image"] = "image"
-        raise BatchError("The CSV is missing the column(s): " + ", ".join(labels.get(m, m) for m in missing)
-                         + ". Download the template to see the expected columns.")
+        raise _missing_columns(list(reader.fieldnames), mapping, missing)
     rows, issues = [], []
     for raw_row in reader:
         row = {key: (raw_row.get(col) or "").strip() for key, col in mapping.items()}
@@ -249,7 +281,8 @@ def parse_applications_csv(data: bytes) -> tuple[list[dict], list[str]]:
     if not rows:
         raise BatchError("The CSV has a header but no application rows.")
     if len(rows) > MAX_BATCH_IMAGES:
-        raise BatchError(f"That CSV has {len(rows)} rows. Please split batches at {MAX_BATCH_IMAGES} labels.")
+        raise BatchError(f"The CSV has {len(rows)} rows; the limit is {MAX_BATCH_IMAGES} per batch. Split it in two "
+                         "and run them one after the other; results export separately.", title=_TOO_MANY)
     return rows, issues
 
 
@@ -291,7 +324,8 @@ def collect_images(uploads: list[tuple[str, bytes]]) -> tuple[dict[str, bytes | 
             total += len(data)
             if total > MAX_BATCH_UPLOAD_BYTES:
                 raise BatchError(f"The images add up to more than {MAX_BATCH_UPLOAD_BYTES // (1024 * 1024)} MB. "
-                                 "Please split the batch.")
+                                 "Split the folder in two and run them one after the other; results export "
+                                 "separately.", title=_TOO_MANY)
             images[key] = data
 
     for name, data in uploads:
@@ -301,9 +335,11 @@ def collect_images(uploads: list[tuple[str, bytes]]) -> tuple[dict[str, bytes | 
                 with zipfile.ZipFile(io.BytesIO(data)) as zf:
                     members = [m for m in zf.infolist() if not m.is_dir() and not Path(m.filename).name.startswith(".")]
                     if len(members) > MAX_ZIP_MEMBERS:
-                        raise BatchError(f"'{base}' holds {len(members)} files; the limit is {MAX_ZIP_MEMBERS}.")
+                        raise BatchError(f"'{base}' holds {len(members)} files; the limit is {MAX_ZIP_MEMBERS}. "
+                                         "Split it in two and run them one after the other.", title=_TOO_MANY)
                     if sum(m.file_size for m in members) > MAX_ZIP_UNCOMPRESSED:
-                        raise BatchError(f"'{base}' is too large when unpacked.")
+                        raise BatchError(f"'{base}' is too large when unpacked. Split it in two and run them one "
+                                         "after the other.", title=_TOO_MANY)
                     for m in members:
                         mb = Path(m.filename).name
                         if not _is_image_name(mb):
@@ -321,7 +357,8 @@ def collect_images(uploads: list[tuple[str, bytes]]) -> tuple[dict[str, bytes | 
                             continue
                         add(mb.lower(), member, f"{base}/{m.filename}")
             except zipfile.BadZipFile:
-                raise BatchError(f"'{base}' is not a valid zip file.") from None
+                raise BatchError(f"'{base}' could not be unpacked. Re-zip the images (no password) and try again.",
+                                 title="We couldn't open the zip.") from None
         elif _is_image_name(base):
             if len(data) > MAX_IMAGE_BYTES:
                 issues.append(f"Skipped '{base}': larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB.")
@@ -334,7 +371,8 @@ def collect_images(uploads: list[tuple[str, bytes]]) -> tuple[dict[str, bytes | 
             issues.append(f"Several different files are named '{key}' ({', '.join(sources[key])}); "
                           "rows using that name were not checked. Please rename them.")
     if len(images) > MAX_BATCH_IMAGES:
-        raise BatchError(f"{len(images)} images were uploaded. Please split batches at {MAX_BATCH_IMAGES} labels.")
+        raise BatchError(f"You added {len(images)} images; the limit is {MAX_BATCH_IMAGES} per batch. Split the folder "
+                         "in two and run them one after the other; results export separately.", title=_TOO_MANY)
     return images, issues
 
 
@@ -408,9 +446,16 @@ def _process(job: BatchJob, item: BatchItem, data: list[bytes], reader: LabelRea
     try:
         names = [n.strip() for n in re.split(r"[;|]", item.image_name) if n.strip()]
         image = stitch([open_image(d, n) for d, n in zip(data, names)])
-        item.result = verify(item.application, image, reader, image_name=item.image_name)
-        item.needs, item.focus_box = needs_phrase(item.result)
-        item.preview = make_preview(image, item.result.skew_deg)
+        result = verify(item.application, image, reader, image_name=item.image_name)
+        item.preview = make_preview(image, result.skew_deg)
+        if result.unreadable:   # not a FAIL: nothing could be compared
+            n = result.words_read or 0
+            item.error = (f"Unreadable image: only {n} word{'s' if n != 1 else ''} could be read clearly, so nothing "
+                          "was compared. Use the artwork file or a flat, straight-on scan.")
+            item.needs = "Send a readable image"
+        else:
+            item.result = result
+            item.needs, item.focus_box = needs_phrase(result)
     except (ImageError, ReaderError) as e:
         item.error = str(e)
     except Exception as e:  # keep the batch going; surface the reason

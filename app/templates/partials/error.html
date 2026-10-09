@@ -1,4 +1,25 @@
-<div class="card alert err" role="alert" tabindex="-1" data-app-card>
+{#- An error, inline where the result would have been (Errors board): what happened in one line, what to do
+    in the next. Always role="alert". data-* attributes let the page mark the inputs or drop zone involved. -#}
+{% set fields = fields or [] %}
+<div class="card alert err" role="alert" tabindex="-1" data-app-card data-kind="{{ kind or '' }}"{% if fields %} data-fields='{{ fields|tojson }}'{% endif %}{% if drop %} data-drop-title="{{ drop[0] }}" data-drop-message="{{ drop[1] }}"{% endif %}>
   {{ icon('alert', 20) }}
-  <div><strong>{{ title or "We couldn't run this check." }}</strong><div class="detail">{{ message }}</div></div>
+  <div class="grow">
+    <strong>{{ title or "We couldn't run this check." }}</strong>
+    {% if kind == 'fields' %}
+      {% set missing = fields|selectattr('missing')|list %}
+      <p>{% if missing %}Please fill in: {% for f in missing %}<a href="#f-{{ f.key }}" data-focus="f-{{ f.key }}">{{ f.label }}</a>{{ ', ' if not loop.last }}{% endfor %}.{% endif %}
+        {%- for f in fields|rejectattr('missing') %} <a href="#f-{{ f.key }}" data-focus="f-{{ f.key }}">{{ f.label }}</a> {{ f.rest }}{% endfor %}</p>
+    {% elif kind == 'csv_columns' and columns %}
+      <p>Found: <span class="mono">{{ found|join(', ') if found else 'no headers' }}</span>. Needed: <span class="mono">image, brand_name, class_type, alcohol_content, net_contents</span>. Rename the headers, or <a href="/batch/template.csv" download>download the template</a> and paste your rows in.</p>
+      <div class="table-scroll bordered"><table class="cols-fix">
+        <thead><tr><th>Expected header</th><th>In your file</th><th><span class="sr">Fix</span></th></tr></thead>
+        <tbody>{% for expected, have, fix in columns %}
+          <tr><td class="mono">{{ expected }}</td><td class="mono{{ ' muted-3' if not have }}">{{ have or 'missing' }}</td><td><span class="chip mini fail">{{ icon('cross') }}{{ fix }}</span></td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% else %}
+      <p class="detail">{{ message }}</p>
+    {% endif %}
+    {% if retry %}<button class="btn small retry" type="button" data-act="retry">Try again</button>{% endif %}
+  </div>
 </div>

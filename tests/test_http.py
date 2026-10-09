@@ -69,7 +69,7 @@ def test_bad_psm_is_a_400_with_a_message():
 
 def test_oversized_upload_is_refused_before_reading_it():
     r = client.post("/verify", data=OLD_TOM, headers={"content-length": str(500 * 1024 * 1024)})
-    assert r.status_code == 413 and "larger than" in r.text
+    assert r.status_code == 413 and "This image is too big to check." in r.text and "the limit is 20 MB" in r.text
 
 
 def test_sample_name_must_match_exactly():
