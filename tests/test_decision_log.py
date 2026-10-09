@@ -3,8 +3,13 @@ a request, and the report script that turns the log into pass rates per rule and
 
 from __future__ import annotations
 
+import csv
+import importlib.util
 import json
 import logging
+import re
+import subprocess
+import sys
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -159,3 +164,92 @@ def test_concurrent_decisions_each_write_a_whole_line(log_path):
     recs = records(log_path)   # every line parses on its own: no two writes were interleaved
     assert len(recs) == 200
     assert Counter(r["decision"] for r in recs) == {"pass": 56, "fail": 48, "skip": 48, "clear": 48}
+
+
+# --- scripts/decisions_report.py -----------------------------------------------------------------------
+def load_report():
+    spec = importlib.util.spec_from_file_location("decisions_report", ROOT / "scripts" / "decisions_report.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def make_log(log_path: Path) -> None:
+    """Two batches: in the first the brand is in title case (the queue asks about the brand), in the second it
+    is exact (the queue asks about the warning wording). Answers, a re-decision and an undo."""
+    a = make_job(4, job_id="jobA")
+    for i, v in ((0, "pass"), (1, "pass"), (2, "fail"), (3, "skip")):
+        a.decide(i, v)
+    a.decide(1, "clear")           # undone: drops out
+    a.decide(2, "pass")            # re-decided: the last answer counts
+    b = make_job(3, brand="OLD TOM DISTILLERY", source="lot2.csv", job_id="jobB")
+    for i, v in ((0, "fail"), (1, "fail"), (2, "pass")):
+        b.decide(i, v)
+
+
+def test_report_counts_the_standing_decisions_per_question(log_path):
+    report = load_report()
+    make_log(log_path)
+    recs = report.read_log(log_path)
+    assert len(recs) == 9
+    decided = report.latest_decisions(recs)
+    assert [(r["job"], r["application_id"], r["decision"]) for r in decided] == [
+        ("jobA", "A1", "pass"), ("jobA", "A4", "skip"), ("jobA", "A3", "pass"),
+        ("jobB", "A1", "fail"), ("jobB", "A2", "fail"), ("jobB", "A3", "pass")]
+    rows = report.summarise(decided)
+    assert [r["key"] for r in rows] == ["brand_name", "warning_wording", "warning_bold"]
+    assert rows[0] == {"key": "brand_name", "raised": 3, "asked": 3, "pass": 2, "fail": 0, "skip": 1, "pass_rate": 1.0}
+    assert rows[1]["pass_rate"] == pytest.approx(1 / 3)
+    assert {k: v for k, v in rows[1].items() if k != "pass_rate"} == \
+        {"key": "warning_wording", "raised": 6, "asked": 3, "pass": 1, "fail": 2, "skip": 0}
+    assert rows[2] == {"key": "warning_bold", "raised": 6, "asked": 0, "pass": 0, "fail": 0, "skip": 0, "pass_rate": None}
+    # the notes behind the answers: the field's note, or the question for a warning check
+    assert report.top_notes(decided, "pass") == [
+        ("brand_name", "Same words, but capitalization or punctuation differs. Please confirm.", 2),
+        ("warning_wording", 'Does the label say "should"?', 1)]
+    assert report.top_notes(decided, "fail") == [("warning_wording", 'Does the label say "should"?', 2)]
+    assert report.top_notes(decided, "skip", n=1) == [
+        ("brand_name", "Same words, but capitalization or punctuation differs. Please confirm.", 1)]
+
+
+def test_calibration_csv_has_the_real_labels_layout_and_expect_from_the_decisions(log_path, tmp_path):
+    report = load_report()
+    make_log(log_path)
+    decided = report.latest_decisions(report.read_log(log_path))
+    out = tmp_path / "calibration.csv"
+    report.write_csv(report.calibration_rows(decided), out)
+    with open(out, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    real_header = (ROOT / "scripts" / "real_labels.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert list(rows[0]) == real_header.split(",") == list(report.CSV_COLUMNS)
+    assert report.FIELD_KEYS == tuple(f.key for f in FIELDS)
+    assert [(r["ttbid"], r["expect"], r["notes"]) for r in rows] == [
+        ("A1", "brand_name=review", "pass: Is this the same brand name?"),
+        ("A3", "brand_name=review", "pass: Is this the same brand name?"),     # the skipped A4 is not calibration data
+        ("A1", "", 'fail: Does the label say "should"?'),
+        ("A2", "", 'fail: Does the label say "should"?'),
+        ("A3", "", 'pass: Does the label say "should"?')]                      # a pass on a warning check names no field
+    r = rows[0]
+    assert (r["kind"], r["brand_name"], r["class_type"], r["alcohol_content"], r["net_contents"]) == (
+        "", "OLD TOM DISTILLERY", "Kentucky Straight Bourbon Whiskey", "45% Alc./Vol.", "750 mL")
+    assert r["bottler_name_address"] == "" and r["country_of_origin"] == ""
+    # read the way scripts/real_labels.py reads it: the brand is expected to come back NEAR MATCH, the rest MATCH
+    assert dict(e.split("=") for e in rows[0]["expect"].split(";") if e) == {"brand_name": "review"}
+    assert dict(e.split("=") for e in rows[2]["expect"].split(";") if e) == {}
+
+
+def test_report_script_prints_the_table_and_writes_the_csv(log_path, tmp_path):
+    make_log(log_path)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write("not json\n")                                # a damaged line is reported and skipped
+    out = tmp_path / "cal.csv"
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "decisions_report.py"), str(log_path), "--csv", str(out)],
+                       capture_output=True, text=True, check=False, cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "not a JSON record" in r.stderr
+    assert "9 records, 6 labels with a standing decision" in r.stdout
+    assert re.search(r"brand_name\s+3\s+3\s+2\s+0\s+1\s+100%", r.stdout)
+    assert re.search(r"warning_wording\s+6\s+3\s+1\s+2\s+0\s+33%", r.stdout)
+    assert re.search(r"warning_bold\s+6\s+0\s+0\s+0\s+0\s+-", r.stdout)
+    assert 'Notes behind "pass" answers' in r.stdout and "Same words, but capitalization or punctuation differs" in r.stdout
+    assert "wrote 5 rows" in r.stdout and out.exists()
