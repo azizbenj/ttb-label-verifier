@@ -162,7 +162,7 @@
           <div class="chk {{ 'rv' if w.heading_caps.value == 'REVIEW' else ('bad' if w.heading_caps.value == 'FAIL' else '') }}">{{ chip(w.heading_caps) }}<span class="name">Heading in capitals</span><div class="body"><div class="t">{{ w.heading_caps_note }}</div>{% if prompts.get('warning_caps') %}{{ decide(prompts['warning_caps'], job_id, item_index, decision) }}{% endif %}</div></div>
           <div class="chk {{ 'rv' if w.heading_bold.value == 'REVIEW' else ('bad' if w.heading_bold.value == 'FAIL' else '') }}">{{ chip(w.heading_bold) }}<span class="name">Heading bold</span>
             <div class="body">
-              <div><div class="t">{{ w.heading_bold_note }}</div><div class="s">Estimated from stroke width in the image (bold passes from {{ thresholds.bold_ratio }}×; regular text measures about 1.0–1.1×). A heuristic, so a doubtful result asks for a look instead of failing the label.</div></div>
+              <div><div class="t">{{ w.heading_bold_note }}</div><div class="s">Estimated from stroke width in the image (bold passes from {{ thresholds.bold_ratio }}×; regular text measures about 1.03–1.14×). A heuristic, so a doubtful result asks for a look instead of failing the label.</div></div>
               {% set pct = bold_meter_percent(w.bold_ratio, thresholds.bold_ratio) %}
               {% if pct is not none %}
               <div class="meter-wrap"><div class="meter" aria-hidden="true" style="--tick: {{ bold_meter_percent(thresholds.bold_ratio, thresholds.bold_ratio) }}%"><span class="tick" style="left: {{ bold_meter_percent(thresholds.bold_ratio, thresholds.bold_ratio) }}%"></span><span class="markr {{ 'review' if w.heading_bold.value != 'PASS' else '' }}" style="left: {{ pct }}%"></span></div>

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .config import THRESHOLDS
 from .models import FieldResult, VerificationResult, Verdict
 from .normalize import normalize_loose, parse_alcohol, parse_net_contents
 
@@ -70,7 +71,8 @@ def evidence_for(f: FieldResult, result: VerificationResult) -> Evidence:
         if a and b and a.abv is not None and b.abv is not None:
             ev.rows.append(("difference", f"{abs(a.abv - b.abv):.1f} points · allowed 0.05", ""))
         ev.rows.append(("read confidence", conf, ""))
-        if f.verdict == Verdict.MISMATCH and b and b.proof is not None and not b.abv_from_proof:
+        if f.verdict == Verdict.MISMATCH and b and b.proof is not None and not b.abv_from_proof \
+                and abs(b.proof - 2 * b.abv) <= THRESHOLDS.proof_tolerance:
             ev.text = ("Both numbers were read from the same line; proof and percent agree with each other, "
                        "so this is not a misread. The label does not match the application.")
     elif f.key == "net_contents":

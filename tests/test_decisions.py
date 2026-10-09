@@ -152,3 +152,33 @@ def test_shared_batch_link_opens_the_batch_tab(monkeypatch):
     assert 'data-open-tab="batch"' in r.text and 'id="batch-entry" hidden' in r.text
     assert "3 labels checked" in r.text
     assert client.get("/batch/nope").status_code == 404
+
+
+def test_yes_always_means_the_label_is_fine_even_when_the_wording_fails():
+    from app.config import MANDATED_WARNING
+    from app.readers.base import LabelReading, OCRResult
+    truncated = MANDATED_WARNING.split(" (2)")[0]
+
+    class Truncated:
+        name = "t"
+
+        def read(self, image):
+            return LabelReading(ocr=OCRResult(text=truncated, lines=[truncated]))
+    r = verify(Application(**APP), Image.new("RGB", (60, 60)), Truncated())
+    assert r.warning.wording.value == "FAIL"
+    p = next(p for p in prompts_for(r) if p.key == "warning_wording")
+    # The first button records "pass" (label fine) and carries the Y key: its text must say yes.
+    assert p.question.startswith("Is ") and p.yes.startswith("Yes") and p.no.startswith("No")
+
+
+def test_proof_contradiction_prompt_and_evidence():
+    from app.evidence import evidence_for
+    from app.matching import compare_alcohol
+    r = verify(Application(**APP), Image.new("RGB", (60, 60), "white"), ReviewReader())
+    near = compare_alcohol("45%", "45% Alc./Vol. (80 Proof)")
+    r.fields = [near if f.key == "alcohol_content" else f for f in r.fields]
+    p = next(p for p in prompts_for(r) if p.key == "alcohol_content")
+    assert "proof agree with its percentage" in p.question and p.no == "No, the label contradicts itself"
+    wrong = compare_alcohol("40%", "45% Alc./Vol. (80 Proof)")
+    assert "proof and percent agree" not in evidence_for(wrong, r).text
+    assert "proof and percent agree" in evidence_for(compare_alcohol("40%", "45% Alc./Vol. (90 Proof)"), r).text
