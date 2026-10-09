@@ -108,13 +108,38 @@ def check_wording(found_text: str, *, th: Thresholds = THRESHOLDS) -> tuple[Stat
 _HEADING_RE = re.compile(r"(government)\s+(warning)(\s*:)?", re.IGNORECASE)
 
 
+_LOOKALIKE_LETTERS = str.maketrans({"0": "o", "1": "i", "|": "i", "l": "i"})  # neither heading word has an "l"
+
+
+def _misread_heading(text: str) -> tuple[str, str, bool] | None:
+    """The two words that read most like 'GOVERNMENT WARNING' when OCR garbled a letter ("WARNlNG")."""
+    tokens = text.split()
+    best, best_score = None, 0.0
+    for i in range(len(tokens) - 1):
+        gov, warn = tokens[i], tokens[i + 1].rstrip(":;.")
+        score = fuzz.ratio("government warning", f"{gov} {warn}".lower().translate(_LOOKALIKE_LETTERS))
+        if score > best_score:
+            colon = tokens[i + 1].endswith(":") or (i + 2 < len(tokens) and tokens[i + 2].startswith(":"))
+            best, best_score = (gov, warn, colon), score
+    return best if best_score >= 80 else None
+
+
 def check_heading_caps(heading_line_text: str | None) -> tuple[Status, str]:
     if not heading_line_text:
         return Status.FAIL, "The words 'GOVERNMENT WARNING' were not found at the start of the statement."
-    m = _HEADING_RE.search(normalize_strict(heading_line_text))
-    if not m:
-        return Status.FAIL, "The words 'GOVERNMENT WARNING' were not found at the start of the statement."
-    gov, warn, colon = m.group(1), m.group(2), m.group(3)
+    text = normalize_strict(heading_line_text)
+    m = _HEADING_RE.search(text)
+    if m:
+        gov, warn, colon = m.group(1), m.group(2), bool(m.group(3))
+    else:
+        misread = _misread_heading(text)
+        if misread is None:
+            return Status.FAIL, "The words 'GOVERNMENT WARNING' were not found at the start of the statement."
+        gov, warn, colon = misread
+        lower = {ch for ch in gov + warn if ch.islower()}
+        if lower <= {"l", "i", "o"}:  # capitals with a letter or two misread by OCR
+            return Status.REVIEW, (f"The heading reads '{gov} {warn}': it looks like capitals, but a letter was not read "
+                                   "clearly. Please check it by eye.")
     if not (gov.isupper() and warn.isupper()):
         return Status.FAIL, f"The heading is printed as '{gov} {warn}'. It must be all capitals: 'GOVERNMENT WARNING:'."
     if not colon:
@@ -124,13 +149,25 @@ def check_heading_caps(heading_line_text: str | None) -> tuple[Status, str]:
 
 # --- heading boldness (heuristic) --------------------------------------------------------------
 def _ink_area_and_boundary(ink: np.ndarray, word: OCRWord) -> tuple[int, int] | None:
-    """Ink pixel count and boundary pixel count inside a word box (boundary = ink with a background 4-neighbour)."""
+    """Ink pixel count and boundary pixel count inside a word box (boundary = ink with a background 4-neighbour).
+
+    The ink mask is global, so on a light-on-dark panel of an otherwise light label it marks the panel,
+    not the letters. The ring of pixels just outside the word box is background either way: when it is
+    mostly "ink", the polarity is flipped for this word.
+    """
     h, w = ink.shape
     x0, y0 = max(0, word.left - 1), max(0, word.top - 1)
     x1, y1 = min(w, word.right + 1), min(h, word.bottom + 1)
     if x1 - x0 < 3 or y1 - y0 < 3:
         return None
-    crop = np.pad(ink[y0:y1, x0:x1], 1)
+    rx0, ry0, rx1, ry1 = max(0, x0 - 3), max(0, y0 - 3), min(w, x1 + 3), min(h, y1 + 3)
+    ring = ink[ry0:ry1, rx0:rx1].copy()
+    ring[y0 - ry0:y1 - ry0, x0 - rx0:x1 - rx0] = False
+    ring_px = (ry1 - ry0) * (rx1 - rx0) - (y1 - y0) * (x1 - x0)
+    crop = ink[y0:y1, x0:x1]
+    if ring_px and ring.sum() > 0.5 * ring_px:
+        crop = ~crop
+    crop = np.pad(crop, 1)
     inner = crop[1:-1, 1:-1]
     bg_neighbour = (~crop[:-2, 1:-1]) | (~crop[2:, 1:-1]) | (~crop[1:-1, :-2]) | (~crop[1:-1, 2:])
     area = int(inner.sum())
@@ -187,8 +224,8 @@ def estimate_heading_bold(ink: np.ndarray, heading_words: list[OCRWord], body_wo
     if ratio >= th.bold_ratio:
         return Status.PASS, ratio, f"Heading looks bold (strokes {ratio:.2f}x thicker than the text)."
     status = Status.FAIL if th.bold_failure_is_fail else Status.REVIEW
-    return status, ratio, (f"Heading does not look bolder than the text (strokes {ratio:.2f}x). "
-                           "Please check it by eye.")
+    return status, ratio, (f"Heading does not look bolder than the rest of the statement (strokes {ratio:.2f}x). "
+                           "Please check by eye: the heading must be bold and the rest of the statement must not be.")
 
 
 # --- putting it together -----------------------------------------------------------------------

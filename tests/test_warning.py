@@ -130,3 +130,19 @@ def test_locate_ignores_short_noise_lines():
     span = locate_warning(lines)
     assert span.heading_line == 6 and lines[span.start].startswith("GOVERNMENT")
     assert check_warning(lines, bold_hint=True).overall == Status.PASS
+
+
+def test_heading_with_an_ocr_misread_letter_asks_for_review_not_fail():
+    assert check_heading_caps("GOVERNMENT WARNlNG: (1) According")[0] == Status.REVIEW
+    assert check_heading_caps("G0VERNMENT WARNING: (1) According")[0] == Status.REVIEW
+    assert check_heading_caps("Government Warnlng: (1) According")[0] == Status.FAIL  # title case stays a failure
+    assert check_heading_caps("WARNING: (1) According to the Surgeon General")[0] == Status.FAIL
+
+
+@pytest.mark.parametrize("heading_bold", [True, False])
+def test_bold_heuristic_on_light_text_over_a_dark_panel(heading_bold):
+    ink, head, body = _render("DejaVuSans.ttf", "DejaVuSans-Bold.ttf", 30, heading_bold=heading_bold)
+    _, ratio, _ = estimate_heading_bold(ink, head, body)
+    # The same statement printed light-on-dark: the global ink mask now marks the panel, not the letters.
+    _, ratio_dark, _ = estimate_heading_bold(~ink, head, body)
+    assert ratio_dark == pytest.approx(ratio, abs=0.05), (ratio, ratio_dark)
