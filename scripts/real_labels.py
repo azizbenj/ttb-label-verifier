@@ -19,6 +19,7 @@ import csv
 import json
 import statistics
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -99,11 +100,29 @@ def main() -> None:
         values = {k: row[k] for k in FIELDS}
         if override:
             values.update(override)
-        img = open_image((REAL / f"{row['ttbid']}.jpg").read_bytes(), f"{row['ttbid']}.jpg")
+        for attempt in range(3):   # a file in a synced folder can take a moment to arrive
+            try:
+                data = (REAL / f"{row['ttbid']}.jpg").read_bytes()
+                break
+            except OSError:
+                if attempt == 2:
+                    raise
+                time.sleep(2)
+        img = open_image(data, f"{row['ttbid']}.jpg")
         return verify(Application(**values), img, reader)
 
+    def run_safely(row):
+        try:
+            return run(row)
+        except Exception as e:   # one bad file must not lose the whole run
+            print(f"{row['ttbid']}: ERROR {type(e).__name__}: {e}")
+            return None
+
     with ThreadPoolExecutor(a.j) as pool:
-        results = list(pool.map(run, rows))
+        results = list(pool.map(run_safely, rows))
+    errors = [row["ttbid"] for row, r in zip(rows, results) if r is None]
+    rows = [row for row, r in zip(rows, results) if r is not None]
+    results = [r for r in results if r is not None]
 
     tally = {"right": 0, "conservative": 0, "false_alarm": 0, "accepted": 0}
     by_kind: dict[str, dict] = {}
@@ -160,6 +179,8 @@ def main() -> None:
           f"{tally['accepted']} accepted without the look the ground truth expects")
     print(f"government warning: {warn['PASS']} pass, {warn['REVIEW']} review, {warn['FAIL']} fail (all {len(rows)} labels carry the warning)")
     print(f"timing: median {statistics.median(times) / 1000:.2f} s, max {max(times) / 1000:.2f} s")
+    if errors:
+        print(f"{len(errors)} label(s) could not be run: {', '.join(errors)}")
     if len(by_kind) > 1:
         for k, t in sorted(by_kind.items()):
             fields = t["right"] + t["conservative"] + t["false_alarm"] + t["accepted"]
@@ -171,9 +192,18 @@ def main() -> None:
 
     if a.defects:
         missed = caught = 0
-        for row in rows:
+        def planted(row):
+            out = []
             for key, val in (("alcohol_content", wrong_abv(row["alcohol_content"])), ("net_contents", wrong_volume(row["net_contents"]))):
-                r = run(row, {key: val})
+                try:
+                    out.append((key, val, run(row, {key: val})))
+                except Exception as e:
+                    print(f"{row['ttbid']}: ERROR on the planted {key}: {e}")
+            return out
+        with ThreadPoolExecutor(a.j) as pool:
+            planted_results = list(pool.map(planted, rows))
+        for row, outs in zip(rows, planted_results):
+            for key, val, r in outs:
                 v = next(f for f in r.fields if f.key == key).verdict.value
                 if v == "MATCH":
                     missed += 1
