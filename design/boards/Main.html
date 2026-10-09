@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--action-hover:#1A4480;--action-tint:#D9E8F6;--focus:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--review-fill:#8B5A00;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--r-s:4px;--r-m:8px;--r-l:12px;--sh-1:0 1px 2px rgba(20,24,30,.06);--sh-2:0 4px 16px rgba(20,24,30,.10);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}a:hover{color:var(--action-hover)}
+h1,h2,h3,h4,p{margin:0}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:3px;border:1px solid;font-size:13px;font-weight:700;letter-spacing:.02em;white-space:nowrap;line-height:1}
+.chip svg{width:14px;height:14px;flex:none}
+.chip.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.chip.review{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.chip.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.chip.none{background:var(--none-tint);color:var(--none);border-color:var(--none-line)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.kbd{display:inline-block;min-width:22px;padding:1px 6px;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:5px;background:var(--surface);font-family:var(--mono);font-size:12px;line-height:18px;color:var(--ink-2);text-align:center}
+.hl{position:absolute;border:2px solid var(--pass-fill);border-radius:4px;background:rgba(46,125,50,.10)}
+.pin{position:absolute;left:-12px;top:-12px;width:22px;height:22px;border-radius:999px;background:var(--pass-fill);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;font-family:var(--mono)}
+</style>
+</helmet>
+<div style="min-height: 900px; display: flex; flex-direction: column">
+  <div style="background: var(--brand); color: #fff; padding: 14px 48px; display: flex; align-items: center; gap: 16px; font-size: 14px">
+    <span style="display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 5px; background: #fff; color: var(--brand)" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/></svg></span>
+    <span style="font-weight: 600">Label Check · Design direction</span>
+    <span style="opacity: .8">Prototype redesign · October 2026</span>
+  </div>
+
+  <div style="max-width: 1184px; width: 100%; margin: 0 auto; padding: 48px 48px 40px; display: flex; flex-direction: column; gap: 36px">
+    <div style="display: flex; flex-direction: column; gap: 16px; max-width: 880px">
+      <p style="font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2)">Direction</p>
+      <h1 style="font-size: 44px; line-height: 1.1; font-weight: 800; letter-spacing: -.02em; text-wrap: balance">Evidence beside the label.</h1>
+      <p style="font-size: 19px; line-height: 1.55; color: var(--ink-2); text-wrap: pretty">Every verdict sits next to its proof: the label image is the primary surface, and each field, number and warning check points at the exact place on the label where it was read. A batch becomes a triage queue that puts REVIEW first and clears PASS and FAIL in bulk, so an agent spends attention only where judgment is needed. The look is an internal compliance tool, not a product: U.S. Web Design System conventions (Public Sans, a navy header, USWDS blue for actions, square tags, a quiet identifier strip), with three verdict colours that also differ in lightness and always carry a word and a glyph.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr)); gap: 24px; align-items: stretch">
+      <div class="card" style="padding: 24px 28px; display: flex; flex-direction: column; gap: 14px">
+        <p style="font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--pass)">The one idea</p>
+        <h2 style="font-size: 26px; font-weight: 800; letter-spacing: -.01em">Point at the proof.</h2>
+        <p style="color: var(--ink-2); text-wrap: pretty">A generic admin UI shows a tag and asks you to trust it. A COLA examiner needs the proof. Here, hovering or focusing any verdict lights up the words on the label it came from, the numbers show their conversion, and the warning diff is word-level. The chip is never more than one glance from the crop.</p>
+        <div style="display: flex; gap: 20px; align-items: center; margin-top: 6px">
+          <div style="position: relative; width: 150px; height: 200px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; flex: none">
+            <img src="/_blob/132369b1a839bd06a8457a2ebe766902" alt="Old Tom Distillery sample label" style="width: 100%; height: 100%; object-fit: cover; display: block">
+            <div class="hl" style="left: 26%; top: 31.5%; width: 48%; height: 5%"><span class="pin">3</span></div>
+          </div>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+            <div style="display: flex; align-items: center; gap: 10px">
+              <span style="width: 22px; height: 22px; border-radius: 999px; background: var(--pass-fill); color: #fff; font-size: 12px; font-weight: 700; display: grid; place-items: center; font-family: var(--mono); flex: none">3</span>
+              <span style="font-weight: 600">Alcohol content</span>
+              <span class="chip pass"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px">
+              <div><div style="color: var(--ink-3); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600">Application</div><div>45% Alc./Vol. (90 Proof)</div></div>
+              <div><div style="color: var(--ink-3); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600">Label</div><div>45% Alc./Vol. (90 Proof)</div></div>
+            </div>
+            <div style="font-size: 14px; color: var(--ink-2)">45% ABV on both · <span style="font-family: var(--mono)">90 proof = 45%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 24px 28px; display: flex; flex-direction: column; gap: 14px">
+        <p style="font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2)">Five rules the screens follow</p>
+        <ol style="margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; color: var(--ink-2)">
+          <li><strong style="color: var(--ink)">Triage first.</strong> REVIEW is the first number you see, FAIL the second, PASS the third. The queue opens on what needs you.</li>
+          <li><strong style="color: var(--ink)">Evidence, not verdict theatre.</strong> Crop, conversion, diff, confidence: one glance away, never a modal away.</li>
+          <li><strong style="color: var(--ink)">Nothing is colour-only.</strong> Every status carries a word and a glyph; numbered pins tie rows to the image.</li>
+          <li><strong style="color: var(--ink)">Speed you can see.</strong> "Checked in 0.9 s" is a feature. Progress reports real counts and a truthful estimate.</li>
+          <li><strong style="color: var(--ink)">The regulation's words.</strong> MATCH, NEAR MATCH, MISMATCH, NOT FOUND, PASS, REVIEW, FAIL and the plain-language reasons stay exactly as the agents know them.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <p style="font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2)">What is on this canvas</p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 12px">
+        <div class="card" style="padding: 14px 16px"><div style="font-family: var(--mono); font-size: 12px; color: var(--ink-3)">Row 1</div><div style="font-weight: 600">Tokens and components</div><div style="font-size: 14px; color: var(--ink-2)">CSS custom properties with measured contrast, every component and state.</div></div>
+        <div class="card" style="padding: 14px 16px"><div style="font-family: var(--mono); font-size: 12px; color: var(--ink-3)">Row 2</div><div style="font-weight: 600">Check one label</div><div style="font-size: 14px; color: var(--ink-2)">Empty, reading, PASS, REVIEW, FAIL, and the warning evidence view.</div></div>
+        <div class="card" style="padding: 14px 16px"><div style="font-family: var(--mono); font-size: 12px; color: var(--ink-3)">Row 3</div><div style="font-weight: 600">Check a batch</div><div style="font-size: 14px; color: var(--ink-2)">Upload, honest progress, triage table, keyboard review queue, export.</div></div>
+        <div class="card" style="padding: 14px 16px"><div style="font-family: var(--mono); font-size: 12px; color: var(--ink-3)">Row 4</div><div style="font-weight: 600">Help, errors, dark, print</div><div style="font-size: 14px; color: var(--ink-2)">Help drawer, every error state, dark theme values, a Letter report.</div></div>
+        <div class="card" style="padding: 14px 16px"><div style="font-family: var(--mono); font-size: 12px; color: var(--ink-3)">Row 5</div><div style="font-weight: 600">Narrow</div><div style="font-size: 14px; color: var(--ink-2)">768 px tablet and 390 px phone, no horizontal scroll.</div></div>
+        <div class="card" style="padding: 14px 16px"><div style="font-family: var(--mono); font-size: 12px; color: var(--ink-3)">Row 6</div><div style="font-weight: 600">Copy and implementation</div><div style="font-size: 14px; color: var(--ink-2)">Copy for every state, accessibility decisions, template-by-template mapping.</div></div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 10px 28px; font-size: 14px; color: var(--ink-2); border-top: 1px solid var(--line); padding-top: 20px">
+      <span><strong style="color: var(--ink)">Stack:</strong> Jinja templates, one CSS file, small vanilla JS, no build step.</span>
+      <span><strong style="color: var(--ink)">Fonts:</strong> Public Sans woff2 bundled in /static/fonts, Segoe UI and system-ui as fallback. No CDN.</span>
+      <span><strong style="color: var(--ink)">Design system:</strong> USWDS tokens and patterns, no USWDS code dependency.</span>
+      <span><strong style="color: var(--ink)">Icons:</strong> inline SVG only.</span>
+      <span><strong style="color: var(--ink)">Targets:</strong> 1280 px and up first, 768 px and 390 px degrade without horizontal scroll.</span>
+      <span><strong style="color: var(--ink)">Keys:</strong> <span class="kbd">J</span> <span class="kbd">K</span> move, <span class="kbd">Enter</span> open, <span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> filter, <span class="kbd">?</span> help.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

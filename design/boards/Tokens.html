@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Design tokens</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--action-hover:#1A4480;--action-tint:#D9E8F6;--focus:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--review-fill:#8B5A00;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--r-s:3px;--r-m:4px;--r-l:8px;--sh-1:0 1px 2px rgba(20,24,30,.06);--sh-2:0 4px 16px rgba(20,24,30,.10);--sh-3:0 16px 40px rgba(20,24,30,.18);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}a:hover{color:var(--action-hover)}
+h1,h2,h3,h4,p{margin:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.sw{display:flex;flex-direction:column;gap:6px;min-width:0}
+.sw .b{height:56px;border-radius:4px;border:1px solid rgba(0,0,0,.08);display:flex;align-items:flex-end;padding:6px 8px;font-weight:700;font-size:14px}
+.sw .n{font-size:13px;font-weight:600}
+.sw .h{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.sw .u{font-size:12px;color:var(--ink-3);line-height:1.35}
+.ratio{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:3px;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line)}
+.sec{display:flex;flex-direction:column;gap:14px}
+.sec h2{font-size:20px;font-weight:700}
+.sec h3{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2)}
+pre{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre;overflow:auto;background:#1B1B1B;color:#ECEEF1;padding:18px 20px;border-radius:6px}
+.dark{background:#1A1D22;color:#ECEEF1;border-color:#363B44}
+.dark .n{color:#ECEEF1}.dark .h{color:#B9BFC8}.dark .u{color:#9AA1AB}.dark .ratio{background:#23272D;color:#B9BFC8;border-color:#363B44}
+</style>
+</helmet>
+<div style="min-height: 1760px">
+  <div style="max-width: 1184px; margin: 0 auto; padding: 40px 48px 48px; display: flex; flex-direction: column; gap: 36px">
+    <div style="display: flex; flex-direction: column; gap: 8px; max-width: 860px">
+      <p style="font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2)">Design tokens</p>
+      <h1 style="font-size: 32px; font-weight: 800; letter-spacing: -.02em">Colour, type, space, radius, elevation, motion</h1>
+      <p style="color: var(--ink-2); text-wrap: pretty">Every value below is a CSS custom property that drops into the top of <span style="font-family: var(--mono); font-size: 15px">style.css</span>. Colours are U.S. Web Design System (USWDS) system tokens wherever one passes; the few custom values are marked. Contrast ratios are measured with the WCAG 2.1 formula against the surface the colour sits on. Text needs 4.5:1 (3:1 at 24 px and above); borders and focus rings need 3:1. No USWDS code is loaded: these are the values, pasted into one stylesheet.</p>
+    </div>
+
+    <section class="sec">
+      <h2>Light theme (required)</h2>
+      <h3>Ground, surfaces, ink</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 16px">
+        <div class="sw"><div class="b" style="background: #F1F1EF"></div><div class="n">--ground</div><div class="h">#F1F1EF</div><div class="u">Page background. Between USWDS base-lightest and white.</div></div>
+        <div class="sw"><div class="b" style="background: #FFFFFF"></div><div class="n">--surface</div><div class="h">#FFFFFF</div><div class="u">Cards, table rows, inputs.</div></div>
+        <div class="sw"><div class="b" style="background: #EDEEF0"></div><div class="n">--surface-2</div><div class="h">#EDEEF0</div><div class="u">Identifier strip, table headers, wells.</div></div>
+        <div class="sw"><div class="b" style="background: #DCDEE0"></div><div class="n">--line</div><div class="h">#DCDEE0</div><div class="u">Hairlines, dividers, card borders.</div></div>
+        <div class="sw"><div class="b" style="background: #71767A"></div><div class="n">--line-strong</div><div class="h">#71767A · USWDS base</div><div class="u">Input borders, drop zones. <span class="ratio">4.6:1 on white</span></div></div>
+        <div class="sw"><div class="b" style="background: #fff; color: #1B1B1B">Aa</div><div class="n">--ink</div><div class="h">#1B1B1B · USWDS ink</div><div class="u">Body and headings. <span class="ratio">17.2:1 white</span> <span class="ratio">15.2:1 ground</span></div></div>
+        <div class="sw"><div class="b" style="background: #fff; color: #3D4551">Aa</div><div class="n">--ink-2</div><div class="h">#3D4551 · base-darker</div><div class="u">Secondary text, labels, reasons. <span class="ratio">9.7:1 white</span> <span class="ratio">8.3:1 surface-2</span></div></div>
+        <div class="sw"><div class="b" style="background: #fff; color: #565C65">Aa</div><div class="n">--ink-3</div><div class="h">#565C65 · base-dark</div><div class="u">Captions, 13 px minimum. <span class="ratio">6.7:1 white</span> <span class="ratio">5.8:1 surface-2</span></div></div>
+      </div>
+
+      <h3>Brand and action</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 16px">
+        <div class="sw"><div class="b" style="background: #162E51; color: #fff">Aa</div><div class="n">--brand</div><div class="h">#162E51 · primary-darker</div><div class="u">Header bar only. <span class="ratio">13.6:1 white text</span></div></div>
+        <div class="sw"><div class="b" style="background: #005EA2; color: #fff">Aa</div><div class="n">--action</div><div class="h">#005EA2 · primary</div><div class="u">Buttons, links, focus. <span class="ratio">6.7:1 white on it</span> <span class="ratio">6.7:1 on white</span> <span class="ratio">6.0:1 on ground</span></div></div>
+        <div class="sw"><div class="b" style="background: #1A4480; color: #fff">Aa</div><div class="n">--action-hover</div><div class="h">#1A4480 · primary-dark</div><div class="u">Hover and active for action.</div></div>
+        <div class="sw"><div class="b" style="background: #D9E8F6; color: #005EA2">Aa</div><div class="n">--action-tint</div><div class="h">#D9E8F6 · primary-lighter</div><div class="u">Selected row, secondary hover, keyboard cursor. <span class="ratio">5.4:1 action text</span></div></div>
+        <div class="sw"><div class="b" style="background: #F1F1EF; box-shadow: inset 0 0 0 3px #005EA2"></div><div class="n">--focus</div><div class="h">#005EA2, 3 px, offset 2 px</div><div class="u">One ring everywhere; USWDS's lighter focus blue was rejected at 3.0:1.</div></div>
+      </div>
+
+      <h3>Verdicts: text, tint, line and fill. Text always sits on its tint or on white.</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px">
+        <div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+          <div style="font-weight: 700; color: #216E1F">PASS · MATCH</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+            <div class="sw"><div class="b" style="background: #ECF3EC; color: #216E1F">Aa</div><div class="n">--pass on --pass-tint</div><div class="h">#216E1F success-darker / #ECF3EC success-lighter</div><div class="u"><span class="ratio">5.6:1</span> <span class="ratio">6.3:1 on white</span></div></div>
+            <div class="sw"><div class="b" style="background: #2E7D32; color: #fff">Aa</div><div class="n">--pass-fill</div><div class="h">#2E7D32 · custom</div><div class="u">Pins, banner badge. <span class="ratio">5.1:1 white</span></div></div>
+          </div>
+          <div class="sw"><div class="b" style="height: 14px; background: #9BD4A2"></div><div class="n">--pass-line</div><div class="h">#9BD4A2 · tag border, decorative</div></div>
+        </div>
+        <div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+          <div style="font-weight: 700; color: #7A4D06">REVIEW · NEAR MATCH</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+            <div class="sw"><div class="b" style="background: #FAF3D1; color: #7A4D06">Aa</div><div class="n">--review on --review-tint</div><div class="h">#7A4D06 custom / #FAF3D1 warning-lighter</div><div class="u"><span class="ratio">6.5:1</span> <span class="ratio">7.3:1 on white</span></div></div>
+            <div class="sw"><div class="b" style="background: #8B5A00; color: #fff">Aa</div><div class="n">--review-fill</div><div class="h">#8B5A00 · custom</div><div class="u">Pins, banner badge. <span class="ratio">5.9:1 white</span></div></div>
+          </div>
+          <div class="sw"><div class="b" style="height: 14px; background: #E9C06B"></div><div class="n">--review-line</div><div class="h">#E9C06B · tag border, decorative</div></div>
+          <div class="u" style="font-size: 12px; color: var(--ink-3)">USWDS warning-darker (#936F38) measures 4.4:1 on its tint, so the text colour is darkened.</div>
+        </div>
+        <div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+          <div style="font-weight: 700; color: #B50909">FAIL · MISMATCH</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+            <div class="sw"><div class="b" style="background: #F4E3DB; color: #B50909">Aa</div><div class="n">--fail on --fail-tint</div><div class="h">#B50909 error-dark / #F4E3DB error-lighter</div><div class="u"><span class="ratio">5.6:1</span> <span class="ratio">7.0:1 on white</span></div></div>
+            <div class="sw"><div class="b" style="background: #B50909; color: #fff">Aa</div><div class="n">--fail-fill</div><div class="h">#B50909 · error-dark</div><div class="u">Pins, banner badge. <span class="ratio">7.0:1 white</span></div></div>
+          </div>
+          <div class="sw"><div class="b" style="height: 14px; background: #F0A196"></div><div class="n">--fail-line</div><div class="h">#F0A196 · tag border, decorative</div></div>
+        </div>
+        <div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+          <div style="font-weight: 700; color: #565C65">NOT FOUND · SKIPPED</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+            <div class="sw"><div class="b" style="background: #F0F0F0; color: #565C65">Aa</div><div class="n">--none on --none-tint</div><div class="h">#565C65 base-dark / #F0F0F0 base-lightest</div><div class="u"><span class="ratio">5.9:1</span> <span class="ratio">6.7:1 on white</span></div></div>
+            <div class="sw"><div class="b" style="height: 14px; background: #A9AEB1; margin-top: 42px"></div><div class="n">--none-line</div><div class="h">#A9AEB1 · base-light</div></div>
+          </div>
+          <div class="u" style="font-size: 12px; color: var(--ink-3)">NOT FOUND counts as a problem and takes the FAIL colours; SKIPPED is neutral grey. Same shape, different word and glyph.</div>
+        </div>
+      </div>
+      <p style="font-size: 14px; color: var(--ink-2); text-wrap: pretty">Colour-blind check: the three verdict texts sit at L* 40, 35 and 38 on tints of L* 95, 96 and 91, and their hues are more than 90° apart, but no screen relies on it: every tag carries a word and a glyph, every pin a number, every banner a headline.</p>
+    </section>
+
+    <section class="sec">
+      <h2>Dark theme (optional, same contrast rules)</h2>
+      <div class="card dark" style="padding: 18px 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 16px">
+        <div class="sw"><div class="b" style="background: #121417; border-color: #363B44"></div><div class="n">--ground</div><div class="h">#121417</div></div>
+        <div class="sw"><div class="b" style="background: #1A1D22; border-color: #363B44"></div><div class="n">--surface</div><div class="h">#1A1D22</div></div>
+        <div class="sw"><div class="b" style="background: #23272D; border-color: #363B44"></div><div class="n">--surface-2</div><div class="h">#23272D</div></div>
+        <div class="sw"><div class="b" style="background: #363B44"></div><div class="n">--line</div><div class="h">#363B44</div><div class="u">--line-strong #7C838D <span class="ratio">4.4:1</span></div></div>
+        <div class="sw"><div class="b" style="background: #1A1D22; color: #ECEEF1; border-color: #363B44">Aa</div><div class="n">--ink</div><div class="h">#ECEEF1</div><div class="u"><span class="ratio">14.5:1</span></div></div>
+        <div class="sw"><div class="b" style="background: #1A1D22; color: #B9BFC8; border-color: #363B44">Aa</div><div class="n">--ink-2</div><div class="h">#B9BFC8</div><div class="u"><span class="ratio">9.1:1</span></div></div>
+        <div class="sw"><div class="b" style="background: #1A1D22; color: #9AA1AB; border-color: #363B44">Aa</div><div class="n">--ink-3</div><div class="h">#9AA1AB</div><div class="u"><span class="ratio">6.5:1</span></div></div>
+        <div class="sw"><div class="b" style="background: #1C2A47; color: #8DB0FF">Aa</div><div class="n">--action / --action-tint</div><div class="h">#8DB0FF / #1C2A47</div><div class="u"><span class="ratio">6.7:1</span> <span class="ratio">7.9:1 on surface</span> · header stays #162E51</div></div>
+        <div class="sw"><div class="b" style="background: #15311F; color: #8AD6A6">Aa</div><div class="n">--pass / --pass-tint</div><div class="h">#8AD6A6 / #15311F</div><div class="u"><span class="ratio">8.2:1</span> fill #3DA06A, dark text <span class="ratio">5.7:1</span></div></div>
+        <div class="sw"><div class="b" style="background: #3A2A0A; color: #F2C56A">Aa</div><div class="n">--review / --review-tint</div><div class="h">#F2C56A / #3A2A0A</div><div class="u"><span class="ratio">8.6:1</span> fill #D9A030, dark text <span class="ratio">7.9:1</span></div></div>
+        <div class="sw"><div class="b" style="background: #401B19; color: #F5A39C">Aa</div><div class="n">--fail / --fail-tint</div><div class="h">#F5A39C / #401B19</div><div class="u"><span class="ratio">7.6:1</span> fill #E0635C, dark text <span class="ratio">5.4:1</span></div></div>
+        <div class="sw"><div class="b" style="background: #2A2F36; color: #B6BDC6">Aa</div><div class="n">--none / --none-tint</div><div class="h">#B6BDC6 / #2A2F36</div><div class="u"><span class="ratio">7.1:1</span></div></div>
+      </div>
+    </section>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 24px">
+      <section class="sec">
+        <h2>Type</h2>
+        <p style="font-size: 14px; color: var(--ink-2)">Public Sans, the USWDS typeface (open licence, bundled as woff2 400/600/700 in /static/fonts), falling back to Segoe UI on locked-down Windows desktops. Numbers use <span style="font-family: var(--mono); font-size: 13px">font-variant-numeric: tabular-nums</span>. Root is 17 px, the USWDS body size; at 125% browser zoom that is 21 px and every layout still fits 1280 px.</p>
+        <div class="card" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; align-items: baseline; gap: 14px"><span style="font-size: 30px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15">Headline 30/1.15</span><span class="ratio">--fs-6 · page titles</span></div>
+          <div style="display: flex; align-items: baseline; gap: 14px"><span style="font-size: 24px; font-weight: 700; line-height: 1.2">Banner 24/1.2</span><span class="ratio">--fs-5 · status banner headline</span></div>
+          <div style="display: flex; align-items: baseline; gap: 14px"><span style="font-size: 20px; font-weight: 700; line-height: 1.3">Section 20/1.3</span><span class="ratio">--fs-4 · card and section headings</span></div>
+          <div style="display: flex; align-items: baseline; gap: 14px"><span style="font-size: 17px; line-height: 1.5">Body 17/1.5, the default for reasons, forms and tables</span><span class="ratio">--fs-3</span></div>
+          <div style="display: flex; align-items: baseline; gap: 14px"><span style="font-size: 16px; line-height: 1.5">Body narrow 16/1.5, under 640 px</span><span class="ratio">--fs-2</span></div>
+          <div style="display: flex; align-items: baseline; gap: 14px"><span style="font-size: 14px; line-height: 1.45; font-weight: 600">Label 14/1.45 semibold: field labels, table headers</span><span class="ratio">--fs-1</span></div>
+          <div style="display: flex; align-items: baseline; gap: 14px"><span style="font-size: 13px; line-height: 1.4; color: var(--ink-3)">Caption 13/1.4: timings, file names, identifier strip, never below this</span><span class="ratio">--fs-0</span></div>
+          <div style="display: flex; align-items: baseline; gap: 14px"><span style="font-family: var(--mono); font-size: 15px">Mono 15 · 45% · 750 mL · 0.9 s · APP-0042</span><span class="ratio">--mono</span></div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>Space, radius, elevation, motion</h2>
+        <div class="card" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px">
+          <div>
+            <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 8px">Spacing · 4 px base, USWDS units 0.5 to 6</div>
+            <div style="display: flex; align-items: flex-end; gap: 10px">
+              <div style="width: 4px; height: 4px; background: var(--action)"></div><div style="width: 8px; height: 8px; background: var(--action)"></div><div style="width: 12px; height: 12px; background: var(--action)"></div><div style="width: 16px; height: 16px; background: var(--action)"></div><div style="width: 24px; height: 24px; background: var(--action)"></div><div style="width: 32px; height: 32px; background: var(--action)"></div><div style="width: 48px; height: 48px; background: var(--action)"></div>
+              <span class="ratio" style="align-self: center">--sp-1…7: 4 8 12 16 24 32 48</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 8px">Radius · square, like USWDS</div>
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+              <div style="width: 44px; height: 32px; border: 2px solid var(--ink-2); border-radius: 3px"></div><span class="ratio">--r-s 3 · tags, pins, code</span>
+              <div style="width: 44px; height: 32px; border: 2px solid var(--ink-2); border-radius: 4px"></div><span class="ratio">--r-m 4 · buttons, inputs, banners</span>
+              <div style="width: 44px; height: 32px; border: 2px solid var(--ink-2); border-radius: 8px"></div><span class="ratio">--r-l 8 · cards, drawer, dialog</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 8px">Elevation</div>
+            <div style="display: flex; gap: 16px; align-items: center">
+              <div style="width: 80px; height: 48px; background: #fff; border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 1px 2px rgba(20,24,30,.06)"></div><span class="ratio">--sh-1 cards</span>
+              <div style="width: 80px; height: 48px; background: #fff; border-radius: 4px; box-shadow: 0 4px 16px rgba(20,24,30,.10)"></div><span class="ratio">--sh-2 toasts, menus</span>
+              <div style="width: 80px; height: 48px; background: #fff; border-radius: 4px; box-shadow: 0 16px 40px rgba(20,24,30,.18)"></div><span class="ratio">--sh-3 drawer, dialog</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 8px">Motion</div>
+            <div style="font-size: 14px; color: var(--ink-2); display: flex; flex-direction: column; gap: 4px">
+              <span><span class="ratio">--dur-1 120 ms</span> hover, focus, tag swap</span>
+              <span><span class="ratio">--dur-2 200 ms</span> row expand, highlight on the label</span>
+              <span><span class="ratio">--dur-3 320 ms</span> verdict reveal (banner fades, rows stagger 40 ms), drawer slide</span>
+              <span><span class="ratio">--ease cubic-bezier(.2,.7,.2,1)</span> one curve for everything; <span style="font-family: var(--mono); font-size: 13px">prefers-reduced-motion</span> sets all to 0 ms and removes the stagger</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="sec">
+      <h2>Paste into style.css</h2>
+<pre>:root {
+  /* ground and ink (USWDS: base-lightest, ink, base-darker, base-dark, base) */
+  --ground: #F1F1EF;  --surface: #FFFFFF;  --surface-2: #EDEEF0;
+  --line: #DCDEE0;    --line-strong: #71767A;
+  --ink: #1B1B1B;     --ink-2: #3D4551;    --ink-3: #565C65;
+  /* brand and action (USWDS primary-darker, primary, primary-dark, primary-lighter) */
+  --brand: #162E51;   --action: #005EA2;   --action-hover: #1A4480;  --action-tint: #D9E8F6;  --focus: #005EA2;
+  /* verdicts: text / tint / line / fill */
+  --pass: #216E1F;    --pass-tint: #ECF3EC;    --pass-line: #9BD4A2;    --pass-fill: #2E7D32;   --pass-fill-ink: #FFFFFF;
+  --review: #7A4D06;  --review-tint: #FAF3D1;  --review-line: #E9C06B;  --review-fill: #8B5A00; --review-fill-ink: #FFFFFF;
+  --fail: #B50909;    --fail-tint: #F4E3DB;    --fail-line: #F0A196;    --fail-fill: #B50909;   --fail-fill-ink: #FFFFFF;
+  --none: #565C65;    --none-tint: #F0F0F0;    --none-line: #A9AEB1;
+  /* type */
+  --font: "Public Sans", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  --fs-0: 13px; --fs-1: 14px; --fs-2: 16px; --fs-3: 17px; --fs-4: 20px; --fs-5: 24px; --fs-6: 30px;
+  /* space, radius, elevation, motion */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+  --r-s: 3px; --r-m: 4px; --r-l: 8px;
+  --sh-1: 0 1px 2px rgba(20,24,30,.06); --sh-2: 0 4px 16px rgba(20,24,30,.10); --sh-3: 0 16px 40px rgba(20,24,30,.18);
+  --dur-1: 120ms; --dur-2: 200ms; --dur-3: 320ms; --ease: cubic-bezier(.2,.7,.2,1);
+}
+@font-face { font-family: "Public Sans"; font-weight: 400; src: url(/static/fonts/PublicSans-Regular.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: "Public Sans"; font-weight: 600; src: url(/static/fonts/PublicSans-SemiBold.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: "Public Sans"; font-weight: 700; src: url(/static/fonts/PublicSans-Bold.woff2) format("woff2"); font-display: swap; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ground: #121417; --surface: #1A1D22; --surface-2: #23272D; --line: #363B44; --line-strong: #7C838D;
+  --ink: #ECEEF1; --ink-2: #B9BFC8; --ink-3: #9AA1AB; --brand: #162E51; --action: #8DB0FF; --action-hover: #B3CAFF; --action-tint: #1C2A47; --focus: #8DB0FF;
+  --pass: #8AD6A6; --pass-tint: #15311F; --pass-line: #2E6B45; --pass-fill: #3DA06A; --pass-fill-ink: #121417;
+  --review: #F2C56A; --review-tint: #3A2A0A; --review-line: #7A5A16; --review-fill: #D9A030; --review-fill-ink: #121417;
+  --fail: #F5A39C; --fail-tint: #401B19; --fail-line: #7E3530; --fail-fill: #E0635C; --fail-fill-ink: #121417;
+  --none: #B6BDC6; --none-tint: #2A2F36; --none-line: #4A515B;
+  --sh-1: 0 1px 2px rgba(0,0,0,.4); --sh-2: 0 4px 16px rgba(0,0,0,.5); --sh-3: 0 16px 40px rgba(0,0,0,.6); } }
+[data-theme="dark"] { /* repeat the dark values above here, for an explicit toggle in the header */ }
+@media (prefers-reduced-motion: reduce) { :root { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; } }</pre>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

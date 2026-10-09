@@ -8,4 +8,4 @@ __pycache__/
 /.env
 .claude/
 prompts/
-.tesseract/
+.tesseract

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Check a batch, progress</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--action-hover:#1A4480;--action-tint:#D9E8F6;--focus:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--review-fill:#8B5A00;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--sh-1:0 1px 2px rgba(20,24,30,.06);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}a:hover{color:var(--action-hover)}
+h1,h2,h3,h4,p{margin:0}
+button,input,select{font:inherit}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:4px;border:2px solid var(--action);background:var(--action);color:#fff;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--action-hover);border-color:var(--action-hover)}
+.btn.secondary{background:var(--surface);color:var(--action)}
+.btn.secondary:hover{background:var(--action-tint)}
+.btn.danger{background:var(--surface);color:var(--fail);border-color:var(--fail)}
+.btn.small{min-height:36px;font-size:14px;padding:0 12px;border-radius:4px}
+.btn.icon{min-height:40px;min-width:40px;padding:0;background:transparent;border-color:rgba(255,255,255,.35);color:#fff;border-radius:999px}
+.tab{min-height:48px;padding:0 4px;margin-right:24px;border:0;background:none;font-weight:600;font-size:17px;color:var(--ink-2);border-bottom:3px solid transparent;cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--action)}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 7px;border-radius:3px;border:1px solid;font-size:12px;font-weight:700;white-space:nowrap;line-height:1}
+.chip .i{width:11px;height:11px;flex:none}
+.chip.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.chip.review{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.chip.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.chip.none{background:var(--none-tint);color:var(--none);border-color:var(--none-line)}
+.kv{display:flex;gap:6px;align-items:baseline;font-size:14.5px}
+.kv span:first-child{color:var(--ink-3);font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.bar{height:14px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden;position:relative}
+.bar .f{height:100%;background:var(--action);border-radius:999px;transition:width .4s cubic-bezier(.2,.7,.2,1)}
+.tally{display:flex;flex-direction:column;gap:2px;padding:10px 14px;border-radius:8px;border:1px solid var(--line);min-width:120px}
+.tally b{font-size:26px;font-family:var(--mono);font-weight:600;line-height:1.1}
+.tally span{font-size:13px;font-weight:600}
+.tally.review{background:var(--review-tint);border-color:var(--review-line);color:var(--review)}
+.tally.fail{background:var(--fail-tint);border-color:var(--fail-line);color:var(--fail)}
+.tally.pass{background:var(--pass-tint);border-color:var(--pass-line);color:var(--pass)}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-size:12.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:2px solid var(--line);background:var(--surface-2);white-space:nowrap}
+td{padding:0 10px;height:40px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14.5px;white-space:nowrap}
+.sk{display:inline-block;height:12px;border-radius:4px;background:linear-gradient(90deg,var(--surface-2) 25%,#E6E5E0 37%,var(--surface-2) 63%);background-size:400% 100%;animation:sk 1.4s ease infinite}
+@keyframes sk{0%{background-position:100% 0}100%{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}.bar .f{transition:none}}
+</style>
+</helmet>
+<div style="min-height: 1020px; display: flex; flex-direction: column">
+  <div style="background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; border-bottom: 1px solid var(--line)">
+    <div style="max-width: 1240px; margin: 0 auto; padding: 4px 24px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+      <span style="font-weight: 700; color: var(--ink)">Label Check</span><span aria-hidden="true">·</span><span>COLA compliance review</span><span aria-hidden="true">·</span><span>Prototype</span>
+      <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Internal tool · sample data only</span>
+    </div>
+  </div>
+  <header style="background: var(--brand); color: #fff">
+    <div style="max-width: 1240px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+      <span style="display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 6px; background: #fff; color: var(--brand)" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/></svg></span>
+      <div><h1 style="font-size: 20px; font-weight: 700; line-height: 1.2">Label Check</h1><p style="font-size: 13.5px; opacity: .85">Verify a label against its COLA (Certificate of Label Approval) application.</p></div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13.5px; color: #C9D4E6">
+        <span>Local OCR · Tesseract 5.5.0 · nothing you upload is stored</span>
+        <button class="btn icon" type="button" aria-label="How it works (help)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8"/><path d="M12 17h.01"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main style="max-width: 1240px; width: 100%; margin: 0 auto; padding: 8px 24px 40px; display: flex; flex-direction: column; gap: 20px">
+    <nav aria-label="Mode" style="display: flex; border-bottom: 1px solid var(--line)">
+      <button class="tab" type="button" role="tab" aria-selected="false">Check one label</button>
+      <button class="tab on" type="button" role="tab" aria-selected="true">Check a batch</button>
+    </nav>
+
+    <div class="card" style="padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center">
+      <div style="display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: baseline; flex: 1 1 560px; min-width: 0">
+        <div class="kv"><span>Batch</span><strong>Sample batch</strong></div>
+        <div class="kv"><span>CSV</span><span style="font-family: var(--mono); font-size: 13.5px">sample_batch.csv · 250 rows</span></div>
+        <div class="kv"><span>Images</span><span style="font-family: var(--mono); font-size: 13.5px">sample_batch.zip · 250 files</span></div>
+        <div class="kv"><span>File issues</span><span>none</span></div>
+        <div class="kv"><span>Started</span><span style="font-family: var(--mono); font-size: 13.5px">14:02:11</span></div>
+      </div>
+      <button class="btn danger small" type="button">Stop the batch</button>
+    </div>
+
+    <section class="card" aria-live="polite" aria-busy="true" style="padding: 20px 24px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap">
+        <h2 style="font-size: 22px; font-weight: 700">Checking 250 labels…</h2>
+        <div style="font-family: var(--mono); font-size: 15px; color: var(--ink-2)"><b style="color: var(--ink); font-weight: 600">132</b> of 250 · 40 s elapsed · about <b style="color: var(--ink); font-weight: 600">35 s</b> left</div>
+      </div>
+      <div class="bar" role="progressbar" aria-valuenow="132" aria-valuemin="0" aria-valuemax="250" aria-label="Labels checked"><div class="f" style="width: 52.8%"></div></div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch">
+        <div class="tally review"><b>9</b><span>need a look so far</span></div>
+        <div class="tally fail"><b>21</b><span>problems so far</span></div>
+        <div class="tally pass"><b>102</b><span>pass so far</span></div>
+        <div style="flex: 1 1 260px; display: flex; flex-direction: column; justify-content: center; gap: 4px; font-size: 14px; color: var(--ink-2); padding-left: 8px">
+          <span><b style="color: var(--ink); font-weight: 600">0.3 s</b> per label across 4 workers · reading 1.2 s, comparing 0.01 s per label</span>
+          <span>The estimate uses the measured rate so far. You can start reviewing now; the queue keeps growing until the batch ends.</span>
+        </div>
+        <button class="btn" type="button" style="align-self: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>Start reviewing the 9</button>
+      </div>
+    </section>
+
+    <section class="card" style="padding: 0; overflow: hidden">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap">
+        <strong style="font-size: 15px">Results so far, needs-a-look first</strong>
+        <span style="font-size: 13.5px; color: var(--ink-3)">Filters, search and export unlock when the batch finishes · new rows are added at the bottom, your place is kept</span>
+      </div>
+      <div style="overflow-x: auto">
+        <table>
+          <thead><tr><th>Application</th><th>Brand</th><th>Result</th><th>Brand</th><th>Type</th><th>Alcohol</th><th>Net</th><th>Bottler</th><th>Origin</th><th>Warning</th><th style="text-align: right">Time</th></tr></thead>
+          <tbody>
+            <tr><td style="font-family: var(--mono)">APP-0003</td><td>Granite Barrel Brewery</td><td><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>Review</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip none">—</span></td><td><span class="chip review">Review</span></td><td style="text-align: right; font-family: var(--mono)">1.5 s</td></tr>
+            <tr><td style="font-family: var(--mono)">APP-0016</td><td>Silver Mountain Brewery</td><td><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>Review</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip none">—</span></td><td><span class="chip review">Review</span></td><td style="text-align: right; font-family: var(--mono)">1.3 s</td></tr>
+            <tr><td style="font-family: var(--mono)">APP-0033</td><td>Copper Mill Cellars</td><td><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>Review</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip review">Near</span></td><td><span class="chip pass">Match</span></td><td><span class="chip none">—</span></td><td><span class="chip pass">Pass</span></td><td style="text-align: right; font-family: var(--mono)">1.2 s</td></tr>
+            <tr><td style="font-family: var(--mono)">APP-0047</td><td>Iron River Vineyards</td><td><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>Review</span></td><td><span class="chip review">Near</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip none">—</span></td><td><span class="chip pass">Pass</span></td><td style="text-align: right; font-family: var(--mono)">1.1 s</td></tr>
+            <tr><td style="font-family: var(--mono)">APP-0004</td><td>Red Ridge Distillery</td><td><span class="chip fail"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>Fail</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip fail">Fail</span></td><td style="text-align: right; font-family: var(--mono)">1.4 s</td></tr>
+            <tr><td style="font-family: var(--mono)">APP-0006</td><td>Silver River Winery</td><td><span class="chip fail"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>Fail</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip fail">Mismatch</span></td><td><span class="chip pass">Match</span></td><td><span class="chip none">—</span></td><td><span class="chip pass">Pass</span></td><td style="text-align: right; font-family: var(--mono)">1.2 s</td></tr>
+            <tr><td style="font-family: var(--mono)">APP-0001</td><td>Old Barrel Vineyards</td><td><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>Pass</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip none">—</span></td><td><span class="chip pass">Pass</span></td><td style="text-align: right; font-family: var(--mono)">1.7 s</td></tr>
+            <tr><td style="font-family: var(--mono)">APP-0002</td><td>Cedar Compass Cellars</td><td><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>Pass</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip pass">Match</span></td><td><span class="chip none">—</span></td><td><span class="chip pass">Pass</span></td><td style="text-align: right; font-family: var(--mono)">1.6 s</td></tr>
+            <tr><td style="font-family: var(--mono)">APP-0133</td><td><span class="sk" style="width: 140px"></span></td><td><span class="sk" style="width: 60px; height: 22px; border-radius: 999px"></span></td><td><span class="sk" style="width: 48px"></span></td><td><span class="sk" style="width: 48px"></span></td><td><span class="sk" style="width: 48px"></span></td><td><span class="sk" style="width: 48px"></span></td><td><span class="sk" style="width: 48px"></span></td><td><span class="sk" style="width: 20px"></span></td><td><span class="sk" style="width: 40px"></span></td><td style="text-align: right; color: var(--ink-3); font-size: 13px">reading…</td></tr>
+            <tr><td colspan="11" style="height: 44px; color: var(--ink-3); font-size: 13.5px; text-align: center; white-space: normal">118 more labels still to check · rows appear here as they finish</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1020}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

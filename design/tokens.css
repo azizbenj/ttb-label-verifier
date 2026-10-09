@@ -1,0 +1,35 @@
+/* Label Check design tokens. Source: design/boards/Tokens.html and the canvas. Paste at the top of app/static/style.css. */
+:root {
+  /* ground and ink (USWDS: base-lightest, ink, base-darker, base-dark, base) */
+  --ground: #F1F1EF;  --surface: #FFFFFF;  --surface-2: #EDEEF0;
+  --line: #DCDEE0;    --line-strong: #71767A;
+  --ink: #1B1B1B;     --ink-2: #3D4551;    --ink-3: #565C65;
+  /* brand and action (USWDS primary-darker, primary, primary-dark, primary-lighter) */
+  --brand: #162E51;   --action: #005EA2;   --action-hover: #1A4480;  --action-tint: #D9E8F6;  --focus: #005EA2;
+  /* verdicts: text / tint / line / fill */
+  --pass: #216E1F;    --pass-tint: #ECF3EC;    --pass-line: #9BD4A2;    --pass-fill: #2E7D32;   --pass-fill-ink: #FFFFFF;
+  --review: #7A4D06;  --review-tint: #FAF3D1;  --review-line: #E9C06B;  --review-fill: #8B5A00; --review-fill-ink: #FFFFFF;
+  --fail: #B50909;    --fail-tint: #F4E3DB;    --fail-line: #F0A196;    --fail-fill: #B50909;   --fail-fill-ink: #FFFFFF;
+  --none: #565C65;    --none-tint: #F0F0F0;    --none-line: #A9AEB1;
+  /* type */
+  --font: "Public Sans", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  --fs-0: 13px; --fs-1: 14px; --fs-2: 16px; --fs-3: 17px; --fs-4: 20px; --fs-5: 24px; --fs-6: 30px;
+  /* space, radius, elevation, motion */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+  --r-s: 3px; --r-m: 4px; --r-l: 8px;
+  --sh-1: 0 1px 2px rgba(20,24,30,.06); --sh-2: 0 4px 16px rgba(20,24,30,.10); --sh-3: 0 16px 40px rgba(20,24,30,.18);
+  --dur-1: 120ms; --dur-2: 200ms; --dur-3: 320ms; --ease: cubic-bezier(.2,.7,.2,1);
+}
+@font-face { font-family: "Public Sans"; font-weight: 400; src: url(/static/fonts/PublicSans-Regular.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: "Public Sans"; font-weight: 600; src: url(/static/fonts/PublicSans-SemiBold.woff2) format("woff2"); font-display: swap; }
+@font-face { font-family: "Public Sans"; font-weight: 700; src: url(/static/fonts/PublicSans-Bold.woff2) format("woff2"); font-display: swap; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ground: #121417; --surface: #1A1D22; --surface-2: #23272D; --line: #363B44; --line-strong: #7C838D;
+  --ink: #ECEEF1; --ink-2: #B9BFC8; --ink-3: #9AA1AB; --brand: #162E51; --action: #8DB0FF; --action-hover: #B3CAFF; --action-tint: #1C2A47; --focus: #8DB0FF;
+  --pass: #8AD6A6; --pass-tint: #15311F; --pass-line: #2E6B45; --pass-fill: #3DA06A; --pass-fill-ink: #121417;
+  --review: #F2C56A; --review-tint: #3A2A0A; --review-line: #7A5A16; --review-fill: #D9A030; --review-fill-ink: #121417;
+  --fail: #F5A39C; --fail-tint: #401B19; --fail-line: #7E3530; --fail-fill: #E0635C; --fail-fill-ink: #121417;
+  --none: #B6BDC6; --none-tint: #2A2F36; --none-line: #4A515B;
+  --sh-1: 0 1px 2px rgba(0,0,0,.4); --sh-2: 0 4px 16px rgba(0,0,0,.5); --sh-3: 0 16px 40px rgba(0,0,0,.6); } }
+[data-theme="dark"] { /* repeat the dark values above here, for an explicit toggle in the header */ }
+@media (prefers-reduced-motion: reduce) { :root { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; } }

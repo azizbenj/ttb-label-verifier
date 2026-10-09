@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>390 px, single result</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--action-hover:#1A4480;--action-tint:#D9E8F6;--focus:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--review-fill:#8B5A00;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--sh-1:0 1px 2px rgba(20,24,30,.06);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}a:hover{color:var(--action-hover)}
+h1,h2,h3,h4,p{margin:0}
+button,input,select{font:inherit}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border-radius:4px;border:2px solid var(--action);background:var(--action);color:#fff;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.secondary{background:var(--surface);color:var(--action)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--action)}
+.btn.small{min-height:36px;font-size:14px;padding:0 12px}
+.btn.icon{min-height:40px;min-width:40px;padding:0;background:transparent;border-color:rgba(255,255,255,.35);color:#fff;border-radius:999px}
+.tab{min-height:44px;padding:0 2px;margin-right:18px;border:0;background:none;font-weight:600;font-size:16px;color:var(--ink-2);border-bottom:3px solid transparent;cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--action)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:3px;border:1px solid;font-size:12.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap;line-height:1}
+.chip .i{width:13px;height:13px;flex:none}
+.chip.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.chip.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.chip.none{background:var(--none-tint);color:var(--none);border-color:var(--none-line)}
+.row{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.row.bad{background:#FBF0EC}
+.row .top{display:flex;align-items:center;gap:10px}
+.row .top .k{font-weight:600;font-size:15.5px;flex:1}
+.vals{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:14.5px}
+.vals span:nth-child(odd){font-size:11.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em;font-weight:600;padding-top:3px}
+.why{font-size:13.5px;color:var(--ink-2)}
+.why.bad{color:var(--fail);font-weight:600}
+.pin{width:24px;height:24px;border-radius:999px;color:#fff;font-size:12.5px;font-weight:700;display:grid;place-items:center;font-family:var(--mono);flex:none;border:0;background:var(--pass-fill)}
+.pin.fail{background:var(--fail-fill)}.pin.none{background:var(--none)}
+.hl{position:absolute;border:2px solid var(--pass-fill);border-radius:3px}
+.hl.fail{border-color:var(--fail-fill);border-width:3px;background:rgba(181,9,9,.12)}
+.hl .n{position:absolute;left:-10px;top:-10px;width:20px;height:20px;border-radius:999px;background:var(--pass-fill);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;font-family:var(--mono)}
+.hl.fail .n{background:var(--fail-fill)}
+.check{display:flex;align-items:flex-start;gap:8px;font-size:14.5px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.check .chip{min-width:92px;justify-content:center}
+</style>
+</helmet>
+<div style="min-height: 1720px; display: flex; flex-direction: column">
+  <div style="background: var(--surface-2); color: var(--ink-2); font-size: 12px; border-bottom: 1px solid var(--line); padding: 4px 16px; display: flex; justify-content: space-between; gap: 8px"><span><strong style="color: var(--ink)">Label Check</strong> · Prototype</span><span>Sample data only</span></div>
+  <header style="background: var(--brand); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 10px">
+    <span style="display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 6px; background: #fff; color: var(--brand); flex: none" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/></svg></span>
+    <h1 style="font-size: 18px; font-weight: 700; line-height: 1.2; flex: 1">Label Check</h1>
+    <button class="btn icon" type="button" aria-label="How it works (help)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8"/><path d="M12 17h.01"/></svg></button>
+  </header>
+
+  <main style="padding: 0 16px 28px; display: flex; flex-direction: column; gap: 14px">
+    <nav aria-label="Mode" style="display: flex; border-bottom: 1px solid var(--line)">
+      <button class="tab on" type="button">One label</button>
+      <button class="tab" type="button">Batch</button>
+    </nav>
+
+    <div class="card" style="padding: 10px 14px; display: flex; align-items: center; gap: 10px">
+      <div style="flex: 1; min-width: 0; font-size: 14px"><div style="font-family: var(--mono); font-size: 12.5px; color: var(--ink-3)">SAMPLE-0005</div><strong>OLD TOM DISTILLERY</strong><div style="font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Kentucky Straight Bourbon Whiskey · wrong_abv.png</div></div>
+      <button class="btn secondary small" type="button">Edit</button>
+    </div>
+
+    <section role="status" class="card" style="padding: 0; overflow: hidden; display: flex; flex-direction: column">
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 14px 12px; border-bottom: 1px solid var(--fail-line); background: var(--fail-tint)">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <span style="width: 36px; height: 36px; border-radius: 999px; background: var(--fail-fill); color: #fff; display: grid; place-items: center; flex: none"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>
+          <h2 style="font-size: 20px; font-weight: 700; line-height: 1.2; color: var(--fail); flex: 1">Problems found</h2>
+          <span style="font-family: var(--mono); font-size: 15px; font-weight: 600">1.1 s</span>
+        </div>
+        <p style="font-size: 14.5px">1 problem: <a href="#row-abv" style="color: var(--fail); font-weight: 600">alcohol content</a>. Everything else matches and the government warning is correct.</p>
+      </div>
+
+      <div style="padding: 12px 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: flex-start">
+        <div style="position: relative; width: 150px; flex: none; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: #fff; aspect-ratio: 3/4">
+          <img src="/_blob/0d77b4214ed54d4f63043bf58d5494ce" alt="Old Tom Distillery label with numbered regions; region 3 is the problem." style="width: 100%; height: 100%; object-fit: cover; display: block">
+          <div class="hl" style="left: 8.5%; top: 9.5%; width: 83%; height: 5.6%"><span class="n">1</span></div>
+          <div class="hl" style="left: 19%; top: 18.8%; width: 62%; height: 8.6%"><span class="n">2</span></div>
+          <div class="hl fail" style="left: 26.5%; top: 31.6%; width: 47%; height: 4.8%"><span class="n">3</span></div>
+          <div class="hl" style="left: 41.5%; top: 36.2%; width: 17%; height: 3.6%"><span class="n">4</span></div>
+          <div class="hl" style="left: 13.5%; top: 42%; width: 73%; height: 5.4%"><span class="n">5</span></div>
+          <div class="hl" style="left: 8.5%; top: 71.8%; width: 83%; height: 16%"><span class="n">W</span></div>
+        </div>
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+          <div style="font-size: 13.5px; font-weight: 600">Where each value was read</div>
+          <div style="position: relative; width: 100%; height: 40px; overflow: hidden; border: 2px solid var(--fail-fill); border-radius: 3px; background: #fff"><img src="/_blob/0d77b4214ed54d4f63043bf58d5494ce" alt="Crop of the alcohol content line: 40% Alc./Vol. (80 Proof)" style="position: absolute; width: 380px; left: -90px; top: -152px"></div>
+          <div style="font-size: 12.5px; color: var(--ink-2)">Region 3, the problem. Tap any pin below to see its crop here.</div>
+          <button class="btn quiet small" type="button" style="align-self: flex-start; padding: 0 6px">Open full size</button>
+        </div>
+      </div>
+
+      <div style="padding: 10px 14px 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px"><h3 style="font-size: 15px; font-weight: 700">Mandatory label information</h3><span style="font-size: 12px; color: var(--ink-3)">27 CFR 4, 5, 7</span></div>
+      <div role="list">
+        <div class="row" role="listitem"><div class="top"><button class="pin" type="button" aria-label="Show brand name on the label">1</button><span class="k">Brand name</span><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span></div><div class="vals"><span>Application</span><span>OLD TOM DISTILLERY</span><span>Label</span><span>OLD TOM DISTILLERY</span></div><div class="why">Exact match.</div></div>
+        <div class="row" role="listitem"><div class="top"><button class="pin" type="button" aria-label="Show class and type on the label">2</button><span class="k">Class / type</span><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span></div><div class="vals"><span>Application</span><span>Kentucky Straight Bourbon Whiskey</span><span>Label</span><span>Kentucky Straight Bourbon Whiskey</span></div><div class="why">Exact match.</div></div>
+        <div class="row bad" role="listitem" id="row-abv"><div class="top"><button class="pin fail" type="button" aria-label="Show alcohol content on the label" aria-expanded="true">3</button><span class="k">Alcohol content</span><span class="chip fail"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>MISMATCH</span></div><div class="vals"><span>Application</span><span>45% Alc./Vol. (90 Proof)</span><span>Label</span><strong>40% Alc./Vol. (80 Proof)</strong></div><div class="why bad">Label says 40% ABV, application says 45% ABV.</div><div style="font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--fail-line); border-radius: 4px; padding: 8px 10px">45% = 90 proof · 40% = 80 proof · 5.0 points apart, allowed 0.05 · read confidence 96%</div></div>
+        <div class="row" role="listitem"><div class="top"><button class="pin" type="button" aria-label="Show net contents on the label">4</button><span class="k">Net contents</span><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span></div><div class="vals"><span>Application</span><span>750 mL</span><span>Label</span><span>750 mL</span></div><div class="why">750 mL on both.</div></div>
+        <div class="row" role="listitem"><div class="top"><button class="pin" type="button" aria-label="Show bottler on the label">5</button><span class="k">Bottler</span><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span></div><div class="vals"><span>Application</span><span>Old Tom Distillery, Bardstown, Kentucky 40004</span><span>Label</span><span>Old Tom Distillery, Bardstown, Kentucky 40004</span></div><div class="why">Exact match.</div></div>
+        <div class="row" role="listitem" style="color: var(--ink-2)"><div class="top"><span class="pin none" aria-hidden="true">–</span><span class="k">Country of origin</span><span class="chip none"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 8h8"/></svg>SKIPPED</span></div><div class="why">Not provided on the application, so not checked.</div></div>
+      </div>
+
+      <section style="margin: 12px 14px 16px; border: 1px solid var(--pass-line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><span class="pin">W</span><h3 style="font-size: 15.5px; font-weight: 700; flex: 1">Government warning</h3><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>PASS</span></div>
+        <div class="check"><span class="chip pass">PRESENT</span><span>Found on the label.</span></div>
+        <div class="check"><span class="chip pass">WORDING</span><span>Word for word.</span></div>
+        <div class="check"><span class="chip pass">CAPITALS</span><span>Heading in capitals.</span></div>
+        <div class="check" style="border-bottom: 0"><span class="chip pass">BOLD</span><span>Strokes 1.53× thicker than the text.</span></div>
+      </section>
+
+      <div style="display: flex; gap: 8px; padding: 0 14px 16px"><button class="btn secondary" type="button" style="flex: 1">Print report</button><button class="btn" type="button" style="flex: 1">Check another</button></div>
+    </section>
+    <p style="font-size: 12.5px; color: var(--ink-3)">Under 640 px the table becomes a list of cards (the table element stays in the DOM; CSS stacks the cells and prefixes them with their header), the label shrinks to a 150 px thumbnail beside the live crop, and the base font steps down to 16 px. No horizontal scroll anywhere.</p>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1720}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

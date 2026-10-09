@@ -1,0 +1,54 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-08T21:10:00Z"},
+  "title": "TTB Label Check Redesign",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1280, "h": 900, "title": "Direction", "expand": "fill"},
+    "Tokens.dc.html": {"x": 1360, "y": 0, "w": 1280, "h": 1760, "title": "Design tokens", "expand": "fill"},
+    "Components.dc.html": {"x": 2720, "y": 0, "w": 1280, "h": 2040, "title": "Component spec", "expand": "fill"},
+
+    "Single-Empty.dc.html": {"x": 0, "y": 2420, "w": 1280, "h": 1060, "title": "Single · empty", "expand": "fill"},
+    "Single-Loading.dc.html": {"x": 1360, "y": 2420, "w": 1280, "h": 1060, "title": "Single · reading", "expand": "fill"},
+    "Single-Pass.dc.html": {"x": 2720, "y": 2420, "w": 1280, "h": 1200, "title": "Single · PASS", "expand": "fill", "is_interactive": true},
+    "Single-Review.dc.html": {"x": 4080, "y": 2420, "w": 1280, "h": 1260, "title": "Single · REVIEW", "expand": "fill", "is_interactive": true},
+    "Single-Fail.dc.html": {"x": 5440, "y": 2420, "w": 1280, "h": 1300, "title": "Single · FAIL", "expand": "fill", "is_interactive": true},
+    "Evidence-Warning.dc.html": {"x": 6800, "y": 2420, "w": 1280, "h": 1300, "title": "Evidence · government warning", "expand": "fill", "is_interactive": true},
+
+    "Batch-Upload.dc.html": {"x": 0, "y": 4100, "w": 1280, "h": 1020, "title": "Batch · upload", "expand": "fill"},
+    "Batch-Progress.dc.html": {"x": 1360, "y": 4100, "w": 1280, "h": 1020, "title": "Batch · progress", "expand": "fill"},
+    "Batch-Results.dc.html": {"x": 2720, "y": 4100, "w": 1280, "h": 1340, "title": "Batch · results (triage)", "expand": "fill", "is_interactive": true},
+    "Review-Queue.dc.html": {"x": 4080, "y": 4100, "w": 1280, "h": 1140, "title": "Batch · review queue", "expand": "fill", "is_interactive": true},
+    "Batch-Export.dc.html": {"x": 5440, "y": 4100, "w": 1280, "h": 1340, "title": "Batch · export", "expand": "fill"},
+
+    "Help.dc.html": {"x": 0, "y": 5820, "w": 1280, "h": 1160, "title": "Help panel", "expand": "fill"},
+    "Errors.dc.html": {"x": 1360, "y": 5820, "w": 1280, "h": 1600, "title": "Error states", "expand": "fill"},
+    "Dark.dc.html": {"x": 2720, "y": 5820, "w": 1280, "h": 1300, "title": "Dark theme · FAIL", "expand": "fill", "is_interactive": true},
+    "Print.dc.html": {"x": 4080, "y": 5820, "w": 816, "h": 1056, "title": "Print report · Letter", "print": "flow", "paper": "letter"},
+
+    "Tablet-Single.dc.html": {"x": 0, "y": 7800, "w": 768, "h": 1520, "title": "768 · single result", "expand": "fill"},
+    "Narrow-Single.dc.html": {"x": 848, "y": 7800, "w": 390, "h": 1720, "title": "390 · single result", "expand": "fill"},
+    "Narrow-Batch.dc.html": {"x": 1318, "y": 7800, "w": 390, "h": 1520, "title": "390 · batch results", "expand": "fill"},
+
+    "Copy.dc.html": {"x": 0, "y": 9900, "w": 1280, "h": 1960, "title": "Copy for every state", "expand": "fill"},
+    "Implementation.dc.html": {"x": 1360, "y": 9900, "w": 1280, "h": 2160, "title": "Accessibility and template mapping", "expand": "fill"}
+  },
+  "order": [
+    "Main.dc.html", "Tokens.dc.html", "Components.dc.html",
+    "Single-Empty.dc.html", "Single-Loading.dc.html", "Single-Pass.dc.html", "Single-Review.dc.html", "Single-Fail.dc.html", "Evidence-Warning.dc.html",
+    "Batch-Upload.dc.html", "Batch-Progress.dc.html", "Batch-Results.dc.html", "Review-Queue.dc.html", "Batch-Export.dc.html",
+    "Help.dc.html", "Errors.dc.html", "Dark.dc.html", "Print.dc.html",
+    "Tablet-Single.dc.html", "Narrow-Single.dc.html", "Narrow-Batch.dc.html",
+    "Copy.dc.html", "Implementation.dc.html"
+  ],
+  "notes": {
+    "t1": {"kind": "title1", "x": 0, "y": -260, "text": "1 · Direction, tokens, components", "maxW": 4000},
+    "t2": {"kind": "title1", "x": 0, "y": 2160, "text": "2 · Check one label · 1280 px", "maxW": 8080},
+    "t3": {"kind": "title1", "x": 0, "y": 3840, "text": "3 · Check a batch · 1280 px", "maxW": 6720},
+    "t4": {"kind": "title1", "x": 0, "y": 5560, "text": "4 · Help, errors, dark theme, print", "maxW": 4900},
+    "t5": {"kind": "title1", "x": 0, "y": 7540, "text": "5 · Narrow · 768 and 390 px", "maxW": 1710},
+    "t6": {"kind": "title1", "x": 0, "y": 9640, "text": "6 · Copy and implementation notes", "maxW": 2640}
+  },
+  "designSystems": []
+}

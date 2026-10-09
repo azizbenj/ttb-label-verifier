@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Check a batch, results triage</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--action-hover:#1A4480;--action-tint:#D9E8F6;--focus:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--review-fill:#8B5A00;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--sh-1:0 1px 2px rgba(20,24,30,.06);--sh-2:0 4px 16px rgba(20,24,30,.10);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}a:hover{color:var(--action-hover)}
+h1,h2,h3,h4,p{margin:0}
+button,input,select{font:inherit}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:4px;border:2px solid var(--action);background:var(--action);color:#fff;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--action-hover);border-color:var(--action-hover)}
+.btn.secondary{background:var(--surface);color:var(--action)}
+.btn.secondary:hover{background:var(--action-tint)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--action)}
+.btn.danger{background:var(--surface);color:var(--fail);border-color:var(--fail)}
+.btn.small{min-height:36px;font-size:14px;padding:0 12px;border-radius:4px}
+.btn.icon{min-height:40px;min-width:40px;padding:0;background:transparent;border-color:rgba(255,255,255,.35);color:#fff;border-radius:999px}
+.btn:focus-visible,.fchip:focus-visible,tr.r:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.tab{min-height:48px;padding:0 4px;margin-right:24px;border:0;background:none;font-weight:600;font-size:17px;color:var(--ink-2);border-bottom:3px solid transparent;cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--action)}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 7px;border-radius:3px;border:1px solid;font-size:12px;font-weight:700;white-space:nowrap;line-height:1}
+.chip.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.chip.review{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.chip.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.chip.none{background:var(--none-tint);color:var(--none);border-color:var(--none-line)}
+.chip.lg{height:28px;padding:0 10px;font-size:13px;gap:6px}
+.chip .i{width:11px;height:11px;flex:none}
+.chip.lg .i{width:14px;height:14px}
+.fchip{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border-radius:4px;border:2px solid var(--line);background:var(--surface);font-weight:600;font-size:15px;cursor:pointer;color:var(--ink)}
+.fchip b{font-family:var(--mono);font-weight:600}
+.fchip.on{border-color:var(--ink)}
+.fchip.review.on{background:var(--review-tint);border-color:var(--review);color:var(--review)}
+.fchip.fail.on{background:var(--fail-tint);border-color:var(--fail);color:var(--fail)}
+.fchip.pass.on{background:var(--pass-tint);border-color:var(--pass);color:var(--pass)}
+.input{min-height:40px;padding:8px 12px 8px 36px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink);font-size:15px;width:100%}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-size:12.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:2px solid var(--line);background:var(--surface-2);white-space:nowrap;position:sticky;top:0}
+td{padding:0 10px;height:40px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14.5px;white-space:nowrap}
+tr.r{cursor:pointer}
+tr.r:hover td{background:#F1F5F9}
+tr.r.sel td{background:var(--action-tint)}
+tr.r.cur td{box-shadow:inset 0 0 0 2px var(--action)}
+.kbd{display:inline-block;min-width:22px;padding:1px 6px;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:5px;background:var(--surface);font-family:var(--mono);font-size:12px;line-height:18px;color:var(--ink-2);text-align:center}
+.kv{display:flex;gap:6px;align-items:baseline;font-size:14.5px}
+.kv span:first-child{color:var(--ink-3);font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px}
+.dl dt{color:var(--ink-3);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin:0}
+.dl dd{margin:0}
+.bulk{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--ink);color:#fff;border-radius:10px;box-shadow:var(--sh-2);font-size:14.5px}
+.bulk .btn{min-height:36px;font-size:14px;padding:0 12px;border-radius:6px;background:transparent;border-color:rgba(255,255,255,.4);color:#fff}
+.bulk .btn:hover{background:rgba(255,255,255,.12)}
+</style>
+</helmet>
+<div style="min-height: 1340px; display: flex; flex-direction: column">
+  <div style="background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; border-bottom: 1px solid var(--line)">
+    <div style="max-width: 1240px; margin: 0 auto; padding: 4px 24px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+      <span style="font-weight: 700; color: var(--ink)">Label Check</span><span aria-hidden="true">·</span><span>COLA compliance review</span><span aria-hidden="true">·</span><span>Prototype</span>
+      <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Internal tool · sample data only</span>
+    </div>
+  </div>
+  <header style="background: var(--brand); color: #fff">
+    <div style="max-width: 1240px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+      <span style="display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 6px; background: #fff; color: var(--brand)" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/></svg></span>
+      <div><h1 style="font-size: 20px; font-weight: 700; line-height: 1.2">Label Check</h1><p style="font-size: 13.5px; opacity: .85">Verify a label against its COLA (Certificate of Label Approval) application.</p></div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13.5px; color: #C9D4E6">
+        <span>Local OCR · Tesseract 5.5.0 · nothing you upload is stored</span>
+        <button class="btn icon" type="button" aria-label="How it works (help)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8"/><path d="M12 17h.01"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main style="max-width: 1240px; width: 100%; margin: 0 auto; padding: 8px 24px 40px; display: flex; flex-direction: column; gap: 20px">
+    <nav aria-label="Mode" style="display: flex; border-bottom: 1px solid var(--line)">
+      <button class="tab" type="button" role="tab" aria-selected="false">Check one label</button>
+      <button class="tab on" type="button" role="tab" aria-selected="true">Check a batch</button>
+    </nav>
+
+    <section class="card" role="status" style="padding: 18px 24px; display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center">
+      <div style="flex: 1 1 320px; min-width: 0">
+        <h2 style="font-size: 24px; font-weight: 700; line-height: 1.2">250 labels checked in 75.8 s</h2>
+        <p style="font-size: 15px; color: var(--ink-2)">Sample batch · 0.3 s per label · finished 14:03:27 · <span style="color: var(--review); font-weight: 600">18 need you</span>, 38 have problems, 194 pass.</p>
+      </div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap">
+        <button class="btn" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>Review the 18 <span class="kbd" style="color: #fff; background: transparent; border-color: rgba(255,255,255,.5)">R</span></button>
+        <button class="btn secondary" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>Export…</button>
+        <button class="btn secondary" type="button">New batch</button>
+      </div>
+    </section>
+
+    <section class="card" style="padding: 0; overflow: hidden; display: flex; flex-direction: column">
+      <div role="group" aria-label="Filter results" style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap">
+        <button class="fchip review {{f.review}}" type="button" aria-pressed="{{p.review}}" onClick="{{setReview}}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>Review <b>18</b></button>
+        <button class="fchip fail {{f.fail}}" type="button" aria-pressed="{{p.fail}}" onClick="{{setFail}}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>Fail <b>38</b></button>
+        <button class="fchip pass {{f.pass}}" type="button" aria-pressed="{{p.pass}}" onClick="{{setPass}}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>Pass <b>194</b></button>
+        <button class="fchip {{f.all}}" type="button" aria-pressed="{{p.all}}" onClick="{{setAll}}">All <b>250</b></button>
+        <span style="font-size: 13px; color: var(--ink-3); margin-left: 4px"><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> <span class="kbd">0</span></span>
+        <div style="margin-left: auto; position: relative; flex: 0 1 320px; min-width: 200px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 11px; top: 11px"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input class="input" type="search" placeholder="Brand, application or file name" aria-label="Search results">
+        </div>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ink-2)">Sort <select style="min-height: 40px; border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 8px; background: var(--surface); font-size: 14.5px" aria-label="Sort results"><option>Needs you first</option><option>Application id</option><option>Brand</option><option>Slowest first</option></select></label>
+      </div>
+
+      <div style="display: flex; align-items: stretch; min-height: 760px">
+        <div style="flex: 1 1 640px; min-width: 0; overflow-x: auto; overflow-y: auto; max-height: 760px">
+          <table>
+            <thead><tr><th style="width: 36px"><input type="checkbox" aria-label="Select all shown"></th><th>Application</th><th>Brand</th><th>Result</th><th>Brand</th><th>Type</th><th>Alcohol</th><th>Net</th><th>Bottler</th><th>Origin</th><th>Warning</th><th style="text-align: right">Time</th></tr></thead>
+            <tbody>
+              <sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+              <tr class="r {{r.cls}}" tabindex="0" onClick="{{r.pick}}" aria-selected="{{r.selected}}">
+                <td><input type="checkbox" aria-label="Select {{r.id}}" checked="{{r.checked}}"></td>
+                <td style="font-family: var(--mono)">{{r.id}}</td>
+                <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis">{{r.brand}}</td>
+                <td><span class="chip {{r.status}}">{{r.statusWord}}</span></td>
+                <td><span class="chip {{r.c1}}">{{r.w1}}</span></td>
+                <td><span class="chip {{r.c2}}">{{r.w2}}</span></td>
+                <td><span class="chip {{r.c3}}">{{r.w3}}</span></td>
+                <td><span class="chip {{r.c4}}">{{r.w4}}</span></td>
+                <td><span class="chip {{r.c5}}">{{r.w5}}</span></td>
+                <td><span class="chip {{r.c6}}">{{r.w6}}</span></td>
+                <td><span class="chip {{r.cw}}">{{r.ww}}</span></td>
+                <td style="text-align: right; font-family: var(--mono)">{{r.time}}</td>
+              </tr>
+              </sc-for>
+              <tr><td colspan="12" style="height: 44px; color: var(--ink-3); font-size: 13.5px; white-space: normal">{{footer}}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <aside aria-label="Selected label" style="flex: 0 0 380px; border-left: 1px solid var(--line); background: var(--surface-2); padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+            <span style="font-family: var(--mono); font-size: 14px; color: var(--ink-2)">{{sel.id}}</span>
+            <strong style="font-size: 16px">{{sel.brand}}</strong>
+            <span class="chip lg {{sel.status}}" style="margin-left: auto">{{sel.statusWord}}</span>
+          </div>
+          <div style="position: relative; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; aspect-ratio: 3/4; max-height: 330px">
+            <img src="{{sel.img}}" alt="{{sel.alt}}" style="width: 100%; height: 100%; object-fit: contain; display: block">
+            <div style="position: absolute; border: 3px solid var(--review-fill); border-radius: 4px; left: {{sel.hx}}; top: {{sel.hy}}; width: {{sel.hw}}; height: {{sel.hh}}"></div>
+          </div>
+          <div style="font-size: 14.5px; line-height: 1.45">{{sel.summary}}</div>
+          <dl class="dl">
+            <dt>File</dt><dd style="font-family: var(--mono); font-size: 13.5px">{{sel.file}}</dd>
+            <dt>Checked in</dt><dd style="font-family: var(--mono); font-size: 13.5px">{{sel.time}}</dd>
+            <dt>Needs</dt><dd>{{sel.needs}}</dd>
+          </dl>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto">
+            <button class="btn small" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>Open full comparison <span class="kbd" style="color: #fff; background: transparent; border-color: rgba(255,255,255,.5)">Enter</span></button>
+            <button class="btn secondary small" type="button">Print report</button>
+          </div>
+          <p style="font-size: 12.5px; color: var(--ink-3)"><span class="kbd">J</span> <span class="kbd">K</span> move · <span class="kbd">X</span> select · <span class="kbd">Enter</span> open · <span class="kbd">Esc</span> back to the table</p>
+        </aside>
+      </div>
+
+      <div style="padding: 12px 16px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+        <div class="bulk" style="flex: 1 1 520px">
+          <span><b>{{checkedCount}}</b> selected</span>
+          <span style="opacity: .5">·</span>
+          <button class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>Export selected (CSV)</button>
+          <button class="btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 21h12v-6H6z"/></svg>Print reports</button>
+          <button class="btn" type="button">Mark as sent back</button>
+          <button class="btn" type="button" style="margin-left: auto; border-color: transparent">Clear</button>
+        </div>
+        <span style="font-size: 13px; color: var(--ink-3)">Bulk actions never change a verdict. "Mark as sent back" tags FAIL rows for the export so the applicant letter can be generated from it.</span>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1340}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { filter: 'review', sel: 'APP-0003', checked: { 'APP-0004': true, 'APP-0006': true, 'APP-0011': true } };
+  }
+  data() {
+    const P = 'pass', R = 'review', F = 'fail', N = 'none';
+    const M = 'Match', NR = 'Near', MM = 'Mismatch', D = '—', PS = 'Pass', RV = 'Review', FL = 'Fail';
+    return [
+      { id: 'APP-0003', brand: 'Granite Barrel Brewery', status: R, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[N,D],[R,RV]], time: '1.5 s', file: 'label_0003.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'Government warning: 1 difference from the required wording ("must" where "should" is required). This may be a misprint or a reading error.', needs: 'A look at the warning statement', h: ['7.5%','72.5%','85%','16%'] },
+      { id: 'APP-0016', brand: 'Silver Mountain Brewery', status: R, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[N,D],[R,RV]], time: '1.3 s', file: 'label_0016.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'Government warning: heading does not look bolder than the text (strokes 1.12×). Please check it by eye.', needs: 'A look at the heading weight', h: ['7.5%','72.5%','85%','16%'] },
+      { id: 'APP-0032', brand: 'Silver Valley Vineyards', status: R, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[N,D],[R,RV]], time: '1.3 s', file: 'label_0032.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'Government warning: heading is in capitals, but the colon after WARNING was not detected.', needs: 'A look at the heading', h: ['7.5%','72.5%','85%','16%'] },
+      { id: 'APP-0033', brand: 'Copper Mill Cellars', status: R, v: [[P,M],[P,M],[P,M],[R,NR],[P,M],[N,D],[P,PS]], time: '1.2 s', file: 'label_0033.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'Net contents: reads like 1.5 L but the decimal point was not read clearly. Please confirm.', needs: 'Confirm the volume', h: ['40%','31%','20%','4%'] },
+      { id: 'APP-0042', brand: 'White Valley Vineyards', status: R, v: [[P,M],[P,M],[P,M],[R,NR],[P,M],[N,D],[P,PS]], time: '1.1 s', file: 'label_0042.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'Net contents: reads like 1.5 L but the decimal point was not read clearly. Please confirm.', needs: 'Confirm the volume', h: ['40%','31%','20%','4%'] },
+      { id: 'APP-0047', brand: 'Iron River Vineyards', status: R, v: [[R,NR],[P,M],[P,M],[P,M],[P,M],[N,D],[P,PS]], time: '1.1 s', file: 'label_0047.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'Brand name: same words, but capitalization or punctuation differs. Please confirm.', needs: 'Confirm the brand name', h: ['8%','9%','84%','6%'] },
+      { id: 'APP-0082', brand: 'Stone Harvest Distillers', status: R, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[N,D],[R,RV]], time: '1.3 s', file: 'label_0082.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'Government warning: the statement is printed too small to measure its weight. Please check it by eye.', needs: 'A look at the heading weight', h: ['7.5%','72.5%','85%','16%'] },
+      { id: 'APP-0004', brand: 'Red Ridge Distillery', status: F, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[P,M],[F,FL]], time: '1.4 s', file: 'label_0004.png', img: '/_blob/ca7f90d4ca3e03743a31e2c274ab9320', summary: 'Government warning: the heading is printed as "Government Warning". It must be all capitals.', needs: 'Nothing: send back', h: ['10%','72%','30%','3%'] },
+      { id: 'APP-0006', brand: 'Silver River Winery', status: F, v: [[P,M],[P,M],[P,M],[F,MM],[P,M],[N,D],[P,PS]], time: '1.2 s', file: 'label_0006.png', img: '/_blob/ca7f90d4ca3e03743a31e2c274ab9320', summary: 'Net contents: label says 750 mL, application says 375 mL.', needs: 'Nothing: send back', h: ['40%','31%','20%','4%'] },
+      { id: 'APP-0011', brand: 'Silver Mill Brewery', status: F, v: [[P,M],[P,M],[P,M],[P,M],[N,D],[N,D],[F,FL]], time: '0.7 s', file: 'label_0011.png', img: '/_blob/ca7f90d4ca3e03743a31e2c274ab9320', summary: 'No government warning statement was found on the label.', needs: 'Nothing: send back', h: ['7.5%','72.5%','85%','16%'] },
+      { id: 'APP-0040', brand: 'Granite Ridge Distilling Co.', status: F, v: [[P,M],[P,M],[F,MM],[P,M],[P,M],[N,D],[P,PS]], time: '1.1 s', file: 'label_0040.png', img: '/_blob/ca7f90d4ca3e03743a31e2c274ab9320', summary: 'Alcohol content: label says 45% ABV, application says 40% ABV.', needs: 'Nothing: send back', h: ['26%','31%','48%','5%'] },
+      { id: 'APP-0053', brand: 'Stone Bridge Brewery', status: F, v: [[P,M],[P,M],[P,M],[F,MM],[N,D],[N,D],[P,PS]], time: '1.1 s', file: 'label_0053.png', img: '/_blob/ca7f90d4ca3e03743a31e2c274ab9320', summary: 'Net contents: label says 790 mL, application says 750 mL. Check the image: this one may be a misread 5.', needs: 'Nothing: send back', h: ['40%','31%','20%','4%'] },
+      { id: 'APP-0001', brand: 'Old Barrel Vineyards', status: P, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[N,D],[P,PS]], time: '1.7 s', file: 'label_0001.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'All 5 fields match the application and the government warning is correct.', needs: 'Nothing', h: ['0','0','0','0'] },
+      { id: 'APP-0002', brand: 'Cedar Compass Cellars', status: P, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[N,D],[P,PS]], time: '1.6 s', file: 'label_0002.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'All 5 fields match the application and the government warning is correct.', needs: 'Nothing', h: ['0','0','0','0'] },
+      { id: 'APP-0005', brand: 'Granite Oak Vineyards', status: P, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[N,D],[P,PS]], time: '1.3 s', file: 'label_0005.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'All 5 fields match the application and the government warning is correct.', needs: 'Nothing', h: ['0','0','0','0'] },
+      { id: 'APP-0007', brand: 'Maple Lantern Vineyards', status: P, v: [[P,M],[P,M],[P,M],[P,M],[P,M],[N,D],[P,PS]], time: '1.4 s', file: 'label_0007.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'All 5 fields match the application and the government warning is correct.', needs: 'Nothing', h: ['0','0','0','0'] },
+      { id: 'APP-0009', brand: 'Stone Bridge Rum Co.', status: P, v: [[P,M],[P,M],[P,M],[P,M],[N,D],[N,D],[P,PS]], time: '1.4 s', file: 'label_0009.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'All 4 fields match the application and the government warning is correct.', needs: 'Nothing', h: ['0','0','0','0'] },
+      { id: 'APP-0010', brand: 'Granite Crow Distillers', status: P, v: [[P,M],[P,M],[P,M],[P,M],[N,D],[P,M],[P,PS]], time: '1.2 s', file: 'label_0010.png', img: '/_blob/04c734951de8c71c2c65bb936a9b2545', summary: 'All 5 fields match the application and the government warning is correct.', needs: 'Nothing', h: ['0','0','0','0'] }
+    ];
+  }
+  renderVals() {
+    const all = this.data();
+    const f = this.state.filter;
+    const shown = all.filter((r) => f === 'all' || r.status === f);
+    const word = { pass: 'Pass', review: 'Review', fail: 'Fail' };
+    const rows = shown.map((r) => ({
+      id: r.id, brand: r.brand, status: r.status, statusWord: word[r.status], time: r.time,
+      c1: r.v[0][0], w1: r.v[0][1], c2: r.v[1][0], w2: r.v[1][1], c3: r.v[2][0], w3: r.v[2][1], c4: r.v[3][0], w4: r.v[3][1], c5: r.v[4][0], w5: r.v[4][1], c6: r.v[5][0], w6: r.v[5][1], cw: r.v[6][0], ww: r.v[6][1],
+      cls: (this.state.sel === r.id ? 'sel cur' : ''), selected: this.state.sel === r.id, checked: !!this.state.checked[r.id],
+      pick: () => this.setState({ sel: r.id })
+    }));
+    const s = all.find((r) => r.id === this.state.sel) || all[0];
+    const totals = { review: 18, fail: 38, pass: 194, all: 250 };
+    const more = totals[f] - shown.length;
+    const footer = more > 0 ? (more + ' more ' + (f === 'all' ? 'labels' : word[f].toLowerCase() + ' labels') + ' in this list, same columns, scrolled in the table, never the page') : 'End of list';
+    const flag = (k) => (f === k ? 'on' : '');
+    return {
+      rows, footer,
+      f: { review: flag('review'), fail: flag('fail'), pass: flag('pass'), all: flag('all') },
+      p: { review: f === 'review', fail: f === 'fail', pass: f === 'pass', all: f === 'all' },
+      setReview: () => this.setState({ filter: 'review', sel: 'APP-0003' }),
+      setFail: () => this.setState({ filter: 'fail', sel: 'APP-0004' }),
+      setPass: () => this.setState({ filter: 'pass', sel: 'APP-0001' }),
+      setAll: () => this.setState({ filter: 'all' }),
+      sel: { id: s.id, brand: s.brand, status: s.status, statusWord: s.status.toUpperCase(), img: s.img, alt: s.brand + ' label', file: s.file, time: s.time, summary: s.summary, needs: s.needs, hx: s.h[0], hy: s.h[1], hw: s.h[2], hh: s.h[3] },
+      checkedCount: Object.keys(this.state.checked).length
+    };
+  }
+}
+</script>
+</body>
+</html>

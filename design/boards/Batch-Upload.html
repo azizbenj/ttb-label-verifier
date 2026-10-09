@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Check a batch, upload</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--action-hover:#1A4480;--action-tint:#D9E8F6;--focus:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--review-fill:#8B5A00;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--sh-1:0 1px 2px rgba(20,24,30,.06);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}a:hover{color:var(--action-hover)}
+h1,h2,h3,h4,p{margin:0}
+button,input,select{font:inherit}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:4px;border:2px solid var(--action);background:var(--action);color:#fff;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--action-hover);border-color:var(--action-hover)}
+.btn.secondary{background:var(--surface);color:var(--action)}
+.btn.secondary:hover{background:var(--action-tint)}
+.btn.big{min-height:52px;font-size:18px;padding:0 24px;width:100%}
+.btn.icon{min-height:40px;min-width:40px;padding:0;background:transparent;border-color:rgba(255,255,255,.35);color:#fff;border-radius:999px}
+.tab{min-height:48px;padding:0 4px;margin-right:24px;border:0;background:none;font-weight:600;font-size:17px;color:var(--ink-2);border-bottom:3px solid transparent;cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--action)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:3px;border:1px solid;font-size:12.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap;line-height:1}
+.chip.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.chip.review{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.chip.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.drop{border:2px dashed var(--line-strong);border-radius:8px;padding:18px 16px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;background:var(--surface);color:var(--ink-2);font-size:14.5px;cursor:pointer}
+.drop b{color:var(--ink);font-size:16px}
+.lbl{font-size:14px;font-weight:600;color:var(--ink-2);display:flex;gap:6px;align-items:baseline;margin-bottom:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12.5px}
+th{text-align:left;font-weight:600;color:var(--ink-2);padding:6px 8px;border-bottom:2px solid var(--line);background:var(--surface-2);white-space:nowrap}
+td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;color:var(--ink-2)}
+td.req,th.req{color:var(--ink)}
+.step{display:flex;gap:12px;align-items:flex-start;font-size:15px}
+.step .n{width:26px;height:26px;border-radius:999px;background:var(--brand);color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center;flex:none;font-family:var(--mono)}
+</style>
+</helmet>
+<div style="min-height: 1020px; display: flex; flex-direction: column">
+  <div style="background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; border-bottom: 1px solid var(--line)">
+    <div style="max-width: 1240px; margin: 0 auto; padding: 4px 24px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+      <span style="font-weight: 700; color: var(--ink)">Label Check</span><span aria-hidden="true">·</span><span>COLA compliance review</span><span aria-hidden="true">·</span><span>Prototype</span>
+      <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Internal tool · sample data only</span>
+    </div>
+  </div>
+  <header style="background: var(--brand); color: #fff">
+    <div style="max-width: 1240px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+      <span style="display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 6px; background: #fff; color: var(--brand)" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/></svg></span>
+      <div><h1 style="font-size: 20px; font-weight: 700; line-height: 1.2">Label Check</h1><p style="font-size: 13.5px; opacity: .85">Verify a label against its COLA (Certificate of Label Approval) application.</p></div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13.5px; color: #C9D4E6">
+        <span>Local OCR · Tesseract 5.5.0 · nothing you upload is stored</span>
+        <button class="btn icon" type="button" aria-label="How it works (help)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8"/><path d="M12 17h.01"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main style="max-width: 1240px; width: 100%; margin: 0 auto; padding: 8px 24px 40px; display: flex; flex-direction: column; gap: 20px">
+    <nav aria-label="Mode" style="display: flex; border-bottom: 1px solid var(--line)">
+      <button class="tab" type="button" role="tab" aria-selected="false">Check one label</button>
+      <button class="tab on" type="button" role="tab" aria-selected="true">Check a batch</button>
+    </nav>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+      <form class="card" style="flex: 1 1 380px; max-width: 460px; padding: 22px 24px; display: flex; flex-direction: column; gap: 16px" action="/batch" method="post" enctype="multipart/form-data">
+        <div><h2 style="font-size: 20px; font-weight: 700">Check many labels at once</h2><p style="font-size: 14.5px; color: var(--ink-2); margin-top: 4px">One CSV row per application, plus the label images. Images are matched to rows by file name.</p></div>
+
+        <div>
+          <span class="lbl" id="csv-l">1. Application data (CSV) <span style="color: var(--fail)" aria-hidden="true">*</span></span>
+          <label class="drop" for="csv-input">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8 13h8M8 17h8"/></svg>
+            <b>Drop the CSV here, or choose a file</b>
+            <span>Needs the columns image, brand_name, class_type, alcohol_content, net_contents</span>
+            <input class="sr" id="csv-input" name="csv_file" type="file" accept=".csv,text/csv" aria-labelledby="csv-l">
+          </label>
+          <div style="font-size: 14px; margin-top: 6px"><a href="/batch/template.csv" download>Download the CSV template</a> <span style="color: var(--ink-3)">· two example rows, ready to edit in Excel</span></div>
+        </div>
+
+        <div>
+          <span class="lbl" id="img-l">2. Label images <span style="color: var(--fail)" aria-hidden="true">*</span></span>
+          <label class="drop" for="images-input">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="16" cy="9" r="1.5"/></svg>
+            <b>Drop the images or a zip here</b>
+            <span>Select them all at once · up to 500 images or one zip · PNG, JPG, TIFF, WEBP</span>
+            <input class="sr" id="images-input" name="files" type="file" multiple accept="image/*,.zip,application/zip" aria-labelledby="img-l">
+          </label>
+        </div>
+
+        <button class="btn big" type="submit">Check batch</button>
+        <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line)">
+          <button class="btn secondary" type="button" style="width: 100%"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3l14 9-14 9z"/></svg>Try the sample batch · 250 labels</button>
+          <p style="font-size: 13.5px; color: var(--ink-3); text-align: center">About 90 seconds. 38 labels have a planted problem, 18 need a look. <a href="/batch/sample.zip">Download it</a> to upload it yourself.</p>
+        </div>
+      </form>
+
+      <section aria-live="polite" style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+        <div class="card" style="padding: 22px 24px; display: flex; flex-direction: column; gap: 16px">
+          <h2 style="font-size: 20px; font-weight: 700">What you get back</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 14px">
+            <div class="step"><span class="n">1</span><div><strong>A triage count first.</strong><div style="font-size: 14px; color: var(--ink-2)">How many need you (<span class="chip review">REVIEW</span>), how many are blocked (<span class="chip fail">FAIL</span>), how many are done (<span class="chip pass">PASS</span>).</div></div></div>
+            <div class="step"><span class="n">2</span><div><strong>A review queue you can step through.</strong><div style="font-size: 14px; color: var(--ink-2)">Label and evidence side by side, one decision per item, <span style="font-family: var(--mono); font-size: 13px">J</span>/<span style="font-family: var(--mono); font-size: 13px">K</span> to move.</div></div></div>
+            <div class="step"><span class="n">3</span><div><strong>Exports that match the queue.</strong><div style="font-size: 14px; color: var(--ink-2)">CSV of everything, or just the passes, or just the fails with their reasons, including your decisions.</div></div></div>
+          </div>
+          <p style="font-size: 14px; color: var(--ink-2); border-top: 1px solid var(--line); padding-top: 12px">Results start appearing while the batch is still running, so you can begin on the review pile straight away. 250 labels take about 90 seconds; 0.3 s per label.</p>
+        </div>
+
+        <div class="card" style="padding: 18px 24px; display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap"><h3 style="font-size: 16px; font-weight: 700">The CSV, column by column</h3><span style="font-size: 13.5px; color: var(--ink-3)">Dark columns are required. Header names must match; order does not matter.</span></div>
+          <div style="overflow-x: auto; border: 1px solid var(--line); border-radius: 8px">
+            <table>
+              <thead><tr><th class="req">image</th><th>application_id</th><th class="req">brand_name</th><th class="req">class_type</th><th class="req">alcohol_content</th><th class="req">net_contents</th><th>bottler_name_address</th><th>country_of_origin</th></tr></thead>
+              <tbody>
+                <tr><td class="req">old_tom_clean.png</td><td>APP-0001</td><td class="req">OLD TOM DISTILLERY</td><td class="req">Kentucky Straight Bourbon Whiskey</td><td class="req">45% Alc./Vol.</td><td class="req">750 mL</td><td>Old Tom Distillery, Bardstown, Kentucky 40004</td><td></td></tr>
+                <tr><td class="req">glen_morar.png</td><td>APP-0002</td><td class="req">GLEN MORAR</td><td class="req">Single Malt Scotch Whisky</td><td class="req">86 Proof</td><td class="req">700 mL</td><td>Highland Imports, Inc., New York, NY 10001</td><td>Scotland</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="font-size: 13.5px; color: var(--ink-2)">A row without a matching image, or an image without a row, is listed at the top of the results as a file issue and does not stop the batch.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1020}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

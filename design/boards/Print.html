@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Label verification report, Letter</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#FFFFFF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:#fff;color:var(--ink);font-family:var(--font);font-size:11pt;line-height:1.4;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+.tag{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 6px;border-radius:3px;border:1px solid;font-size:9pt;font-weight:700;letter-spacing:.02em;white-space:nowrap;line-height:1}
+.tag .i{width:11px;height:11px;flex:none}
+.tag.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.tag.review{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.tag.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.tag.none{background:var(--none-tint);color:var(--none);border-color:var(--none-line)}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-size:8.5pt;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;padding:4px 6px;border-bottom:1.5px solid var(--ink)}
+td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top;font-size:10pt}
+td.k{font-weight:600;white-space:nowrap}
+.why{font-size:9pt;color:var(--ink-2)}
+.pin{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:999px;color:#fff;font-size:8.5pt;font-weight:700;font-family:var(--mono);background:var(--pass-fill)}
+.pin.fail{background:var(--fail-fill)}.pin.none{background:var(--none)}
+.hl{position:absolute;border:1.5px solid var(--pass-fill);border-radius:2px}
+.hl.fail{border-color:var(--fail-fill);border-width:2.5px}
+.hl .n{position:absolute;left:-9px;top:-9px;width:16px;height:16px;border-radius:999px;background:var(--pass-fill);color:#fff;font-size:8.5pt;font-weight:700;display:grid;place-items:center;font-family:var(--mono)}
+.hl.fail .n{background:var(--fail-fill)}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:9.5pt}
+.meta dt{color:var(--ink-3);font-size:8pt;text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:0;padding-top:2px}
+.meta dd{margin:0}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:9.5pt;padding:3px 0;border-bottom:1px dashed var(--line)}
+.chk .tag{min-width:78px;justify-content:center}
+.box{display:inline-block;width:11px;height:11px;border:1.5px solid var(--ink);vertical-align:-1px;margin-right:4px}
+</style>
+</helmet>
+<div style="width: 816px; height: 1056px; padding: 44px 48px 40px; display: flex; flex-direction: column; gap: 12px; background: #fff; position: relative">
+  <div style="display: flex; align-items: center; gap: 12px; border-bottom: 2px solid var(--brand); padding-bottom: 10px">
+    <span style="display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 5px; background: var(--brand); color: #fff" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/></svg></span>
+    <div style="flex: 1"><h1 style="font-size: 15pt; font-weight: 800; letter-spacing: -.01em; line-height: 1.1">Label verification report</h1><p style="font-size: 9pt; color: var(--ink-2)">Label Check · COLA compliance review prototype · sample data</p></div>
+    <div style="text-align: right; font-size: 9pt; color: var(--ink-2); line-height: 1.3">Checked 8 Oct 2026, 14:02<br>Local OCR · Tesseract 5.5.0 · 1.1 s</div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1.5px solid var(--fail-fill); border-radius: 4px; background: var(--fail-tint)">
+    <span style="width: 30px; height: 30px; border-radius: 999px; background: var(--fail-fill); color: #fff; display: grid; place-items: center; flex: none"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>
+    <div style="flex: 1"><h2 style="font-size: 14pt; font-weight: 700; color: var(--fail); line-height: 1.15">FAIL · Problems found</h2><p style="font-size: 10pt">1 problem: alcohol content. Everything else matches and the government warning is correct.</p></div>
+    <span class="tag fail" style="height: 24px; font-size: 10pt"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>FAIL</span>
+  </div>
+
+  <dl class="meta" style="grid-template-columns: auto 1fr auto 1fr; margin: 0">
+    <dt>Application</dt><dd style="font-family: var(--mono)">SAMPLE-0005</dd><dt>Label file</dt><dd style="font-family: var(--mono)">wrong_abv.png · 1200 × 1600 px</dd>
+    <dt>Brand</dt><dd><strong>OLD TOM DISTILLERY</strong></dd><dt>Class / type</dt><dd>Kentucky Straight Bourbon Whiskey</dd>
+    <dt>Alcohol</dt><dd>45% Alc./Vol. (90 Proof)</dd><dt>Net contents</dt><dd>750 mL</dd>
+    <dt>Bottler</dt><dd>Old Tom Distillery, Bardstown, Kentucky 40004</dd><dt>Origin</dt><dd>Not stated (domestic)</dd>
+  </dl>
+
+  <div style="display: flex; gap: 16px; align-items: flex-start">
+    <div style="flex: 0 0 236px; display: flex; flex-direction: column; gap: 6px">
+      <div style="position: relative; border: 1px solid var(--line-strong); overflow: hidden; background: #fff; width: 236px; height: 315px">
+        <img src="/_blob/0d77b4214ed54d4f63043bf58d5494ce" alt="Label with numbered regions" style="width: 100%; height: 100%; object-fit: cover; display: block">
+        <div class="hl" style="left: 8.5%; top: 9.5%; width: 83%; height: 5.6%"><span class="n">1</span></div>
+        <div class="hl" style="left: 19%; top: 18.8%; width: 62%; height: 8.6%"><span class="n">2</span></div>
+        <div class="hl fail" style="left: 26.5%; top: 31.6%; width: 47%; height: 4.8%"><span class="n">3</span></div>
+        <div class="hl" style="left: 41.5%; top: 36.2%; width: 17%; height: 3.6%"><span class="n">4</span></div>
+        <div class="hl" style="left: 13.5%; top: 42%; width: 73%; height: 5.4%"><span class="n">5</span></div>
+        <div class="hl" style="left: 8.5%; top: 71.8%; width: 83%; height: 16%"><span class="n">W</span></div>
+      </div>
+      <p style="font-size: 8.5pt; color: var(--ink-3)">Numbers mark where each value was read. Thick outline = the problem.</p>
+    </div>
+
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><h3 style="font-size: 10.5pt; font-weight: 700">Mandatory label information</h3><span style="font-size: 8.5pt; color: var(--ink-3)">27 CFR parts 4, 5 and 7</span></div>
+      <table>
+        <thead><tr><th style="width: 22px"></th><th>Field</th><th>Application</th><th>Label</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pin">1</span></td><td class="k">Brand name</td><td>OLD TOM DISTILLERY</td><td>OLD TOM DISTILLERY</td><td><span class="tag pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span><div class="why">Exact match.</div></td></tr>
+          <tr><td><span class="pin">2</span></td><td class="k">Class / type</td><td>Kentucky Straight Bourbon Whiskey</td><td>Kentucky Straight Bourbon Whiskey</td><td><span class="tag pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span><div class="why">Exact match.</div></td></tr>
+          <tr style="background: var(--fail-tint)"><td><span class="pin fail">3</span></td><td class="k">Alcohol content</td><td>45% Alc./Vol. (90 Proof)</td><td><strong>40% Alc./Vol. (80 Proof)</strong></td><td><span class="tag fail"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>MISMATCH</span><div class="why" style="color: var(--fail); font-weight: 600">Label says 40% ABV, application says 45% ABV. 45% = 90 proof; 40% = 80 proof; difference 5.0 points, allowed 0.05.</div></td></tr>
+          <tr><td><span class="pin">4</span></td><td class="k">Net contents</td><td>750 mL</td><td>750 mL</td><td><span class="tag pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span><div class="why">750 mL on both.</div></td></tr>
+          <tr><td><span class="pin">5</span></td><td class="k">Bottler</td><td>Old Tom Distillery, Bardstown, Kentucky 40004</td><td>Old Tom Distillery, Bardstown, Kentucky 40004</td><td><span class="tag pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>MATCH</span><div class="why">Exact match.</div></td></tr>
+          <tr style="color: var(--ink-2)"><td><span class="pin none">–</span></td><td class="k">Country of origin</td><td>—</td><td>—</td><td><span class="tag none"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 8h8"/></svg>SKIPPED</span><div class="why">Not on the application.</div></td></tr>
+        </tbody>
+      </table>
+
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 2px"><h3 style="font-size: 10.5pt; font-weight: 700">Government warning <span class="tag pass" style="margin-left: 6px; vertical-align: 1px"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>PASS</span></h3><span style="font-size: 8.5pt; color: var(--ink-3)">27 CFR 16.21 · word for word</span></div>
+      <div>
+        <div class="chk"><span class="tag pass">PRESENT</span><span>The statement was found on the label (region W).</span></div>
+        <div class="chk"><span class="tag pass">WORDING</span><span>Matches the required statement word for word.</span></div>
+        <div class="chk"><span class="tag pass">CAPITALS</span><span>Heading is in capitals: "GOVERNMENT WARNING:".</span></div>
+        <div class="chk" style="border-bottom: 0"><span class="tag pass">BOLD</span><span>Heading looks bold: strokes 1.53× thicker than the text (threshold 1.30×).</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: auto; border-top: 1.5px solid var(--ink); padding-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; font-size: 9.5pt">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <strong style="font-size: 9pt; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2)">Reviewer decision</strong>
+      <div style="display: flex; gap: 14px; flex-wrap: wrap"><span><span class="box"></span>Approve</span><span><span class="box"></span>Return to applicant</span><span><span class="box"></span>Needs a second look</span></div>
+      <div style="display: flex; gap: 16px; margin-top: 6px"><span style="flex: 1; border-bottom: 1px solid var(--ink); padding-bottom: 2px; color: var(--ink-3); font-size: 8.5pt">Reviewed by</span><span style="flex: 0 0 140px; border-bottom: 1px solid var(--ink); padding-bottom: 2px; color: var(--ink-3); font-size: 8.5pt">Date</span></div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <strong style="font-size: 9pt; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2)">Notes</strong>
+      <div style="height: 18px; border-bottom: 1px solid var(--line)"></div><div style="height: 18px; border-bottom: 1px solid var(--line)"></div><div style="height: 18px; border-bottom: 1px solid var(--line)"></div>
+    </div>
+  </div>
+  <div style="display: flex; justify-content: space-between; font-size: 8pt; color: var(--ink-3); padding-top: 6px">
+    <span>Label Check prototype · verdicts are computed from the image and the application as entered; the reviewer's decision governs.</span>
+    <span>Page 1 of 1</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":816,"height":1056}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

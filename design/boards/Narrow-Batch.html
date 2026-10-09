@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>390 px, batch results</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--action-hover:#1A4480;--action-tint:#D9E8F6;--focus:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--review-fill:#8B5A00;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--sh-1:0 1px 2px rgba(20,24,30,.06);--sh-2:0 4px 16px rgba(20,24,30,.10);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}a:hover{color:var(--action-hover)}
+h1,h2,h3,h4,p{margin:0}
+button,input,select{font:inherit}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border-radius:4px;border:2px solid var(--action);background:var(--action);color:#fff;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn.secondary{background:var(--surface);color:var(--action)}
+.btn.icon{min-height:40px;min-width:40px;padding:0;background:transparent;border-color:rgba(255,255,255,.35);color:#fff;border-radius:999px}
+.tab{min-height:44px;padding:0 2px;margin-right:18px;border:0;background:none;font-weight:600;font-size:16px;color:var(--ink-2);border-bottom:3px solid transparent;cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--action)}
+.chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:3px;border:1px solid;font-size:12px;font-weight:700;white-space:nowrap;line-height:1;flex:none}
+.chip .i{width:12px;height:12px;flex:none}
+.chip.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.chip.review{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.chip.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.fchip{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;border-radius:4px;border:2px solid var(--line);background:var(--surface);font-weight:600;font-size:14.5px;color:var(--ink);white-space:nowrap;flex:none}
+.fchip b{font-family:var(--mono);font-weight:600}
+.fchip.review.on{background:var(--review-tint);border-color:var(--review);color:var(--review)}
+.input{width:100%;min-height:44px;padding:9px 12px 9px 38px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink);font-size:16px}
+.item{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;background:var(--surface);border-left:0;border-right:0;border-top:0;width:100%;cursor:pointer}
+.item .id{font-family:var(--mono);font-size:12.5px;color:var(--ink-3)}
+.item .b{font-weight:600;font-size:15.5px}
+.item .s{font-size:13.5px;color:var(--ink-2);margin-top:2px}
+.item svg.chev{flex:none;margin-top:10px;color:var(--ink-3)}
+.mini{display:inline-flex;gap:3px;margin-top:6px}
+.mini span{width:18px;height:18px;border-radius:3px;border:1px solid;display:grid;place-items:center;font-size:10px;font-weight:700;font-family:var(--mono)}
+.mini .p{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.mini .r{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.mini .f{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.mini .n{background:var(--none-tint);color:var(--none);border-color:var(--none-line)}
+</style>
+</helmet>
+<div style="min-height: 1520px; display: flex; flex-direction: column; position: relative">
+  <div style="background: var(--surface-2); color: var(--ink-2); font-size: 12px; border-bottom: 1px solid var(--line); padding: 4px 16px; display: flex; justify-content: space-between; gap: 8px"><span><strong style="color: var(--ink)">Label Check</strong> · Prototype</span><span>Sample data only</span></div>
+  <header style="background: var(--brand); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 10px">
+    <span style="display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 6px; background: #fff; color: var(--brand); flex: none" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/></svg></span>
+    <h1 style="font-size: 18px; font-weight: 700; line-height: 1.2; flex: 1">Label Check</h1>
+    <button class="btn icon" type="button" aria-label="How it works (help)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8"/><path d="M12 17h.01"/></svg></button>
+  </header>
+
+  <main style="padding: 0 16px 96px; display: flex; flex-direction: column; gap: 14px">
+    <nav aria-label="Mode" style="display: flex; border-bottom: 1px solid var(--line)">
+      <button class="tab" type="button">One label</button>
+      <button class="tab on" type="button">Batch</button>
+    </nav>
+
+    <section class="card" role="status" style="padding: 14px; display: flex; flex-direction: column; gap: 4px">
+      <h2 style="font-size: 20px; font-weight: 700; line-height: 1.2">250 labels checked in 76 s</h2>
+      <p style="font-size: 14px; color: var(--ink-2)">Sample batch · <span style="color: var(--review); font-weight: 600">18 need you</span>, 38 have problems, 194 pass.</p>
+    </section>
+
+    <div style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; margin: 0 -16px; padding-left: 16px; padding-right: 16px" role="group" aria-label="Filter results">
+      <button class="fchip review on" type="button" aria-pressed="true"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>Review <b>18</b></button>
+      <button class="fchip" type="button" aria-pressed="false">Fail <b>38</b></button>
+      <button class="fchip" type="button" aria-pressed="false">Pass <b>194</b></button>
+      <button class="fchip" type="button" aria-pressed="false">All <b>250</b></button>
+    </div>
+
+    <div style="position: relative">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute; left: 12px; top: 13px"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input class="input" type="search" placeholder="Brand, application or file" aria-label="Search results">
+    </div>
+
+    <section class="card" style="padding: 0; overflow: hidden">
+      <div style="padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-3); display: flex; justify-content: space-between"><span>Review · 18 · needs-you first</span><span>Tap to open</span></div>
+      <div role="list">
+        <button class="item" type="button" role="listitem"><div style="flex: 1; min-width: 0"><div class="id">APP-0003</div><div class="b">Granite Barrel Brewery</div><div class="s">Government warning: one word differs ("must" for "should").</div><div class="mini" aria-label="Field results: 5 match, warning review"><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="n">–</span><span class="r">!</span></div></div><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>REVIEW</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button class="item" type="button" role="listitem"><div style="flex: 1; min-width: 0"><div class="id">APP-0016</div><div class="b">Silver Mountain Brewery</div><div class="s">Government warning: heading may not be bold (1.12×).</div><div class="mini"><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="n">–</span><span class="r">!</span></div></div><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>REVIEW</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button class="item" type="button" role="listitem"><div style="flex: 1; min-width: 0"><div class="id">APP-0033</div><div class="b">Copper Mill Cellars</div><div class="s">Net contents: reads like 1.5 L, decimal point unclear.</div><div class="mini"><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="r">!</span><span class="p">✓</span><span class="n">–</span><span class="p">✓</span></div></div><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>REVIEW</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button class="item" type="button" role="listitem"><div style="flex: 1; min-width: 0"><div class="id">APP-0047</div><div class="b">Iron River Vineyards</div><div class="s">Brand name: same words, different capitalization.</div><div class="mini"><span class="r">!</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="n">–</span><span class="p">✓</span></div></div><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>REVIEW</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button class="item" type="button" role="listitem"><div style="flex: 1; min-width: 0"><div class="id">APP-0082</div><div class="b">Stone Harvest Distillers</div><div class="s">Government warning: printed too small to measure weight.</div><div class="mini"><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="n">–</span><span class="r">!</span></div></div><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>REVIEW</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button class="item" type="button" role="listitem"><div style="flex: 1; min-width: 0"><div class="id">APP-0091</div><div class="b">Hollow Oak Cellars</div><div class="s">Government warning: one word differs.</div><div class="mini"><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="n">–</span><span class="r">!</span></div></div><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>REVIEW</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button class="item" type="button" role="listitem" style="border-bottom: 0"><div style="flex: 1; min-width: 0"><div class="id">APP-0104</div><div class="b">Blue Fox Distillers</div><div class="s">Government warning: heading may not be bold (1.19×).</div><div class="mini"><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="p">✓</span><span class="n">–</span><span class="r">!</span></div></div><span class="chip review"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg>REVIEW</span><svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      </div>
+      <div style="padding: 10px 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-3); text-align: center">11 more · the list scrolls, the page does not</div>
+    </section>
+    <p style="font-size: 12.5px; color: var(--ink-3)">On a phone the table becomes a list: id, brand, the one-line reason, a row of seven mini marks in field order (brand, type, alcohol, net, bottler, origin, warning), and the status tag. Filters scroll sideways. The detail opens full screen with the same stacked layout as the single result.</p>
+  </main>
+
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 16px 14px; background: var(--surface); border-top: 1px solid var(--line); display: flex; gap: 10px; box-shadow: var(--sh-2)">
+    <button class="btn" type="button" style="flex: 1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>Review the 18</button>
+    <button class="btn secondary" type="button" aria-label="Export"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg></button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1520}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

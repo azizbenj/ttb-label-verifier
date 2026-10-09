@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Evidence view, government warning</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--action-hover:#1A4480;--action-tint:#D9E8F6;--focus:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--pass-fill:#2E7D32;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--review-fill:#8B5A00;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--fail-fill:#B50909;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--sh-1:0 1px 2px rgba(20,24,30,.06);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}a:hover{color:var(--action-hover)}
+h1,h2,h3,h4,p{margin:0}
+button,input,select{font:inherit}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:4px;border:2px solid var(--action);background:var(--action);color:#fff;font-weight:600;font-size:16px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--action-hover);border-color:var(--action-hover)}
+.btn.secondary{background:var(--surface);color:var(--action)}
+.btn.secondary:hover{background:var(--action-tint)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--action)}
+.btn.danger{background:var(--surface);color:var(--fail);border-color:var(--fail)}
+.btn.danger:hover{background:var(--fail-tint)}
+.btn.ok{background:var(--pass-fill);border-color:var(--pass-fill)}
+.btn.small{min-height:36px;font-size:14px;padding:0 12px;border-radius:4px}
+.btn.icon{min-height:40px;min-width:40px;padding:0;background:transparent;border-color:rgba(255,255,255,.35);color:#fff;border-radius:999px}
+.tab{min-height:48px;padding:0 4px;margin-right:24px;border:0;background:none;font-weight:600;font-size:17px;color:var(--ink-2);border-bottom:3px solid transparent;cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--action)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:3px;border:1px solid;font-size:13px;font-weight:700;letter-spacing:.02em;white-space:nowrap;line-height:1}
+.chip .i{width:14px;height:14px;flex:none}
+.chip.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.chip.review{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.chip.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.chip.none{background:var(--none-tint);color:var(--none);border-color:var(--none-line)}
+.kv{display:flex;gap:6px;align-items:baseline;font-size:14.5px}
+.kv span:first-child{color:var(--ink-3);font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.banner{display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid;flex-wrap:wrap}
+.banner.review{background:var(--review-tint);border-color:var(--review-line)}
+.banner.pass{background:var(--pass-tint);border-color:var(--pass-line)}
+.banner.fail{background:var(--fail-tint);border-color:var(--fail-line)}
+.badge{width:44px;height:44px;border-radius:999px;display:grid;place-items:center;color:#fff;flex:none}
+.badge.review{background:var(--review-fill)}.badge.pass{background:var(--pass-fill)}.badge.fail{background:var(--fail-fill)}
+.timing{margin-left:auto;text-align:right;line-height:1.2;flex:none}
+.timing b{font-size:24px;font-family:var(--mono);font-weight:600}
+.timing small{display:block;font-size:12.5px;color:var(--ink-2);margin-top:2px}
+.pin{width:24px;height:24px;border-radius:999px;color:#fff;font-size:12.5px;font-weight:700;display:grid;place-items:center;font-family:var(--mono);flex:none;border:0;cursor:pointer;background:var(--pass-fill)}
+.pin.review{background:var(--review-fill)}.pin.fail{background:var(--fail-fill)}
+.pin:focus-visible,.btn:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.hl{position:absolute;border:2px solid var(--pass-fill);border-radius:4px;transition:background .2s cubic-bezier(.2,.7,.2,1),box-shadow .2s}
+.hl.on{background:rgba(46,125,50,.16);box-shadow:0 0 0 3px rgba(46,125,50,.25)}
+.hl.review{border-color:var(--review-fill);border-width:3px}
+.hl.review.on{background:rgba(139,90,0,.18);box-shadow:0 0 0 3px rgba(139,90,0,.3)}
+.hl .n{position:absolute;left:-13px;top:-13px;width:24px;height:24px;border-radius:999px;background:var(--pass-fill);color:#fff;font-size:12.5px;font-weight:700;display:grid;place-items:center;font-family:var(--mono)}
+.hl.review .n{background:var(--review-fill)}
+.chk{display:grid;grid-template-columns:36px 120px 1fr;gap:12px;align-items:start;padding:12px 14px;border-bottom:1px solid var(--line)}
+.chk.on{background:var(--action-tint)}
+.chk.rv{background:#FCF6E3}.chk.rv.on{background:#F6EBC7}
+.chk .chip{justify-content:center;min-width:104px}
+.chk .t{font-size:15.5px}
+.chk .s{font-size:13.5px;color:var(--ink-2);margin-top:2px}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-size:12.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;padding:6px 10px;border-bottom:2px solid var(--line);background:var(--surface-2)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;font-size:15px}
+mark{background:var(--fail-tint);color:var(--fail);font-weight:700;padding:0 3px;border-radius:3px;text-decoration:underline;text-decoration-style:wavy;text-underline-offset:2px}
+mark.req{background:var(--pass-tint);color:var(--pass);text-decoration:none}
+.kbd{display:inline-block;min-width:22px;padding:1px 6px;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:5px;background:var(--surface);font-family:var(--mono);font-size:12px;line-height:18px;color:var(--ink-2);text-align:center}
+.meter{position:relative;height:10px;border-radius:999px;background:linear-gradient(90deg,var(--fail-tint) 0 29%,var(--pass-tint) 29% 100%);border:1px solid var(--line)}
+.meter .tick{position:absolute;top:-6px;width:2px;height:22px;background:var(--ink-2)}
+.meter .mark{position:absolute;top:-5px;width:20px;height:20px;border-radius:999px;background:var(--pass-fill);border:3px solid #fff;box-shadow:0 0 0 1px var(--pass-fill);transform:translateX(-50%)}
+</style>
+</helmet>
+<div style="min-height: 1300px; display: flex; flex-direction: column">
+  <div style="background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; border-bottom: 1px solid var(--line)">
+    <div style="max-width: 1240px; margin: 0 auto; padding: 4px 24px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+      <span style="font-weight: 700; color: var(--ink)">Label Check</span><span aria-hidden="true">·</span><span>COLA compliance review</span><span aria-hidden="true">·</span><span>Prototype</span>
+      <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Internal tool · sample data only</span>
+    </div>
+  </div>
+  <header style="background: var(--brand); color: #fff">
+    <div style="max-width: 1240px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+      <span style="display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 6px; background: #fff; color: var(--brand)" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6"/><path d="M9 12h6"/><path d="M9.5 16.5l1.8 1.8 3.2-3.6"/></svg></span>
+      <div><h1 style="font-size: 20px; font-weight: 700; line-height: 1.2">Label Check</h1><p style="font-size: 13.5px; opacity: .85">Verify a label against its COLA (Certificate of Label Approval) application.</p></div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13.5px; color: #C9D4E6">
+        <span>Local OCR · Tesseract 5.5.0 · nothing you upload is stored</span>
+        <button class="btn icon" type="button" aria-label="How it works (help)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8"/><path d="M12 17h.01"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main style="max-width: 1240px; width: 100%; margin: 0 auto; padding: 8px 24px 40px; display: flex; flex-direction: column; gap: 20px">
+    <nav aria-label="Mode" style="display: flex; border-bottom: 1px solid var(--line)">
+      <button class="tab on" type="button" role="tab" aria-selected="true">Check one label</button>
+      <button class="tab" type="button" role="tab" aria-selected="false">Check a batch</button>
+    </nav>
+
+    <div class="card" style="padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center">
+      <div style="display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: baseline; flex: 1 1 560px; min-width: 0">
+        <div class="kv"><span>Application</span><strong style="font-family: var(--mono); font-weight: 600">SAMPLE-0012</strong></div>
+        <div class="kv"><span>Brand</span><strong>GLEN MORAR</strong></div>
+        <div class="kv"><span>Type</span><span>Single Malt Scotch Whisky</span></div>
+        <div class="kv"><span>Alcohol</span><span>86 Proof</span></div>
+        <div class="kv"><span>Net</span><span>700 mL</span></div>
+        <div class="kv"><span>Origin</span><span>Scotland</span></div>
+      </div>
+      <div style="display: flex; gap: 8px">
+        <button class="btn secondary small" type="button">Edit application</button>
+        <button class="btn secondary small" type="button">Check another label</button>
+      </div>
+    </div>
+
+    <section role="status" class="card" style="padding: 0; overflow: hidden; display: flex; flex-direction: column">
+      <sc-if value="{{isOpen}}" hint-placeholder-val="{{true}}">
+      <div class="banner review">
+        <span class="badge review"><svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg></span>
+        <div style="min-width: 0; flex: 1 1 320px"><h2 style="font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--review)">Needs a quick look</h2><p style="font-size: 15.5px; color: var(--ink)">Needs a look: government warning (one word differs). All 6 fields match.</p></div>
+        <div class="timing"><b>1.0 s</b><small>reading 1.0 s · comparing 0.0 s</small></div>
+      </div>
+      </sc-if>
+      <sc-if value="{{isFail}}" hint-placeholder-val="{{false}}">
+      <div class="banner fail">
+        <span class="badge fail"><svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></span>
+        <div style="min-width: 0; flex: 1 1 320px"><h2 style="font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--fail)">Problems found</h2><p style="font-size: 15.5px; color: var(--ink)">1 problem: government warning wording, confirmed by you as a misprint. All 6 fields match.</p></div>
+        <div class="timing"><b>1.0 s</b><small>reading 1.0 s · comparing 0.0 s</small></div>
+      </div>
+      </sc-if>
+      <sc-if value="{{isPass}}" hint-placeholder-val="{{false}}">
+      <div class="banner pass">
+        <span class="badge pass"><svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg></span>
+        <div style="min-width: 0; flex: 1 1 320px"><h2 style="font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--pass)">Label matches the application</h2><p style="font-size: 15.5px; color: var(--ink)">All 6 fields match. Government warning wording confirmed by you as a reading error.</p></div>
+        <div class="timing"><b>1.0 s</b><small>reading 1.0 s · comparing 0.0 s</small></div>
+      </div>
+      </sc-if>
+
+      <div style="display: flex; flex-wrap: wrap; align-items: stretch">
+        <div style="flex: 0 1 400px; min-width: 300px; padding: 20px; border-right: 1px solid var(--line); background: var(--surface-2); display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; color: var(--ink-2)"><span style="font-weight: 600">Label · the warning statement is outlined</span><button class="btn quiet small" type="button">Open full size</button></div>
+          <div style="position: relative; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; aspect-ratio: 3/4">
+            <img src="/_blob/3a5a30933c4384ef2a515d956ab431f7" alt="Glen Morar label. The government warning statement near the bottom is outlined; the word 'can' in its last line is marked." style="width: 100%; height: 100%; object-fit: cover; display: block">
+            <div class="hl review {{hl.box}}" style="left: 8.6%; top: 71.4%; width: 83%; height: 16.4%"><span class="n">W</span></div>
+            <div class="hl {{hl.head}}" style="left: 10.8%; top: 73.4%; width: 33.5%; height: 2.8%"><span class="n">C</span></div>
+            <div class="hl review {{hl.word}}" style="left: 45.8%; top: 83.4%; width: 6.2%; height: 2.6%; border-radius: 3px"></div>
+          </div>
+          <p style="font-size: 13px; color: var(--ink-3)">W: the statement as located (lines 7–11 of 11). C: the heading. The small amber box is the word that differs.</p>
+          <div style="font-size: 13.5px; color: var(--ink-2); padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px">All 6 application fields match on this label: brand, type, 43% = 86 proof, 700 mL, bottler, Product of Scotland. <a href="#fields">Show the field table</a>.</div>
+        </div>
+
+        <div style="flex: 1 1 520px; min-width: 0; padding: 18px 24px 24px; display: flex; flex-direction: column; gap: 16px">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+            <button class="pin review" type="button" aria-label="Show the government warning on the label" onFocus="{{on.box}}" onBlur="{{off}}" onMouseEnter="{{on.box}}" onMouseLeave="{{off}}">W</button>
+            <h3 style="font-size: 20px; font-weight: 700">Government warning</h3>
+            <span class="chip {{overallCls}}">{{overallWord}}</span>
+            <span style="font-size: 13.5px; color: var(--ink-2); margin-left: auto">27 CFR 16.21 · required word for word · heading in capitals and bold</span>
+          </div>
+
+          <div style="position: relative; width: 100%; max-width: 560px; height: 146px; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #fff; align-self: stretch">
+            <img src="/_blob/3a5a30933c4384ef2a515d956ab431f7" alt="Crop of the warning statement at reading size" style="position: absolute; width: 686px; left: -63px; top: -658px">
+          </div>
+
+          <div style="border: 1px solid var(--line); border-radius: 10px; overflow: hidden">
+            <div class="chk {{row.box}}" onMouseEnter="{{on.box}}" onMouseLeave="{{off}}"><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>PRESENT</span><span style="font-weight: 600; font-size: 15px">Present</span><div><div class="t">The statement was found on the label.</div><div class="s">Located by the heading line, then grown line by line while similarity kept improving: 5 lines, 98% similar overall.</div></div></div>
+
+            <div class="chk rv {{row.word}}" onMouseEnter="{{on.word}}" onMouseLeave="{{off}}">
+              <span class="chip {{wordCls}}"><sc-if value="{{isOpen}}" hint-placeholder-val="{{true}}"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3v6"/><path d="M8 12.5h.01"/></svg></sc-if>{{wordWord}}</span>
+              <span style="font-weight: 600; font-size: 15px">Wording</span>
+              <div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+                <div class="t">1 difference from the required wording. This may be a misprint on the label or a reading error. Please check the label.</div>
+                <table>
+                  <thead><tr><th style="width: 50%">Required text says</th><th>Label says</th></tr></thead>
+                  <tbody><tr><td>…operate machinery, and <mark class="req">may</mark> cause health problems.</td><td>…operate machinery, and <mark>can</mark> cause health problems.</td></tr></tbody>
+                </table>
+                <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-family: var(--mono); font-size: 13px; color: var(--ink-2)"><span>similarity <b style="color: var(--ink); font-weight: 600">99 / 100</b></span><span>review from 97, fail below</span><span>read confidence of "can" <b style="color: var(--ink); font-weight: 600">94%</b></span></div>
+                <sc-if value="{{isOpen}}" hint-placeholder-val="{{true}}">
+                <div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--review-line); border-radius: 8px">
+                  <span style="font-size: 14.5px; font-weight: 600">Look at the crop above. Does the label say "can"?</span>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                    <button class="btn danger small" type="button" onClick="{{fail}}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>Yes, it's a misprint: FAIL <span class="kbd">N</span></button>
+                    <button class="btn ok small" type="button" onClick="{{pass}}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>No, it says "may": reading error <span class="kbd" style="color: #fff; background: transparent; border-color: rgba(255,255,255,.5)">Y</span></button>
+                  </div>
+                </div>
+                </sc-if>
+                <sc-if value="{{isDecided}}" hint-placeholder-val="{{false}}">
+                <div style="font-size: 14px; color: var(--ink-2)">Decided by you: {{decisionText}} <button class="btn quiet small" type="button" onClick="{{undo}}" style="min-height: 24px; padding: 0 6px; font-size: 13px">Undo</button></div>
+                </sc-if>
+              </div>
+            </div>
+
+            <div class="chk {{row.head}}" onMouseEnter="{{on.head}}" onMouseLeave="{{off}}"><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>CAPITALS</span><span style="font-weight: 600; font-size: 15px">Heading in capitals</span><div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap"><div><div class="t">Heading is in capitals.</div><div class="s">Read as "GOVERNMENT WARNING:" with the colon.</div></div><div style="position: relative; width: 240px; height: 32px; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; background: #fff; flex: none"><img src="/_blob/3a5a30933c4384ef2a515d956ab431f7" alt="Crop of the heading GOVERNMENT WARNING:" style="position: absolute; width: 734px; left: -83px; top: -722px"></div></div></div>
+
+            <div class="chk {{row.head}}" onMouseEnter="{{on.head}}" onMouseLeave="{{off}}" style="border-bottom: 0"><span class="chip pass"><svg class="i" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>BOLD</span><span style="font-weight: 600; font-size: 15px">Heading bold</span><div style="display: flex; flex-direction: column; gap: 10px"><div><div class="t">Heading looks bold: strokes <span style="font-family: var(--mono)">2.03×</span> thicker than the body text.</div><div class="s">Estimated from stroke width in the image (bold passes from 1.30×; regular text measures 0.99–1.14×). A heuristic, so a doubtful result asks for a look instead of failing the label.</div></div>
+              <div style="padding: 8px 10px 4px; max-width: 420px"><div class="meter" aria-hidden="true"><span class="tick" style="left: 29%"></span><span class="mark" style="left: 72%"></span></div><div style="display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; color: var(--ink-2); margin-top: 8px"><span>0.8× regular</span><span style="margin-left: 2%">1.30× threshold</span><span>2.03× measured</span><span>2.5×</span></div></div>
+            </div></div>
+          </div>
+
+          <details><summary style="cursor: pointer; font-weight: 600; font-size: 15px; color: var(--action)">Statement as read from the label</summary><blockquote style="margin: 8px 0 0; padding: 10px 12px; background: var(--surface-2); border-radius: 6px; font-size: 14.5px; white-space: pre-wrap">GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and <mark>can</mark> cause health problems.</blockquote></details>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1300}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { active: '', decision: '' }; }
+  renderVals() {
+    const keys = ['box', 'head', 'word'];
+    const hl = {}, row = {}, on = {};
+    keys.forEach((k) => {
+      hl[k] = this.state.active === k ? 'on' : '';
+      row[k] = this.state.active === k ? 'on' : '';
+      on[k] = () => this.setState({ active: k });
+    });
+    const d = this.state.decision;
+    return {
+      hl, row, on, off: () => this.setState({ active: '' }),
+      isOpen: d === '', isFail: d === 'fail', isPass: d === 'pass', isDecided: d !== '',
+      overallCls: d === 'fail' ? 'fail' : d === 'pass' ? 'pass' : 'review',
+      overallWord: d === 'fail' ? 'FAIL' : d === 'pass' ? 'PASS' : 'REVIEW',
+      wordCls: d === 'fail' ? 'fail' : d === 'pass' ? 'pass' : 'review',
+      wordWord: d === 'fail' ? 'FAIL' : d === 'pass' ? 'PASS' : 'REVIEW',
+      decisionText: d === 'fail' ? 'the label says "can"; wording FAIL.' : 'the label says "may"; the reader misread it; wording PASS.',
+      fail: () => this.setState({ decision: 'fail' }),
+      pass: () => this.setState({ decision: 'pass' }),
+      undo: () => this.setState({ decision: '' })
+    };
+  }
+}
+</script>
+</body>
+</html>

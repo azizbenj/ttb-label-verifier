@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Accessibility and template mapping</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--sh-1:0 1px 2px rgba(20,24,30,.06);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}
+h1,h2,h3,p{margin:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+.sec{padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.sec h2{font-size:18px;font-weight:700}
+.sec h3{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);margin-top:4px}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-size:12.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:2px solid var(--line);background:var(--surface-2)}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top;font-size:14px}
+td.w{width:200px;font-weight:600;color:var(--ink-2);font-size:13.5px}
+code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);padding:1px 5px;border-radius:3px;color:var(--ink)}
+pre{margin:0;font-family:var(--mono);font-size:12px;line-height:1.5;white-space:pre;overflow:auto;background:#1B1B1B;color:#ECEEF1;padding:12px 14px;border-radius:6px}
+ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px;font-size:14px;color:var(--ink-2)}
+ul b{color:var(--ink)}
+.day{display:grid;grid-template-columns:90px 1fr;gap:4px 12px;font-size:14px}
+.day b{font-family:var(--mono);font-weight:600;color:var(--ink-2)}
+</style>
+</helmet>
+<div style="min-height: 2160px">
+  <div style="max-width: 1184px; margin: 0 auto; padding: 40px 48px 48px; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 8px; max-width: 880px">
+      <p style="font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2)">Implementation notes</p>
+      <h1 style="font-size: 32px; font-weight: 800; letter-spacing: -.02em">Accessibility decisions, and how each screen lands in the templates</h1>
+      <p style="color: var(--ink-2); text-wrap: pretty">Everything on this canvas is Jinja plus one stylesheet plus a small vanilla script. Nothing needs a build step, a framework, or a request to the internet. The first day delivers every single-label and batch screen; the review-queue decisions and the export dialog are the second day because they need two small endpoints.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(540px, 100%), 1fr)); gap: 20px; align-items: start">
+
+      <section class="card sec">
+        <h2>Accessibility decisions (WCAG 2.1 AA, USWDS practice)</h2>
+        <ul>
+          <li><b>Colour is never the only signal.</b> Every tag carries a fixed glyph and the verdict word; pins are numbered; banners have a headline; the diff marks a word with bold, colour and a wavy underline.</li>
+          <li><b>Contrast.</b> Every text/background pair on the Tokens board is at or above 4.5:1 (lowest: pass on its tint, 5.6:1); input borders 4.6:1; the one focus ring is 3 px action blue, 2 px offset, never removed.</li>
+          <li><b>Real controls.</b> Pins, filters, decisions, tabs and samples are <code>&lt;button&gt;</code>; the drop zone is a <code>&lt;label&gt;</code> around the real <code>&lt;input type=file&gt;</code>; the sample gallery sets a visually hidden <code>&lt;select&gt;</code>, which is also the no-JS path. The single-label form posts to <code>/verify</code> without JS and renders the same partial.</li>
+          <li><b>Keyboard.</b> Rows are <code>tabindex="0"</code> as today; <code>J</code>/<code>K</code>/arrows move a roving focus, <code>Enter</code> opens, <code>Esc</code> returns focus to the row it came from. Single-letter shortcuts are ignored while focus is in a text field, select or dialog. Drawer and dialog trap focus and restore it to the opener on close.</li>
+          <li><b>Announcements.</b> The result card is <code>role="status"</code>, so the banner headline and summary are read once when a result lands; the reading state sets <code>aria-busy</code>. Batch progress is <code>aria-live="polite"</code> but its text changes only every 25 labels, not every poll. Errors are <code>role="alert"</code>. Filters use <code>aria-pressed</code>, pins <code>aria-expanded</code>, icon buttons <code>aria-label</code>.</li>
+          <li><b>Tables stay tables.</b> Under 640 px rows become stacked cards with CSS, but <code>tr</code>/<code>td</code> keep <code>role="row"</code>/<code>role="cell"</code> so screen readers keep the structure, and each cell is prefixed with its header via <code>data-th</code> as the current stylesheet already does.</li>
+          <li><b>Images.</b> The label image's alt text names the pinned regions and which one is the problem; crops have their own alt with the text read; highlight overlays are <code>aria-hidden</code>.</li>
+          <li><b>Motion.</b> One easing, three durations, all set to 0 ms under <code>prefers-reduced-motion</code>; the scanning line and skeleton shimmer are removed, not just stopped. Nothing moves that is not responding to the agent.</li>
+          <li><b>Zoom and size.</b> Root 17 px; layouts are flex-wrap and auto-fit grids, so 125% and 200% zoom reflow without horizontal scroll; hit targets are 44 px (36 px only inside 40 px table rows, with the whole row clickable).</li>
+          <li><b>Offline.</b> Public Sans woff2 bundled under <code>/static/fonts</code> with system fallbacks; icons inline SVG; no third-party request of any kind. Print uses <code>@media print</code> in the same stylesheet.</li>
+        </ul>
+      </section>
+
+      <section class="card sec">
+        <h2>What the pipeline must expose (small, additive)</h2>
+        <table>
+          <thead><tr><th>Model</th><th>Add</th><th>Used by</th></tr></thead>
+          <tbody>
+            <tr><td class="w"><code>FieldResult</code></td><td><code>box: {x, y, w, h}</code> as percentages of the image, from the matched OCR word span; <code>crop_url</code> optional; <code>conf</code> mean word confidence; keep <code>score</code>.</td><td>Pins and highlights, evidence strip, print report.</td></tr>
+            <tr><td class="w"><code>WarningResult</code></td><td><code>box</code> for the statement span, <code>heading_box</code>, per-diff <code>context</code> (five words each side) and <code>box</code> for the differing word, <code>lines: "7–11 of 11"</code>, <code>span_score</code>.</td><td>Evidence view, diff table with context, outlined word.</td></tr>
+            <tr><td class="w"><code>VerificationResult</code></td><td><code>confidence</code> (OCR mean), <code>word_count</code>, <code>readable: bool</code> (fewer than 8 words or mean confidence under 50 → false).</td><td>Unreadable-label state instead of FAIL; "read confidence 96%".</td></tr>
+            <tr><td class="w"><code>BatchJob</code></td><td><code>counts()</code> callable while running; <code>rate_ms</code>; <code>decisions: dict[int, str]</code>; <code>issues</code> split into <code>rows_without_images</code> and <code>images_without_rows</code>.</td><td>Honest progress, tallies, queue, export column.</td></tr>
+            <tr><td class="w">Endpoints</td><td><code>POST /batch/{id}/item/{i}/decision</code> (pass · fail · skip); <code>GET /batch/{id}/export.csv?scope=review|fail|pass|all|selected&amp;ids=…&amp;decisions=1&amp;ocr=0</code>; <code>GET /verify/report</code> is the same result partial under a print stylesheet.</td><td>Review queue, export dialog, print.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="grid-column: 1 / -1">
+        <h2>Template by template</h2>
+        <table>
+          <thead><tr><th style="width: 190px">File</th><th>Keep</th><th>Change</th><th>Add</th></tr></thead>
+          <tbody>
+            <tr><td class="w">base.html</td><td>Header, main, footer, single stylesheet and script.</td><td>Top: identifier strip <code>&lt;div class="ident"&gt;</code> above the header. Header: neutral mark (inline SVG) instead of the "TTB" seal, tagline "Verify a label against its COLA application.", help button (<code>aria-controls="help"</code>). Footer copy as on the Copy board.</td><td><code>&lt;aside id="help" hidden&gt;</code> with the current How-it-works content (the third tab goes away); optional theme toggle writing <code>data-theme</code>.</td></tr>
+            <tr><td class="w">index.html</td><td>Both forms, field loop from <code>fields</code>, <code>samples-data</code> JSON, result slots.</td><td>Two tabs. Single form: fields in the order shown, alcohol and net contents side by side (<code>.grid-2</code>), drop zone <code>&lt;label class="drop" for="image-input"&gt;</code> wrapping the input, preview card, helper under the submit. Batch form: two drop zones, template link under the CSV zone, sample-batch button in its own block.</td><td><code>&lt;div id="single-summary" hidden&gt;</code> (folded form bar). Sample gallery <code>&lt;div class="samples"&gt;</code> rendered from <code>samples</code> with the select kept but <code>.sr-only</code>. Empty states: gallery + explainer in <code>#result</code>; "What you get back" + CSV column table in <code>#batch-result</code>.</td></tr>
+            <tr><td class="w">partials/result.html</td><td>Banner, table, warning section, OCR details; all filters (<code>chip</code>, <code>headline</code>, <code>seconds</code>).</td><td>Banner becomes <code>&lt;section role="status" class="result"&gt;</code> with badge + headline + summary + timing + actions. Body becomes <code>.split</code>: <code>.label-panel</code> (image + one <code>.hl</code> per field with <code>style="left:{{f.box.x}}%…"</code> and a numbered <code>.n</code>) and <code>.verdicts</code>. Table: first cell is <code>&lt;button class="pin" aria-expanded data-field&gt;</code>; the reason moves under the tag; the evidence strip is a second <code>&lt;tr class="evidence" hidden&gt;</code> (open by default when the verdict is not MATCH; always open without JS).</td><td>Caption line "Mandatory label information · 27 CFR parts 4, 5 and 7". Warning section: pin W, four checks in a 2-column grid, diff table with context columns, bold meter, decision block when <code>w.wording == REVIEW</code> or <code>w.heading_bold == REVIEW</code>. Unreadable card when <code>not r.readable</code>. <code>compact</code> keeps working for the batch detail panel and the queue.</td></tr>
+            <tr><td class="w">partials/batch_status.html</td><td>Running / done branches, <code>data-job</code> polling hook, filter buttons, search, issues, table, row <code>data-*</code> attributes.</td><td>Running: progress card with <code>role="progressbar"</code>, three tallies from <code>job.counts()</code>, rate and estimate, "Start reviewing the n" button, partial table of finished rows (needs-you first). Done: header with the three counts in a sentence, filter order Review · Fail · Pass · All (Error only when &gt; 0), sort select, brand column, checkbox column, file name moved into the detail.</td><td><code>&lt;aside id="detail"&gt;</code> beside the table (loads <code>/batch/{id}/item/{i}</code> with <code>compact</code>), bulk bar, <code>&lt;dialog id="export"&gt;</code>, review-queue view (<code>#queue</code>, same item partial, prev/next, decision buttons), file-issues alert above the table.</td></tr>
+            <tr><td class="w">partials/error.html</td><td>Alert card with headline and message.</td><td>Headline becomes specific per <code>kind</code> (fields · image · type · size · csv · zip · batch · server) with the message from the server as today; <code>role="alert"</code>.</td><td>Optional <code>action</code> button (Choose another file · Try again) and optional <code>table</code> for the CSV header comparison; inline field errors rendered from <code>missing</code> when present.</td></tr>
+            <tr><td class="w">static/style.css</td><td>Structure of the current file: tabs, layout, form, chips, result, batch, help, narrow rules.</td><td>Replace <code>:root</code> with the Tokens board; chips get 3 px corners and inline-SVG glyphs via <code>mask-image</code> on <code>::before</code>; buttons 4 px; cards 8 px; the 640 px rules extend to the new split view and the batch list.</td><td><code>.ident</code>, <code>.mark</code>, <code>.split</code>/<code>.label-panel</code>/<code>.hl</code>/<code>.pin</code>, <code>.evidence</code>, <code>.diff mark</code>, <code>.meter</code>, <code>.fchip</code>, <code>.detail</code>, <code>.bulk</code>, <code>dialog</code>, <code>.drawer</code>, <code>.toast</code>, skeleton and scan keyframes, <code>@media print</code>, <code>@media (prefers-reduced-motion)</code>, <code>@media (prefers-color-scheme: dark)</code>.</td></tr>
+            <tr><td class="w">static/app.js</td><td>Tabs, <code>postForm</code>, sample prefill, preview, batch polling, filters, row expansion.</td><td>Sample prefill is driven by the gallery buttons and still writes the select. Row expansion becomes "select row → load detail panel". Filter state also drives the sort and the footer text.</td><td>About 150 lines: fold/unfold the form; hover/focus → <code>.hl.on</code>; pin click → toggle its evidence row; one <code>keydown</code> handler with the shortcut map, guarded by target type; drawer and dialog open/close with focus management; toast; progress estimate from <code>rate_ms</code>; decision posts; export form → URL.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec">
+        <h2>Print stylesheet (the Letter board)</h2>
+<pre>@media print {
+  .ident, header, nav, footer, .btn, .pin, details, #help, #detail, .bulk { display: none !important; }
+  body { background: #fff; font-size: 11pt; color: #000; }
+  .result { border: 0; box-shadow: none; }
+  .split { display: grid; grid-template-columns: 236px 1fr; gap: 16px; }
+  .hl { border-width: 1.5pt; } .hl.fail { border-width: 2.5pt; }
+  .chip, .banner, tr.bad td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  tr, .warning-box { break-inside: avoid; }
+  .report-footer { display: flex; } /* reviewer decision, signature, page number */
+  @page { size: letter; margin: 0.5in; }
+}</pre>
+        <p style="font-size: 13.5px; color: var(--ink-2)">"Print report" calls <code>window.print()</code> on the same page; the report footer (reviewer decision, notes, page number) is in the partial but hidden on screen. Tags keep their glyphs so a black-and-white printout still reads.</p>
+      </section>
+
+      <section class="card sec">
+        <h2>A day's plan</h2>
+        <div class="day">
+          <b>09:00</b><span>Tokens into <code>style.css</code>; bundle Public Sans; base.html strip, mark, tagline, footer; chips, buttons, inputs, focus ring. Check contrast in the browser.</span>
+          <b>10:30</b><span>index.html: two tabs, form layout, drop zones, sample gallery, empty states. Form still posts without JS.</span>
+          <b>12:00</b><span>Pipeline: <code>box</code> per field and for the warning from the OCR word span (the words are already there); <code>readable</code> flag.</span>
+          <b>13:00</b><span>result.html split view: image panel with pins, table with pin buttons and evidence rows, warning section with context diff and meter, unreadable card. Hover/focus highlight in app.js.</span>
+          <b>15:00</b><span>batch_status.html: progress with tallies and estimate, triage header, filters and sort, brand column, detail panel, keyboard map, file-issues alert.</span>
+          <b>17:00</b><span>error.html kinds, inline field errors, print CSS, help drawer, reduced-motion and dark media queries. Walk every board on this canvas against the running app.</span>
+          <b>Day 2</b><span>Decision endpoint and review-queue view; export dialog and scoped CSV; toasts; optional theme toggle.</span>
+        </div>
+      </section>
+
+      <section class="card sec" style="grid-column: 1 / -1">
+        <h2>Naming and attribution (from the legal check)</h2>
+        <ul>
+          <li><b>No agency branding.</b> Treasury and bureau names, initials, seals or look-alikes may not be used as branding on an unaffiliated product (31 U.S.C. § 333; disclaimers do not cure it). The canvas therefore shows "Label Check" with a neutral mark; <code>base.html</code> should drop the "TTB" seal and the "· TTB" page title, and the footer should not name a division.</li>
+          <li><b>Descriptive references are fine.</b> Citing 27 CFR parts 4, 5, 7 and 16, using the regulatory term COLA, and a README sentence saying the prototype models the kind of label review TTB examiners do are factual statements, not branding.</li>
+          <li><b>Repo and URL.</b> Consider renaming <code>ttb-label-verifier</code> to <code>label-check</code> or <code>cola-label-check</code> before sharing it widely.</li>
+        </ul>
+      </section>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":2160}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

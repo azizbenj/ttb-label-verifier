@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Copy for every state</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{--ground:#F1F1EF;--surface:#FFFFFF;--surface-2:#EDEEF0;--line:#DCDEE0;--line-strong:#71767A;--ink:#1B1B1B;--ink-2:#3D4551;--ink-3:#565C65;--brand:#162E51;--action:#005EA2;--pass:#216E1F;--pass-tint:#ECF3EC;--pass-line:#9BD4A2;--review:#7A4D06;--review-tint:#FAF3D1;--review-line:#E9C06B;--fail:#B50909;--fail-tint:#F4E3DB;--fail-line:#F0A196;--none:#565C65;--none-tint:#F0F0F0;--none-line:#A9AEB1;--sh-1:0 1px 2px rgba(20,24,30,.06);--font:"Public Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--action)}
+h1,h2,h3,p{margin:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--sh-1)}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-size:12.5px;font-weight:700;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;border-bottom:2px solid var(--line);background:var(--surface-2)}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:14.5px}
+td.w{width:230px;color:var(--ink-2);font-weight:600;font-size:13.5px}
+td.w small{display:block;font-weight:400;font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+td q{quotes:"“" "”"}
+.sec{display:flex;flex-direction:column;gap:10px}
+.sec h2{font-size:18px;font-weight:700}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:3px;border:1px solid;font-size:12px;font-weight:700;white-space:nowrap;line-height:1;vertical-align:middle}
+.chip.pass{background:var(--pass-tint);color:var(--pass);border-color:var(--pass-line)}
+.chip.review{background:var(--review-tint);color:var(--review);border-color:var(--review-line)}
+.chip.fail{background:var(--fail-tint);color:var(--fail);border-color:var(--fail-line)}
+.chip.none{background:var(--none-tint);color:var(--none);border-color:var(--none-line)}
+.kbd{display:inline-block;min-width:20px;padding:0 5px;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:4px;background:var(--surface);font-family:var(--mono);font-size:11.5px;line-height:17px;color:var(--ink-2);text-align:center}
+</style>
+</helmet>
+<div style="min-height: 1960px">
+  <div style="max-width: 1184px; margin: 0 auto; padding: 40px 48px 48px; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 8px; max-width: 860px">
+      <p style="font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2)">Copy</p>
+      <h1 style="font-size: 32px; font-weight: 800; letter-spacing: -.02em">Every headline, label, helper and message</h1>
+      <p style="color: var(--ink-2); text-wrap: pretty">Same register as the current app: plain, second person, one idea per sentence, no exclamation marks, no jargon the agents did not already use. The verdict words are fixed by the regulation and the team and never paraphrased: MATCH, NEAR MATCH, MISMATCH, NOT FOUND, SKIPPED, PASS, REVIEW, FAIL, "government warning". Per-field reasons come from the pipeline unchanged. Strings in grey mono are where they live.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(540px, 100%), 1fr)); gap: 20px; align-items: start">
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Shell</h2>
+        <table>
+          <tbody>
+            <tr><td class="w">Identifier strip<small>base.html</small></td><td>Label Check · COLA compliance review · Prototype — right: Internal tool · sample data only</td></tr>
+            <tr><td class="w">Product name and tagline</td><td><strong>Label Check</strong><br>Verify a label against its COLA (Certificate of Label Approval) application.</td></tr>
+            <tr><td class="w">Header status</td><td>Local OCR · Tesseract 5.5.0 · nothing you upload is stored</td></tr>
+            <tr><td class="w">Help button<small>aria-label</small></td><td>How it works (help) — open: Close help</td></tr>
+            <tr><td class="w">Tabs</td><td>Check one label · Check a batch (phone: One label · Batch)</td></tr>
+            <tr><td class="w">Footer</td><td>Prototype · Mandatory label information under 27 CFR parts 4, 5 and 7; health warning statement under 27 CFR part 16 · Uploads are processed in memory and not stored · service status</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Single label: form</h2>
+        <table>
+          <tbody>
+            <tr><td class="w">Section 1</td><td>1. What the COLA application says</td></tr>
+            <tr><td class="w">Fields and placeholders</td><td>Brand name * <q>e.g. OLD TOM DISTILLERY</q> · Class / type * <q>e.g. Kentucky Straight Bourbon Whiskey</q> · Alcohol content * <q>45% Alc./Vol. or 90 Proof</q> · Net contents * <q>750 mL or 12 fl oz</q> · Bottler name &amp; address (optional) <q>Bottled by Old Tom Distillery, Bardstown, KY</q> · Country of origin (imports only) <q>e.g. Scotland</q></td></tr>
+            <tr><td class="w">Section 2</td><td>2. The label image</td></tr>
+            <tr><td class="w">Drop zone</td><td><strong>Drop the label here, or choose a file</strong><br>PNG, JPG, TIFF or WEBP · up to 20 MB · flat artwork or a straight-on scan works best</td></tr>
+            <tr><td class="w">Drop zone, drag over</td><td>Release to add the label</td></tr>
+            <tr><td class="w">Preview card</td><td>old_tom_clean.png · 1200×1600 · 35 KB — Remove</td></tr>
+            <tr><td class="w">Submit · helper</td><td><strong>Check label</strong> — Takes about a second. Nothing you upload is stored.</td></tr>
+            <tr><td class="w">Submit, busy</td><td>Checking…</td></tr>
+            <tr><td class="w">Folded summary bar</td><td>Application · Brand · Type · Alcohol · Net · Image — Edit application · Check another label</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Single label: empty, samples, reading</h2>
+        <table>
+          <tbody>
+            <tr><td class="w">Sample gallery</td><td><strong>Start with a sample</strong> — Picking one fills in the application and the image.<br>Old Tom Distillery · Bourbon · should pass / Stone's Throw Cellars · Wine · should pass / River Bend Brewing · Beer · should pass / Glen Morar · Import · country of origin / <strong>11 labels with a planted problem</strong> · wrong ABV, missing warning, heading not bold…</td></tr>
+            <tr><td class="w">Empty result slot</td><td><strong>The verdict appears here, next to the label.</strong><br>Each field is marked <span class="chip pass">MATCH</span> <span class="chip review">NEAR MATCH</span> <span class="chip fail">MISMATCH</span> or <span class="chip fail">NOT FOUND</span>, with the place on the label where it was read. The government warning is checked word for word.</td></tr>
+            <tr><td class="w">Reading state</td><td><strong>Reading the label…</strong> Usually about a second. Each field is then compared with the application and the government warning is checked word for word. — 0.4 s elapsed<br>Steps: Image received and prepared · Reading the text (local OCR, two passes) · Finding each application value on the label · Checking the government warning</td></tr>
+            <tr><td class="w">Screen reader</td><td>"Reading the label." once; then the banner headline and summary when the result lands.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Verdict banners and evidence</h2>
+        <table>
+          <tbody>
+            <tr><td class="w"><span class="chip pass">PASS</span></td><td><strong>Label matches the application</strong> — All 5 fields match the application and the government warning is correct.</td></tr>
+            <tr><td class="w"><span class="chip review">REVIEW</span></td><td><strong>Needs a quick look</strong> — Needs a look: brand name. Everything else matches and the government warning is correct.</td></tr>
+            <tr><td class="w"><span class="chip fail">FAIL</span></td><td><strong>Problems found</strong> — 1 problem: alcohol content. Everything else matches and the government warning is correct. (Plural: 2 problems: alcohol content, net contents. Mixed: 1 problem: government warning. Needs a look: bottler name &amp; address.)</td></tr>
+            <tr><td class="w">After a decision</td><td>All 5 fields match: 4 exactly, 1 confirmed by you (brand name). · 1 problem: government warning wording, confirmed by you as a misprint.</td></tr>
+            <tr><td class="w">Timing</td><td>0.9 s — reading 0.9 s · comparing 0.0 s</td></tr>
+            <tr><td class="w">Image panel</td><td>Label, with where each value was read — Open full size — Hover or focus a row to light up its region. Numbers match the rows.</td></tr>
+            <tr><td class="w">Table heading</td><td>Mandatory label information — 27 CFR parts 4, 5 and 7 · as filed on the COLA application</td></tr>
+            <tr><td class="w">Table headers</td><td>Field · On the application · On the label · Result — pin: Show {field} on the label</td></tr>
+            <tr><td class="w">Evidence strip</td><td>application 45.0% = 90 proof · label 40.0% = 80 proof · difference 5.0 points · allowed 0.05 · read confidence 96% · after normalizing: identical · 100 / 100</td></tr>
+            <tr><td class="w">Reasons<small>pipeline, unchanged</small></td><td>Exact match. · 45% ABV on both. · 750 mL on both. · Label says 40% ABV, application says 45% ABV. · Same words, but capitalization or punctuation differs. Please confirm. · Very similar (92% alike) but not identical. Please confirm. · Reads like 1.5 L but the decimal point was not read clearly. Please confirm. · Not provided on the application, so not checked.</td></tr>
+            <tr><td class="w">Buttons</td><td>Print report · Copy problem summary · Edit application · Check another label</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Government warning</h2>
+        <table>
+          <tbody>
+            <tr><td class="w">Heading</td><td>Government warning <span class="chip pass">PASS</span> — 27 CFR 16.21 · required word for word · heading in capitals and bold</td></tr>
+            <tr><td class="w">Four checks<small>pipeline, unchanged</small></td><td>PRESENT The statement was found on the label. · WORDING Wording matches the required statement word for word. / 1 difference from the required wording. This may be a misprint on the label or a reading error. Please check the label. / The wording does not match the required statement. · CAPITALS Heading is in capitals. / The heading is printed as 'Government Warning'. It must be all capitals: 'GOVERNMENT WARNING:'. · BOLD Heading looks bold (strokes 1.53× thicker than the text). / Heading does not look bolder than the text (strokes 1.12×). Please check it by eye.</td></tr>
+            <tr><td class="w">Added evidence lines</td><td>Located by the heading line, then grown line by line while similarity kept improving: 5 lines, 98% similar overall. · similarity 99 / 100 · review from 97, fail below · bold from 1.30×; regular text measures 0.99–1.14×</td></tr>
+            <tr><td class="w">Diff table</td><td>Required text says · Label says — <q>(nothing)</q> for a missing word</td></tr>
+            <tr><td class="w">Decision prompt</td><td>Look at the crop above. Does the label say "can"? — Yes, it's a misprint: FAIL <span class="kbd">N</span> · No, it says "may": reading error <span class="kbd">Y</span></td></tr>
+            <tr><td class="w">Details</td><td>Statement as read from the label · All text we read on the label (tesseract 5.5.0, psm 4+11)</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Decision prompts (review queue and single)</h2>
+        <table>
+          <tbody>
+            <tr><td class="w">Brand capitalization</td><td>Is this the same brand name? — Yes, same brand <span class="kbd">Y</span> · No, different <span class="kbd">N</span></td></tr>
+            <tr><td class="w">Warning wording</td><td>Does the label say "should"? — Yes, it says "should": reading error · No, it says "must": misprint</td></tr>
+            <tr><td class="w">Heading bold</td><td>Is "GOVERNMENT WARNING:" printed in bold? — Yes, it is bold · No, it is not bold</td></tr>
+            <tr><td class="w">Volume decimal</td><td>Does the label say 1.5 L? — Yes, 1.5 L · No, something else</td></tr>
+            <tr><td class="w">Always available</td><td>Skip for now <span class="kbd">S</span> — Your answer goes into the printed report and the CSV. · Decided by you: … Undo</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Batch: upload, progress, results</h2>
+        <table>
+          <tbody>
+            <tr><td class="w">Form</td><td><strong>Check many labels at once</strong> — One CSV row per application, plus the label images. Images are matched to rows by file name.<br>1. Application data (CSV) * · Drop the CSV here, or choose a file · Needs the columns image, brand_name, class_type, alcohol_content, net_contents · Download the CSV template · two example rows, ready to edit in Excel<br>2. Label images * · Drop the images or a zip here · Select them all at once · up to 500 images or one zip · PNG, JPG, TIFF, WEBP<br><strong>Check batch</strong> · Try the sample batch · 250 labels — About 90 seconds. 38 labels have a planted problem, 18 need a look. Download it to upload it yourself.</td></tr>
+            <tr><td class="w">Batch empty slot</td><td><strong>What you get back</strong> — 1 A triage count first. 2 A review queue you can step through. 3 Exports that match the queue. — Results start appearing while the batch is still running, so you can begin on the review pile straight away.</td></tr>
+            <tr><td class="w">Progress</td><td><strong>Checking 250 labels…</strong> — 132 of 250 · 40 s elapsed · about 35 s left — 9 need a look so far · 21 problems so far · 102 pass so far — 0.3 s per label across 4 workers — Start reviewing the 9 — Stop the batch</td></tr>
+            <tr><td class="w">Results header</td><td><strong>250 labels checked in 75.8 s</strong> — Sample batch · 0.3 s per label · finished 14:03:27 · 18 need you, 38 have problems, 194 pass. — Review the 18 <span class="kbd">R</span> · Export… · New batch</td></tr>
+            <tr><td class="w">Filters and search</td><td>Review 18 · Fail 38 · Pass 194 · All 250 (Error n only when n &gt; 0) — Search: Brand, application or file name — Sort: Needs you first · Application id · Brand · Slowest first</td></tr>
+            <tr><td class="w">Table footer</td><td>12 more review labels in this list, same columns, scrolled in the table, never the page · End of list · No labels match "cedar" in Review. Clear the search or pick another filter.</td></tr>
+            <tr><td class="w">Detail panel</td><td>File · Checked in · Needs: A look at the warning statement / Confirm the volume / Nothing: send back / Nothing — Open full comparison <span class="kbd">Enter</span> · Print report — <span class="kbd">J</span> <span class="kbd">K</span> move · <span class="kbd">X</span> select · <span class="kbd">Enter</span> open · <span class="kbd">Esc</span> back to the table</td></tr>
+            <tr><td class="w">Bulk bar</td><td>3 selected · Export selected (CSV) · Print reports · Mark as sent back · Clear — Bulk actions never change a verdict.</td></tr>
+            <tr><td class="w">Review queue</td><td>Review queue · Sample batch — 3 of 18 that need a look · 2 decided · <span class="kbd">Esc</span> back to the table — The outlined region is the one thing to look at on this label. Everything else was checked and matches. — A decision moves you to the next item. Decisions are kept with the batch and go into the export as a "decision" column; nothing is sent anywhere. — Previous <span class="kbd">K</span> · Next <span class="kbd">J</span></td></tr>
+            <tr><td class="w">Export dialog</td><td><strong>Export results</strong> — Which labels: All 250 · Shown now · Review, 18 · Selected · 3 — Include: Per-field verdicts and the one-line reasons · Government warning checks and the diff · Your decisions from the review queue · All text read from each label · Timings — Format: CSV (Opens in Excel. UTF-8 with BOM so accents and symbols survive.) · Printable reports (One page per label for the case file) — label-check_sample-batch_review_2026-10-08.csv · 18 rows · about 9 KB — Cancel · Download CSV — Quick exports: Passes only (194), for approval · Fails only (38), with reasons, for the send-back letters</td></tr>
+            <tr><td class="w">Toast</td><td>Exported 38 labels marked FAIL as label-check-fail.csv — Undo</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Errors</h2>
+        <table>
+          <tbody>
+            <tr><td class="w">Missing fields</td><td><strong>We couldn't run this check.</strong> Please fill in: Class / type, Alcohol content, Net contents. — inline: Please fill in the class / type, e.g. Kentucky Straight Bourbon Whiskey.</td></tr>
+            <tr><td class="w">No image</td><td><strong>We couldn't run this check.</strong> Please add a label image (PNG, JPG, TIFF or WEBP), or pick a sample. — drop zone: The label image is missing</td></tr>
+            <tr><td class="w">Not an image</td><td><strong>That isn't an image we can read</strong> 'application-form.pdf' could not be read as an image. Please upload a PNG or JPG of the label. — Choose another file</td></tr>
+            <tr><td class="w">Too large</td><td><strong>This image is too big to check.</strong> 'label_scan_600dpi.tif' is 24 MB; the limit is 20 MB. A 300 dpi scan is plenty: export it as a PNG or JPG and try again.</td></tr>
+            <tr><td class="w">Unreadable label</td><td><strong>We couldn't read this label</strong> No verdict. Only 3 words were read, with 41% confidence, so nothing could be compared. This is not a FAIL. — What usually fixes it: Use the artwork file or a flat, straight-on scan instead of a photo. · Make sure the label fills most of the image and the text is at least 1,600 px wide. · Avoid glare, shadows and busy backgrounds behind the text. — Try another image · Show the 3 words we read</td></tr>
+            <tr><td class="w">CSV columns</td><td><strong>The CSV is missing 4 required columns.</strong> Found: file, brand, type, abv. Needed: image, brand_name, class_type, alcohol_content, net_contents. Rename the headers, or download the template and paste your rows in. — table: Expected header · In your file · rename / add</td></tr>
+            <tr><td class="w">File issues</td><td><strong>5 file issues · the other 245 labels were checked</strong> 3 rows have no matching image: APP-0012 (label_0012.png), APP-0088 (label_0088.PNG, case differs), APP-0140 (label_140.png). 2 images match no row: extra_01.png, notes.txt. — row: No image named label_0012.png in the upload. Add it and re-run just this row.</td></tr>
+            <tr><td class="w">Server</td><td><strong>We couldn't reach the server.</strong> Your check was not sent. Check the network connection and try again; nothing you typed was lost. — Try again · progress card while polling fails: Reconnecting…</td></tr>
+            <tr><td class="w">Batch too large / bad zip</td><td><strong>That's more than one batch can take.</strong> You added 612 images; the limit is 500 per batch. Split the folder in two and run them one after the other; results export separately. — <strong>We couldn't open the zip.</strong> 'labels_q3.zip' could not be unpacked. Re-zip the images (no folders inside, no password) and try again.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card sec" style="padding: 16px 18px">
+        <h2>Help drawer and print</h2>
+        <table>
+          <tbody>
+            <tr><td class="w">Help sections</td><td>How a label is checked (Read · Find each field · Compare · Government warning) · What the results mean · Government warning checks · The thresholds, in one place · Keyboard · Good to know — All of these live in one configuration file and are documented in the project README.</td></tr>
+            <tr><td class="w">Print report</td><td><strong>Label verification report</strong> — Label Check · COLA compliance review prototype · sample data — FAIL · Problems found — Reviewer decision: Approve · Return to applicant · Needs a second look — Reviewed by · Date · Notes — Label Check prototype · verdicts are computed from the image and the application as entered; the reviewer's decision governs. — Page 1 of 1</td></tr>
+            <tr><td class="w">Keyboard legend</td><td><span class="kbd">J</span> <span class="kbd">K</span> next and previous · <span class="kbd">Enter</span> open · <span class="kbd">Esc</span> back · <span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> <span class="kbd">0</span> filter Review, Fail, Pass, All · <span class="kbd">Y</span> <span class="kbd">N</span> <span class="kbd">S</span> decide · <span class="kbd">X</span> select · <span class="kbd">R</span> start the review queue · <span class="kbd">?</span> help</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1960}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
