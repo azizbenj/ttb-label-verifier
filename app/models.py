@@ -25,7 +25,7 @@ class Status(str, Enum):
 
 
 class Application(BaseModel):
-    """What the applicant told TTB. Blank optional fields are skipped."""
+    """What the label approval application says. Blank optional fields are skipped."""
 
     brand_name: str
     class_type: str

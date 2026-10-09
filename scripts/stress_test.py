@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import io
-import random
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path

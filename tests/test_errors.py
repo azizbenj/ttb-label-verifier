@@ -149,7 +149,6 @@ def test_csv_header_near_miss_is_named():
 
 def test_too_many_images_says_how_to_split(monkeypatch):
     monkeypatch.setattr(batch, "MAX_BATCH_IMAGES", 2)
-    imgs, issues = None, None
     try:
         batch.collect_images([(f"l{i}.png", bytes([i]) * 10) for i in range(3)])
     except batch.BatchError as e:
