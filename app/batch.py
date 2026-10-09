@@ -21,7 +21,7 @@ from time import perf_counter
 from .config import (BATCH_JOBS_KEPT, BATCH_JOB_TTL_S, BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES,
                      MAX_BATCH_UPLOAD_BYTES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS, MAX_ZIP_UNCOMPRESSED)
 from .images import ImageError, open_image
-from .models import Application, Status, VerificationResult
+from .models import Application, Status, Verdict, VerificationResult
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
 from .readers.base import LabelReader, ReaderError
@@ -48,6 +48,12 @@ class BatchError(Exception):
     """A problem the user can fix, phrased for them."""
 
 
+PREVIEW_MAX_SIDE = 900                 # px, the copy of each label kept for the detail panel
+PREVIEW_BUDGET_BYTES = 120 * 1024 * 1024   # across all jobs in memory; beyond it, no previews are kept
+_preview_bytes = 0
+_ORDER = {"REVIEW": 0, "FAIL": 1, "ERROR": 2, "PASS": 3, "PENDING": 4}
+
+
 @dataclass
 class BatchItem:
     row: int
@@ -56,12 +62,62 @@ class BatchItem:
     application: Application | None = None
     result: VerificationResult | None = None
     error: str | None = None
+    preview: bytes | None = None       # downscaled JPEG for the detail panel, when the budget allows
+    needs: str = ""                    # what the agent has to do with this label, in a few words
+    focus_box: list[float] | None = None   # region to outline in the detail panel: the first problem or review
 
     @property
     def status(self) -> str:
         if self.error:
             return Status.ERROR.value
         return self.result.overall.value if self.result else "PENDING"
+
+    @property
+    def brand(self) -> str:
+        return self.application.brand_name if self.application else ""
+
+    @property
+    def order(self) -> int:
+        return _ORDER.get(self.status, 9)
+
+
+def needs_phrase(result: VerificationResult) -> tuple[str, list[float] | None]:
+    """Short instruction for the triage panel, plus the region to outline on the label."""
+    reviews = [f for f in result.fields if f.verdict == Verdict.NEAR_MATCH]
+    problems = [f for f in result.fields if f.verdict in (Verdict.MISMATCH, Verdict.NOT_FOUND)]
+    w = result.warning
+    if result.overall == Status.PASS:
+        return "Nothing", None
+    if result.overall == Status.FAIL:
+        box = problems[0].box if problems and problems[0].box else w.box
+        return "Nothing: send back", box
+    if reviews:
+        return f"Confirm the {reviews[0].label.lower()}", reviews[0].box
+    if w.heading_bold == Status.REVIEW:
+        return "A look at the heading weight", w.box
+    if w.heading_caps == Status.REVIEW:
+        return "A look at the heading", w.box
+    return "A look at the warning statement", w.box
+
+
+def make_preview(image) -> bytes | None:
+    """A small JPEG of the label for the detail panel, within the process-wide memory budget."""
+    global _preview_bytes
+    if _preview_bytes >= PREVIEW_BUDGET_BYTES:
+        return None
+    try:
+        from PIL import ImageOps
+        img = ImageOps.exif_transpose(image)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        img.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=80, optimize=True)
+    except Exception:  # a preview is a convenience, never a reason to fail the label
+        return None
+    data = buf.getvalue()
+    _preview_bytes += len(data)
+    return data
 
 
 @dataclass
@@ -94,6 +150,45 @@ class BatchJob:
     @property
     def elapsed_ms(self) -> float:
         return self.finished_ms if self.finished_ms is not None else (perf_counter() - self.started) * 1000
+
+    @property
+    def processed(self) -> int:
+        """Labels actually read (rows with a file problem count as done but took no time)."""
+        return sum(1 for it in self.items if it.result is not None)
+
+    @property
+    def per_label_ms(self) -> float | None:
+        """Wall-clock time per label so far, across the workers."""
+        return self.elapsed_ms / self.processed if self.processed else None
+
+    @property
+    def eta_ms(self) -> float | None:
+        """Estimate from the measured rate; None until 10 labels are done."""
+        if self.is_done or self.processed < 10 or self.per_label_ms is None:
+            return None
+        return (self.total - self.done) * self.per_label_ms
+
+    def mean_read_ms(self) -> float | None:
+        xs = [it.result.timings.read_ms for it in self.items if it.result]
+        return sum(xs) / len(xs) if xs else None
+
+    def ordered_items(self) -> list[tuple[int, "BatchItem"]]:
+        """(index, item) in triage order: REVIEW, FAIL, ERROR, PASS, then still pending."""
+        return sorted(enumerate(self.items), key=lambda p: (p[1].order, p[0]))
+
+    @property
+    def started_at_local(self) -> str:
+        return self.created_at.astimezone().strftime("%H:%M:%S")
+
+    @property
+    def finished_at_local(self) -> str:
+        if self.finished_ms is None:
+            return ""
+        from datetime import timedelta
+        return (self.created_at + timedelta(milliseconds=self.finished_ms)).astimezone().strftime("%H:%M:%S")
+
+    def image_count(self) -> int:
+        return sum(1 for it in self.items if it.result is not None or (it.error and "No image named" not in it.error))
 
 
 JOBS: dict[str, BatchJob] = {}
@@ -302,6 +397,8 @@ def _process(job: BatchJob, item: BatchItem, data: bytes, reader: LabelReader) -
     try:
         image = open_image(data, item.image_name)
         item.result = verify(item.application, image, reader, image_name=item.image_name)
+        item.needs, item.focus_box = needs_phrase(item.result)
+        item.preview = make_preview(image)
     except (ImageError, ReaderError) as e:
         item.error = str(e)
     except Exception as e:  # keep the batch going; surface the reason
@@ -355,18 +452,23 @@ def _cell(value):
     return value
 
 
-def export_csv(job: BatchJob) -> str:
+def export_csv(job: BatchJob, ids: set[str] | None = None, statuses: set[str] | None = None) -> str:
+    """CSV of the job; ``ids`` (application ids) or ``statuses`` (PASS/REVIEW/FAIL/ERROR) narrow it."""
     buf = io.StringIO()
     w = csv.writer(buf)
-    header = ["application_id", "image", "overall", "summary"]
+    header = ["application_id", "image", "overall", "needs", "summary"]
     for f in FIELDS:
         header += [f"{f.key}_verdict", f"{f.key}_expected", f"{f.key}_found", f"{f.key}_note"]
     header += ["warning_present", "warning_wording", "warning_heading_caps", "warning_heading_bold", "warning_notes",
                "read_ms", "total_ms", "reader", "error"]
     w.writerow(header)
     for it in job.items:
+        if ids is not None and it.application_id not in ids:
+            continue
+        if statuses is not None and it.status not in statuses:
+            continue
         r = it.result
-        row = [it.application_id, it.image_name, it.status, r.summary if r else (it.error or "")]
+        row = [it.application_id, it.image_name, it.status, it.needs, r.summary if r else (it.error or "")]
         if r:
             by_key = {f.key: f for f in r.fields}
             for f in FIELDS:

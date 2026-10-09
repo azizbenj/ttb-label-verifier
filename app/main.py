@@ -61,6 +61,10 @@ _ICON_PATHS = {
     "print": ('0 0 24 24', '<path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 21h12v-6H6z"/>', 2),
     "copy": ('0 0 24 24', '<rect x="8" y="3" width="12" height="14" rx="2"/><path d="M4 7v12a2 2 0 0 0 2 2h10"/>', 2),
     "expand": ('0 0 24 24', '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>', 2),
+    "search": ('0 0 24 24', '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>', 2),
+    "play": ('0 0 24 24', '<path d="M5 3l14 9-14 9z"/>', 2),
+    "csv": ('0 0 24 24', '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M8 13h8M8 17h8"/>', 2),
+    "images": ('0 0 24 24', '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="16" cy="9" r="1.5"/>', 2),
 }
 
 
@@ -350,7 +354,8 @@ async def verify_json(brand_name: str = Form(""), class_type: str = Form(""), al
 
 # --- batch -----------------------------------------------------------------------------------------
 def _batch_status_response(request: Request, job: batchmod.BatchJob) -> HTMLResponse:
-    return templates.TemplateResponse(request, "partials/batch_status.html", {"job": job, "fields": FIELDS})
+    return templates.TemplateResponse(request, "partials/batch_status.html",
+                                      {"job": job, "fields": FIELDS, "counts": job.counts()})
 
 
 @app.post("/batch", response_class=HTMLResponse)
@@ -422,12 +427,16 @@ def batch_image(job_id: str, index: int):
 
 
 @app.get("/batch/{job_id}/export.csv")
-def batch_export(request: Request, job_id: str):
+def batch_export(request: Request, job_id: str, ids: str = "", status: str = ""):
+    """The whole batch, or ``?ids=APP-1,APP-2`` (selected rows), or ``?status=FAIL`` (one verdict)."""
     job = batchmod.JOBS.get(job_id)
     if job is None:
         return Response("Batch not found", status_code=404)
-    return Response(batchmod.export_csv(job), media_type="text/csv",
-                    headers={"Content-Disposition": f"attachment; filename=label_check_{job.id}.csv"})
+    id_set = {i.strip() for i in ids.split(",") if i.strip()} or None
+    status_set = {s.strip().upper() for s in status.split(",") if s.strip()} or None
+    suffix = f"-{status.lower()}" if status_set else ("-selected" if id_set else "")
+    return Response(batchmod.export_csv(job, id_set, status_set), media_type="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=label-check{suffix}-{job.id}.csv"})
 
 
 @app.get("/api/batch/{job_id}")

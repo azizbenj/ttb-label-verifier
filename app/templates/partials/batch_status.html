@@ -1,55 +1,139 @@
-{% if not job.is_done %}
-<div class="card progress" data-job="{{ job.id }}" data-status="running">
-  <strong>Checking {{ job.total }} labels…</strong>
-  <div class="bar" role="progressbar" aria-label="Labels checked" aria-valuemin="0" aria-valuemax="{{ job.total }}" aria-valuenow="{{ job.done }}"><div class="fill" style="width: {{ (100 * job.done / job.total) if job.total else 100 }}%"></div></div>
-  <p class="muted">{{ job.done }} of {{ job.total }} done · {{ job.elapsed_ms|seconds }} elapsed</p>
-</div>
-{% else %}
-{% set c = job.counts() %}
-<div class="card batch" data-job="{{ job.id }}" data-status="done" tabindex="-1">
-  <div class="batch-head">
-    <div>
-      <strong>{{ job.total }} labels checked</strong>
-      <span class="muted">in {{ job.elapsed_ms|seconds }}{% if job.total %} · {{ (job.elapsed_ms / job.total)|seconds }} per label{% endif %}</span>
-    </div>
-    <a class="secondary" href="/batch/{{ job.id }}/export.csv" download>Download results (CSV)</a>
-  </div>
-  <div class="filters" role="group" aria-label="Filter results">
-    <button class="filter active" data-filter="" aria-pressed="true">All <b>{{ job.total }}</b></button>
-    <button class="filter ok" data-filter="PASS" aria-pressed="false">Pass <b>{{ c.PASS }}</b></button>
-    <button class="filter warn" data-filter="REVIEW" aria-pressed="false">Review <b>{{ c.REVIEW }}</b></button>
-    <button class="filter bad" data-filter="FAIL" aria-pressed="false">Fail <b>{{ c.FAIL }}</b></button>
-    {% if c.ERROR %}<button class="filter bad" data-filter="ERROR" aria-pressed="false">Error <b>{{ c.ERROR }}</b></button>{% endif %}
-    <input type="search" class="search" placeholder="Search brand or file name…" aria-label="Search results">
-  </div>
-  {% if job.issues %}
-  <details class="issues" open><summary>{{ job.issues|length }} file issue{{ 's' if job.issues|length != 1 }}</summary>
-    <ul>{% for i in job.issues %}<li>{{ i }}</li>{% endfor %}</ul></details>
+{#- Batch: progress while running (triage counts so far, rows streaming in), then the triage table. -#}
+{% set c = counts %}
+{% macro mini(v) %}{{ chip(v, 'mini', v|short) }}{% endmacro %}
+{% macro row_cells(it) %}
+  {% set r = it.result %}
+  <td class="mono">{{ it.application_id }}</td>
+  <td class="brand" title="{{ it.brand }}">{{ it.brand or '—' }}</td>
+  <td>{% if r %}{{ chip(r.overall, 'mini', r.overall|short) }}{% else %}<span class="chip mini fail">{{ icon('cross') }}Error</span>{% endif %}</td>
+  {% if r %}
+    {% for f in r.fields %}<td>{{ mini(f.verdict) }}</td>{% endfor %}
+    <td>{{ mini(r.warning.overall) }}</td>
+    <td class="num mono">{{ r.timings.total_ms|seconds }}</td>
+  {% else %}
+    <td colspan="{{ fields|length + 2 }}" class="errtext">{{ it.error }}</td>
   {% endif %}
-  <div class="table-wrap">
-  <table class="batch-table">
-    <thead><tr><th>Application</th><th>Label file</th><th>Result</th>
-      {% for f in fields %}<th>{{ f.label }}</th>{% endfor %}<th>Warning</th><th>Time</th></tr></thead>
-    <tbody>
-    {% for it in job.items %}
-      {% set r = it.result %}
-      <tr class="row {{ it.status|lower }}" data-status="{{ it.status }}" data-index="{{ loop.index0 }}"
-          data-text="{{ (it.application_id ~ ' ' ~ it.image_name ~ ' ' ~ (it.application.brand_name if it.application else ''))|lower }}" tabindex="0">
-        <td>{{ it.application_id }}</td>
-        <td class="file">{{ it.image_name or '—' }}</td>
-        <td><span class="chip {{ 'bad' if it.status in ('FAIL','ERROR') else 'warn' if it.status == 'REVIEW' else 'ok' }}">{{ it.status }}</span></td>
-        {% if r %}
-          {% for f in r.fields %}<td><span class="chip mini {{ f.verdict|chip }}" title="{{ f.note }}">{{ f.verdict|short }}</span></td>{% endfor %}
-          <td><span class="chip mini {{ r.warning.overall|chip }}">{{ r.warning.overall|short }}</span></td>
-          <td class="num">{{ r.timings.total_ms|seconds }}</td>
-        {% else %}
-          <td colspan="{{ fields|length + 2 }}" class="muted">{{ it.error }}</td>
-        {% endif %}
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+{% endmacro %}
+<div class="result-wrap" data-app-card data-job="{{ job.id }}" data-status="{{ 'done' if job.is_done else 'running' }}" data-total="{{ job.total }}">
+<div class="card appbar">
+  <div class="kvs">
+    <div class="kv"><span>Batch</span><strong>{{ 'Sample batch' if job.source == 'sample batch' else job.source }}</strong></div>
+    <div class="kv"><span>Rows</span><span class="file">{{ job.total }}</span></div>
+    <div class="kv"><span>File issues</span><span>{{ job.issues|length if job.issues else 'none' }}</span></div>
+    <div class="kv"><span>Started</span><span class="file">{{ job.started_at_local }}</span></div>
   </div>
-  <p class="muted small">Click a row (or press Enter on it) to see the full comparison.</p>
 </div>
+
+{% if not job.is_done %}
+<section class="card progress-card" aria-live="polite" aria-busy="true" tabindex="-1">
+  <div class="head">
+    <h2>Checking {{ job.total }} labels…</h2>
+    <div class="mono muted">
+      <b>{{ job.done }}</b> of {{ job.total }} · {{ job.elapsed_ms|seconds }} elapsed{% if job.eta_ms %} · about <b>{{ job.eta_ms|seconds }}</b> left{% endif %}
+    </div>
+  </div>
+  <div class="bar" role="progressbar" aria-valuenow="{{ job.done }}" aria-valuemin="0" aria-valuemax="{{ job.total }}" aria-label="Labels checked"><div class="f" style="width: {{ (100 * job.done / job.total)|round(1) if job.total else 100 }}%"></div></div>
+  <div class="tallies">
+    <div class="tally review"><b>{{ c.REVIEW }}</b><span>need a look so far</span></div>
+    <div class="tally fail"><b>{{ c.FAIL + c.ERROR }}</b><span>problems so far</span></div>
+    <div class="tally pass"><b>{{ c.PASS }}</b><span>pass so far</span></div>
+    <div class="rate">
+      {% if job.per_label_ms %}<span><b>{{ job.per_label_ms|seconds }}</b> per label across the workers{% if job.mean_read_ms() %} · reading {{ job.mean_read_ms()|seconds }} per label{% endif %}</span>{% endif %}
+      <span>The estimate uses the measured rate so far. You can start reviewing now; the queue keeps growing until the batch ends.</span>
+    </div>
+  </div>
+</section>
+{% else %}
+<section class="card done-card" role="status" tabindex="-1">
+  <div class="text">
+    <h2>{{ job.total }} labels checked in {{ job.elapsed_ms|seconds }}</h2>
+    <p>{{ 'Sample batch' if job.source == 'sample batch' else job.source }}{% if job.per_label_ms %} · {{ job.per_label_ms|seconds }} per label{% endif %}{% if job.finished_at_local %} · finished {{ job.finished_at_local }}{% endif %} ·
+      <span class="need">{{ c.REVIEW }} need you</span>, {{ c.FAIL + c.ERROR }} have problems, {{ c.PASS }} pass.</p>
+  </div>
+  <div class="acts">
+    <a class="btn secondary" href="/batch/{{ job.id }}/export.csv">{{ icon('download', 18) }}Download results (CSV)</a>
+    <button class="btn secondary" type="button" data-act="newbatch">New batch</button>
+  </div>
+</section>
 {% endif %}
+
+{% if job.issues %}
+<details class="card issues"{% if job.is_done %} open{% endif %}>
+  <summary>{{ icon('info', 18) }}{{ job.issues|length }} file issue{{ 's' if job.issues|length != 1 }}: rows or images that could not be checked</summary>
+  <ul>{% for i in job.issues %}<li>{{ i }}</li>{% endfor %}</ul>
+</details>
+{% endif %}
+
+<section class="card triage">
+  {% if job.is_done %}
+  <div class="toolbar" role="group" aria-label="Filter results">
+    <button class="fchip review" type="button" data-filter="REVIEW" aria-pressed="false"{% if not c.REVIEW %} disabled{% endif %}>{{ icon('bang', 14) }}Review <b>{{ c.REVIEW }}</b></button>
+    <button class="fchip fail" type="button" data-filter="FAIL" aria-pressed="false"{% if not (c.FAIL + c.ERROR) %} disabled{% endif %}>{{ icon('cross', 14) }}Fail <b>{{ c.FAIL + c.ERROR }}</b></button>
+    <button class="fchip pass" type="button" data-filter="PASS" aria-pressed="false"{% if not c.PASS %} disabled{% endif %}>{{ icon('check', 14) }}Pass <b>{{ c.PASS }}</b></button>
+    <button class="fchip on" type="button" data-filter="" aria-pressed="true">All <b>{{ job.total }}</b></button>
+    <span class="keys"><span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> <span class="kbd">0</span></span>
+    <div class="searchbox">{{ icon('search', 18) }}<input class="input search" type="search" placeholder="Brand, application or file name" aria-label="Search results"></div>
+    <label class="sortbox">Sort <select class="sort" aria-label="Sort results"><option value="triage">Needs you first</option><option value="id">Application id</option><option value="brand">Brand</option><option value="time">Slowest first</option></select></label>
+  </div>
+  {% else %}
+  <div class="toolbar running"><strong>Results so far, needs-a-look first</strong><span class="muted-3 small">Filters, search and export unlock when the batch finishes · new rows are added at the bottom, your place is kept</span></div>
+  {% endif %}
+
+  <div class="triage-body">
+    <div class="table-scroll">
+      <table class="batch">
+        <thead><tr>
+          <th class="sel"><input type="checkbox" class="select-all" aria-label="Select all shown"{% if not job.is_done %} disabled{% endif %}></th>
+          <th>Application</th><th>Brand</th><th>Result</th>
+          {% for f in fields %}<th>{{ {'brand_name': 'Brand', 'class_type': 'Type', 'alcohol_content': 'Alcohol', 'net_contents': 'Net', 'bottler_name_address': 'Bottler', 'country_of_origin': 'Origin'}[f.key] }}</th>{% endfor %}
+          <th>Warning</th><th class="num">Time</th>
+        </tr></thead>
+        <tbody>
+        {% for index, it in job.ordered_items() %}
+          {% if it.status != 'PENDING' %}
+          <tr class="r" tabindex="0" data-index="{{ index }}" data-id="{{ it.application_id }}" data-status="{{ 'FAIL' if it.status == 'ERROR' else it.status }}" data-brand="{{ it.brand }}" data-file="{{ it.image_name }}"
+              data-time="{{ it.result.timings.total_ms if it.result else 0 }}" data-text="{{ (it.application_id ~ ' ' ~ it.image_name ~ ' ' ~ it.brand)|lower }}"
+              data-summary="{{ it.result.summary if it.result else it.error }}" data-needs="{{ it.needs or ('Fix the file issue' if it.error else '') }}"
+              data-img="{{ '/batch/' ~ job.id ~ '/image/' ~ index if it.preview else '' }}" data-aspect="{{ it.result.image_aspect if it.result and it.result.image_aspect else '' }}"
+              data-box="{{ it.focus_box|join(',') if it.focus_box else '' }}" aria-selected="false">
+            <td class="sel"><input type="checkbox" aria-label="Select {{ it.application_id }}"{% if not job.is_done %} disabled{% endif %}></td>
+            {{ row_cells(it) }}
+          </tr>
+          {% endif %}
+        {% endfor %}
+        {% if not job.is_done %}
+          {% set pending = job.total - job.done %}
+          {% if pending %}
+          <tr class="skel"><td class="sel"></td><td class="mono muted-3">reading…</td><td><span class="sk" style="width: 140px"></span></td><td><span class="sk pill"></span></td>{% for f in fields %}<td><span class="sk" style="width: 48px"></span></td>{% endfor %}<td><span class="sk" style="width: 40px"></span></td><td></td></tr>
+          <tr class="foot"><td colspan="{{ fields|length + 6 }}">{{ pending }} more label{{ 's' if pending != 1 }} still to check · rows appear here as they finish</td></tr>
+          {% endif %}
+        {% else %}
+          <tr class="foot" data-foot><td colspan="{{ fields|length + 6 }}"></td></tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if job.is_done %}
+    <aside class="detail" aria-label="Selected label" hidden>
+      <div class="head"><span class="mono muted" data-d="id"></span><strong data-d="brand"></strong><span class="chip" data-d="status"></span></div>
+      <div class="label-frame" data-d="frame"><img alt="" data-d="img"><div class="hl focus" data-d="hl" hidden></div></div>
+      <div class="summary" data-d="summary"></div>
+      <dl class="dl"><dt>File</dt><dd class="mono" data-d="file"></dd><dt>Checked in</dt><dd class="mono" data-d="time"></dd><dt>Needs</dt><dd data-d="needs"></dd></dl>
+      <div class="acts"><button class="btn small" type="button" data-act="open">{{ icon('expand', 16) }}Open full comparison <span class="kbd">Enter</span></button></div>
+      <p class="keys-help"><span class="kbd">J</span> <span class="kbd">K</span> move · <span class="kbd">X</span> select · <span class="kbd">Enter</span> open · <span class="kbd">Esc</span> close</p>
+    </aside>
+    {% endif %}
+  </div>
+
+  {% if job.is_done %}
+  <div class="bulkbar" hidden>
+    <div class="bulk"><span><b data-d="count">0</b> selected</span><span class="dot">·</span>
+      <a class="btn" href="/batch/{{ job.id }}/export.csv" data-act="export-selected">{{ icon('download', 16) }}Export selected (CSV)</a>
+      <button class="btn" type="button" data-act="clear">Clear</button></div>
+    <span class="muted-3 small">Bulk actions never change a verdict.</span>
+  </div>
+  {% endif %}
+</section>
+<div class="overlay" data-overlay hidden><div class="overlay-card card"><div class="overlay-head"><strong data-overlay-title>Full comparison</strong><button class="btn icon close" type="button" data-act="close" aria-label="Close">{{ icon('cross', 18) }}</button></div><div class="overlay-body" data-overlay-body></div></div></div>
+</div>
