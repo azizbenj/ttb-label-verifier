@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime
 import csv
 import io
 import logging
@@ -104,7 +105,7 @@ templates.env.filters["short"] = lambda v: _SHORT.get(v, str(v))
 templates.env.filters["headline"] = lambda v: _HEADLINE.get(v, "")
 templates.env.filters["seconds"] = lambda ms: f"{(ms or 0) / 1000:.1f} s"
 templates.env.globals.update(icon=icon, chip=chip, evidence_for=evidence_for, pin_labels=pin_labels,
-                             static_version=STATIC_VERSION,
+                             static_version=STATIC_VERSION, now_text=lambda: datetime.now().strftime("%-d %b %Y, %H:%M"),
                              bold_meter_percent=bold_meter_percent, thresholds=THRESHOLDS)
 
 

@@ -53,6 +53,11 @@
 </section>
 {% else %}
 <section class="card result {{ cls }}" role="status" tabindex="-1" aria-label="Result: {{ r.overall|headline }}">
+  <div class="report-head" aria-hidden="true">
+    <span class="mark">{{ icon('mark', 20) }}</span>
+    <div class="grow"><h2>Label verification report</h2><p>Label Check · label approval review prototype{% if r.image_name and r.image_name.endswith('.png') and 'sample' in (image_url or '') %} · sample data{% endif %}</p></div>
+    <div class="when">Checked {{ now_text() }}<br>{{ r.reader }} · {{ r.timings.total_ms|seconds }}</div>
+  </div>
   <div class="banner {{ cls }}">
     <span class="badge {{ cls }}">{{ icon(r.overall|glyph, 24) }}</span>
     <div class="text">
@@ -166,6 +171,15 @@
 
       <details><summary>All text we read on the label <span class="dim">({{ r.reader }})</span></summary><pre class="ocr">{{ r.ocr_text }}</pre></details>
     </div>
+  </div>
+  <div class="report-footer" aria-hidden="true">
+    <div class="decision">
+      <strong>Reviewer decision</strong>
+      <div class="boxes"><span><i class="box"></i>Approve</span><span><i class="box"></i>Return to applicant</span><span><i class="box"></i>Needs a second look</span></div>
+      <div class="sign"><span>Reviewed by</span><span class="date">Date</span></div>
+    </div>
+    <div class="notes"><strong>Notes</strong><div class="line"></div><div class="line"></div><div class="line"></div></div>
+    <div class="fine"><span>Label Check prototype · verdicts are computed from the image and the application as entered; the reviewer's decision governs.</span><span>{{ r.application_id or r.image_name }}</span></div>
   </div>
 </section>
 {% endif %}
