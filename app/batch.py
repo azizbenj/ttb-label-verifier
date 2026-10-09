@@ -21,6 +21,7 @@ from time import perf_counter
 
 from .config import (BATCH_JOBS_KEPT, BATCH_JOB_TTL_S, BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES,
                      MAX_BATCH_UPLOAD_BYTES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS, MAX_ZIP_UNCOMPRESSED)
+from .decision_log import log_decision
 from .images import MAX_LABEL_PARTS, ImageError, flatten, open_image, stitch
 from .models import Application, Status, Verdict, VerificationResult
 from .normalize import parse_alcohol, parse_net_contents
@@ -199,12 +200,14 @@ class BatchJob:
         return sum(1 for it in self.items if it.decision)
 
     def decide(self, index: int, value: str) -> BatchItem:
-        """Record the agent's answer for one label. Never changes a verdict."""
+        """Record the agent's answer for one label. Never changes a verdict. With ``DECISION_LOG`` set, the
+        answer (and an undo) also goes to the decision log with what the tool concluded about the label."""
         if value not in DECISIONS:
             raise ValueError(f"decision must be one of {', '.join(DECISIONS)}")
         with self.lock:
             item = self.items[index]
             item.decision = "" if value == "clear" else value
+        log_decision(self, item, index, value)
         return item
 
     @property
