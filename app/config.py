@@ -89,6 +89,8 @@ CLAUDE_MAX_RETRIES = 1
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLOUD_READER_AVAILABLE = bool(ANTHROPIC_API_KEY)
 
+BATCH_JOBS_KEPT = 50                                    # finished batch jobs kept in memory
+BATCH_JOB_TTL_S = 24 * 3600                             # ... and for at most this long
 BATCH_WORKERS = int(os.getenv("BATCH_WORKERS", str(min(4, os.cpu_count() or 2))))
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 40_000_000                           # decoded size limit (a 20 MB PNG can decode to gigabytes)

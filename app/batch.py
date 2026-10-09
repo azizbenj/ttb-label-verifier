@@ -7,22 +7,26 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import threading
 import uuid
 import zipfile
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
-from .config import (BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS,
-                     MAX_ZIP_UNCOMPRESSED)
+from .config import (BATCH_JOBS_KEPT, BATCH_JOB_TTL_S, BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES,
+                     MAX_BATCH_UPLOAD_BYTES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS, MAX_ZIP_UNCOMPRESSED)
 from .images import ImageError, open_image
 from .models import Application, Status, VerificationResult
+from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
 from .readers.base import LabelReader, ReaderError
 
+log = logging.getLogger("labelcheck")
 ROOT = Path(__file__).resolve().parents[1]
 BATCH_DIR = ROOT / "data" / "batch"
 
@@ -93,7 +97,17 @@ class BatchJob:
 
 
 JOBS: dict[str, BatchJob] = {}
+_JOBS_LOCK = threading.Lock()
 _executor = ThreadPoolExecutor(max_workers=BATCH_WORKERS, thread_name_prefix="batch")
+
+
+def _prune_jobs() -> None:
+    """Forget finished jobs past their retention so a long-running server does not grow without bound."""
+    finished = sorted((j for j in JOBS.values() if j.is_done), key=lambda j: j.created_at)
+    cutoff = datetime.now(timezone.utc).timestamp() - BATCH_JOB_TTL_S
+    for i, job in enumerate(finished):
+        if job.created_at.timestamp() < cutoff or i < len(finished) - BATCH_JOBS_KEPT:
+            JOBS.pop(job.id, None)
 
 
 # --- CSV ------------------------------------------------------------------------------------------
@@ -107,7 +121,10 @@ def parse_applications_csv(data: bytes) -> tuple[list[dict], list[str]]:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
         text = data.decode("latin-1")
-    reader = csv.DictReader(io.StringIO(text))
+    # Excel writes ";" (or tab) separated files in many locales: take the separator the header uses most.
+    header = text.lstrip("\ufeff").split("\n", 1)[0]
+    delimiter = max(",;\t", key=header.count) if any(d in header for d in ",;\t") else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     if not reader.fieldnames:
         raise BatchError("The CSV file is empty.")
     mapping: dict[str, str] = {}
@@ -123,13 +140,13 @@ def parse_applications_csv(data: bytes) -> tuple[list[dict], list[str]]:
         raise BatchError("The CSV is missing the column(s): " + ", ".join(labels.get(m, m) for m in missing)
                          + ". Download the template to see the expected columns.")
     rows, issues = [], []
-    for i, raw_row in enumerate(reader, start=2):
+    for raw_row in reader:
         row = {key: (raw_row.get(col) or "").strip() for key, col in mapping.items()}
         for key in COLUMN_ALIASES:
             row.setdefault(key, "")
         if not any(row.values()):
             continue
-        row["_row"] = i
+        row["_row"] = reader.line_num  # the file's line number, also when a quoted cell spans lines
         rows.append(row)
     if not rows:
         raise BatchError("The CSV has a header but no application rows.")
@@ -155,10 +172,30 @@ def _is_image_name(name: str) -> bool:
     return Path(name).suffix.lower() in IMAGE_EXTENSIONS
 
 
-def collect_images(uploads: list[tuple[str, bytes]]) -> tuple[dict[str, bytes], list[str]]:
-    """Accept loose image files and/or zip archives. Keys are lower-cased base names."""
-    images: dict[str, bytes] = {}
+def collect_images(uploads: list[tuple[str, bytes]]) -> tuple[dict[str, bytes | None], list[str]]:
+    """Accept loose image files and/or zip archives. Keys are lower-cased base names.
+
+    Two different files with the same name (``lot1/label.png`` and ``lot2/label.png`` in a zip) map
+    to None: rows naming that file must not be checked against whichever one happened to come last.
+    """
+    images: dict[str, bytes | None] = {}
+    sources: dict[str, list[str]] = {}
     issues: list[str] = []
+    total = 0
+
+    def add(key: str, data: bytes, source: str) -> None:
+        nonlocal total
+        sources.setdefault(key, []).append(source)
+        if key in images and images[key] != data:
+            images[key] = None
+            return
+        if key not in images:
+            total += len(data)
+            if total > MAX_BATCH_UPLOAD_BYTES:
+                raise BatchError(f"The images add up to more than {MAX_BATCH_UPLOAD_BYTES // (1024 * 1024)} MB. "
+                                 "Please split the batch.")
+            images[key] = data
+
     for name, data in uploads:
         base = Path(name).name
         if base.lower().endswith(".zip"):
@@ -178,30 +215,44 @@ def collect_images(uploads: list[tuple[str, bytes]]) -> tuple[dict[str, bytes], 
                         if m.file_size > MAX_IMAGE_BYTES:
                             issues.append(f"Skipped '{mb}': larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB.")
                             continue
-                        images[mb.lower()] = zf.read(m)
+                        try:
+                            member = zf.read(m)
+                        except (RuntimeError, NotImplementedError, zlib.error):  # encrypted or unsupported
+                            issues.append(f"Skipped '{m.filename}' inside {base}: it is encrypted or compressed "
+                                          "in a way this tool cannot open.")
+                            continue
+                        add(mb.lower(), member, f"{base}/{m.filename}")
             except zipfile.BadZipFile:
                 raise BatchError(f"'{base}' is not a valid zip file.") from None
         elif _is_image_name(base):
             if len(data) > MAX_IMAGE_BYTES:
                 issues.append(f"Skipped '{base}': larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB.")
                 continue
-            images[base.lower()] = data
+            add(base.lower(), data, base)
         else:
             issues.append(f"Skipped '{base}': not an image (use PNG, JPG, TIFF, BMP or WEBP).")
+    for key, data in images.items():
+        if data is None:
+            issues.append(f"Several different files are named '{key}' ({', '.join(sources[key])}); "
+                          "rows using that name were not checked. Please rename them.")
     if len(images) > MAX_BATCH_IMAGES:
         raise BatchError(f"{len(images)} images were uploaded. Please split batches at {MAX_BATCH_IMAGES} labels.")
     return images, issues
 
 
-def _lookup_image(images: dict[str, bytes], name: str) -> bytes | None:
+_AMBIGUOUS = object()
+
+
+def _lookup_image(images: dict[str, bytes | None], name: str) -> bytes | object | None:
+    """The uploaded file for a CSV name, None if there is none, _AMBIGUOUS if several files could be meant."""
     key = Path(name).name.lower()
     if key in images:
-        return images[key]
+        return images[key] if images[key] is not None else _AMBIGUOUS
     stem = Path(key).stem
-    for k in images:  # allow the CSV to omit the extension
-        if Path(k).stem == stem:
-            return images[k]
-    return None
+    matches = [k for k in images if Path(k).stem == stem]  # allow the CSV to omit the extension
+    if len(matches) > 1 or (matches and images[matches[0]] is None):
+        return _AMBIGUOUS
+    return images[matches[0]] if matches else None
 
 
 # --- jobs ------------------------------------------------------------------------------------------
@@ -209,10 +260,18 @@ def _row_to_application(row: dict) -> tuple[Application | None, str | None]:
     missing = [f.label.lower() for f in FIELDS if f.required and not row.get(f.key)]
     if missing:
         return None, f"Row {row['_row']}: {', '.join(missing)} {'is' if len(missing) == 1 else 'are'} blank."
+    # Same checks as the single-label form: an unreadable application value is a data problem to fix,
+    # not a label FAIL.
+    if parse_alcohol(row["alcohol_content"]) is None:
+        return None, (f"Row {row['_row']}: alcohol content '{row['alcohol_content']}' should look like "
+                      "'45% Alc./Vol.', '45%' or '90 Proof'.")
+    if parse_net_contents(row["net_contents"]) is None:
+        return None, (f"Row {row['_row']}: net contents '{row['net_contents']}' should look like "
+                      "'750 mL', '1.75 L' or '12 fl oz'.")
     return Application(**{k: row.get(k, "") for k in COLUMN_ALIASES if k != "image"}), None
 
 
-def build_items(rows: list[dict], images: dict[str, bytes]) -> tuple[list[BatchItem], list[tuple[BatchItem, bytes]], list[str]]:
+def build_items(rows: list[dict], images: dict[str, bytes | None]) -> tuple[list[BatchItem], list[tuple[BatchItem, bytes]], list[str]]:
     items, work, issues = [], [], []
     used: set[str] = set()
     for row in rows:
@@ -227,12 +286,14 @@ def build_items(rows: list[dict], images: dict[str, bytes]) -> tuple[list[BatchI
             item.error = f"Row {row['_row']}: no image file name."
         elif data is None:
             item.error = f"No image named '{item.image_name}' was uploaded."
+        elif data is _AMBIGUOUS:
+            item.error = f"More than one uploaded file could be '{item.image_name}', so it was not checked."
         else:
             used.add(Path(item.image_name).name.lower())
             work.append((item, data))
         items.append(item)
-    for name in images:
-        if name not in used and not any(Path(name).stem == Path(u).stem for u in used):
+    for name, data in images.items():
+        if data is not None and name not in used and not any(Path(name).stem == Path(u).stem for u in used):
             issues.append(f"Image '{name}' has no matching row in the CSV, so it was not checked.")
     return items, work, issues
 
@@ -244,6 +305,7 @@ def _process(job: BatchJob, item: BatchItem, data: bytes, reader: LabelReader) -
     except (ImageError, ReaderError) as e:
         item.error = str(e)
     except Exception as e:  # keep the batch going; surface the reason
+        log.exception("batch item %s failed", item.image_name)
         item.error = f"Could not check this label ({type(e).__name__}: {e})."
     finally:
         with job.lock:
@@ -259,7 +321,9 @@ def start_job(rows: list[dict], images: dict[str, bytes], reader: LabelReader, s
     job.done = sum(1 for it in items if it.error)  # rows that cannot run count as finished
     if job.done >= job.total:
         job.finished_ms = 0.0
-    JOBS[job.id] = job
+    with _JOBS_LOCK:
+        _prune_jobs()
+        JOBS[job.id] = job
     for item, data in work:
         _executor.submit(_process, job, item, data, reader)
     return job
@@ -284,6 +348,13 @@ def sample_zip() -> bytes:
 
 
 # --- export ---------------------------------------------------------------------------------------
+def _cell(value):
+    """Neutralise spreadsheet formulas: label text and CSV values are untrusted ("=HYPERLINK(...)")."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
 def export_csv(job: BatchJob) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -307,5 +378,5 @@ def export_csv(job: BatchJob) -> str:
                     notes, r.timings.read_ms, r.timings.total_ms, r.reader, ""]
         else:
             row += ["", "", "", ""] * len(FIELDS) + ["", "", "", "", "", "", "", "", it.error or ""]
-        w.writerow(row)
+        w.writerow([_cell(v) for v in row])
     return buf.getvalue()
