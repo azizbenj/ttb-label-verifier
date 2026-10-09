@@ -186,36 +186,83 @@ def compare_volume(expected: str, label_text: str, *, th: Thresholds = THRESHOLD
                        score=0, note=f"Label says {got.describe()}, application says {exp.describe()}.")
 
 
+# "Product of Scotland", "Imported from Mexico", "Distilled in Ireland": the country runs to the next
+# delimiter, or stops before the words that usually follow it ("Product of France Imported by ...").
+_ORIGIN_PREFIXES = ("product of", "produce of", "produced in", "made in", "imported from", "distilled in", "bottled in")
 _ORIGIN_RE = re.compile(
-    r"\b(product of|produce of|produced in|made in|imported from|distilled in|bottled in)\s+"
-    r"([A-Za-z][A-Za-z .'-]{2,40}?)(?=[,.;:)\n]|\s{2,}|$)",
+    r"\b(" + "|".join(p.replace(" ", r"\s+") for p in _ORIGIN_PREFIXES) + r")\s+"
+    r"([^\W\d_](?:[^\W\d_]|[ .'\-]){1,40}?)"
+    r"(?=\s*(?:[,;:)\n]|(?<!st)(?<!ste)\.|$)|\s+(?:imported|bottled|distilled|produced|brewed|vinted|packed|by|for)\b|\s*\d)",
     re.IGNORECASE,
 )
+_NOT_A_COUNTRY = {"bond"}  # "Bottled in Bond" is a US designation, not an origin
+
+
+def _country_key(name: str) -> str:
+    key = re.sub(r"\bst(e?)\b", r"saint\1", normalize_loose(name))  # "St. Lucia" = "Saint Lucia"
+    return key[4:] if key.startswith("the ") else key
+
+
+def origin_statements(lines: list[str]) -> list[tuple[str, str]]:
+    """Every origin statement on the label as (whole statement, country as printed)."""
+    out = []
+    for m in _ORIGIN_RE.finditer("\n".join(normalize_strict(l) for l in lines)):
+        country = m.group(2).strip(" .'-")
+        if country and _country_key(country) not in _NOT_A_COUNTRY:
+            out.append((m.group(0).strip(" .'-"), country))
+    return out
 
 
 def compare_country(expected: str, lines: list[str], *, th: Thresholds = THRESHOLDS) -> FieldResult:
-    """Country of origin (imports only). Blank on the application means domestic: skipped."""
+    """Country of origin (imports only). Blank on the application means domestic: skipped.
+
+    The label's origin statements ("Product of X", "Imported from X") decide. Only an identical country
+    name is a MATCH: country names are short and many differ by a few letters (Austria / Australia,
+    Niger / Nigeria) or contain one another (Guinea / Equatorial Guinea), so anything else is either a
+    NEAR MATCH for the agent to confirm or a MISMATCH.
+    """
     key = "country_of_origin"
+    label = _spec(key).label
     if not expected.strip():
         return skipped(key)
     country = expected.strip()
-    for prefix in ("product of", "produce of", "made in", "imported from"):
+    for prefix in _ORIGIN_PREFIXES:
         if country.lower().startswith(prefix):
             country = country[len(prefix):].strip(" :,-")
             break
-    # 1. The country name itself, anywhere on the label (high bar: short strings fuzz easily).
-    loc = locate_text(country, lines, floor=max(th.near_match, 85), th=th)
+    want = _country_key(country)
+
+    statements = origin_statements(lines)
+    if statements:
+        same = [s for s in statements if _country_key(s[1]) == want]
+        others = [s for s in statements if _country_key(s[1]) != want]
+        if same and not others:
+            return FieldResult(key=key, label=label, expected=expected, found=same[0][0], verdict=Verdict.MATCH,
+                               score=100, note="Country of origin matches the label's origin statement.")
+        if same:
+            return FieldResult(key=key, label=label, expected=expected, found="; ".join(s[0] for s in statements),
+                               verdict=Verdict.NEAR_MATCH, score=100,
+                               note="The label names more than one country. Please confirm the country of origin.")
+        best = max(others, key=lambda s: fuzz.ratio(want, _country_key(s[1])))
+        score = int(round(fuzz.ratio(want, _country_key(best[1]))))
+        if score >= th.near_match:
+            return FieldResult(key=key, label=label, expected=expected, found=best[0], verdict=Verdict.NEAR_MATCH,
+                               score=score, note=f"Label says '{best[1]}', application says '{country}'. These are close "
+                                                 "but not the same. Please confirm (a misprint, a reading error, or a "
+                                                 "different country).")
+        return FieldResult(key=key, label=label, expected=expected, found=best[0], verdict=Verdict.MISMATCH,
+                           score=score, note=f"Label says '{best[1]}', application says '{country}'.")
+
+    # No origin statement: accept the country name printed on a line of its own; anything weaker is
+    # shown to the agent rather than accepted.
+    for line in lines:
+        if _country_key(line) == want:
+            return FieldResult(key=key, label=label, expected=expected, found=normalize_strict(line), verdict=Verdict.MATCH,
+                               score=100, note="Country name printed on the label (no 'Product of' statement).")
+    loc = locate_text(country, lines, floor=th.near_match, th=th)
     if loc is not None:
-        # Show the whole origin statement when there is one ("Product of Scotland").
-        text = "\n".join(lines[max(0, loc.line_start - 1): loc.line_end + 1])
-        m = _ORIGIN_RE.search(text)
-        found = m.group(0).strip() if m and normalize_loose(country) in normalize_loose(m.group(2)) else loc.text
-        return FieldResult(key=key, label=_spec(key).label, expected=expected, found=found, verdict=Verdict.MATCH,
-                           score=100, note="Country of origin found on the label.")
-    # 2. A different origin statement is present: that is a mismatch, and we show it.
-    m = _ORIGIN_RE.search("\n".join(lines))
-    if m:
-        return FieldResult(key=key, label=_spec(key).label, expected=expected, found=m.group(0).strip(),
-                           verdict=Verdict.MISMATCH, score=0,
-                           note=f"Label says '{m.group(0).strip()}', application says '{country}'.")
+        context = normalize_strict(" ".join(lines[loc.line_start: loc.line_end + 1]))
+        return FieldResult(key=key, label=label, expected=expected, found=context, verdict=Verdict.NEAR_MATCH,
+                           score=loc.score, note=f"'{loc.text}' appears on the label, but not in a country of origin "
+                                                 "statement ('Product of ...'). Please confirm.")
     return not_found(key, expected, note="No country of origin statement was found on the label.")

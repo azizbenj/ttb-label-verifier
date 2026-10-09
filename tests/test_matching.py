@@ -152,6 +152,34 @@ def test_country_match_shows_full_statement():
     assert r.verdict == Verdict.MATCH and r.found == "Product of Scotland"
 
 
+def test_similar_or_containing_country_names_are_never_a_silent_match():
+    assert compare_country("Austria", ["Product of Australia"]).verdict == Verdict.NEAR_MATCH
+    for app, label in [("Guinea", "Product of Equatorial Guinea"), ("Ireland", "Product of Northern Ireland"),
+                       ("Mexico", "Distilled in New Mexico"), ("Dominica", "Product of Dominican Republic"),
+                       ("Niger", "Product of Nigeria")]:
+        r = compare_country(app, [label])
+        assert r.verdict == Verdict.MISMATCH and r.found == label, (app, label, r)
+
+
+def test_origin_statement_beats_country_name_elsewhere_on_label():
+    r = compare_country("Jamaica", ["JAMAICA STYLE DARK RUM", "Product of Trinidad"])
+    assert r.verdict == Verdict.MISMATCH and r.found == "Product of Trinidad"
+
+
+def test_country_without_origin_statement():
+    assert compare_country("Mexico", ["TEQUILA", "MEXICO"]).verdict == Verdict.MATCH
+    assert compare_country("Mexico", ["Tequila from Mexico"]).verdict == Verdict.NEAR_MATCH
+
+
+def test_country_statement_variants():
+    r = compare_country("France", ["PRODUCT OF FRANCE IMPORTED BY ATLANTIC WINE & SPIRITS, MIAMI"])
+    assert r.verdict == Verdict.MATCH and r.found == "PRODUCT OF FRANCE"
+    assert compare_country("Saint Lucia", ["Product of St. Lucia"]).verdict == Verdict.MATCH
+    assert compare_country("Netherlands", ["Product of The Netherlands"]).verdict == Verdict.MATCH
+    assert compare_country("Scotland", ["Bottled in Bond", "Product of Scotland 700 mL"]).verdict == Verdict.MATCH
+    assert compare_country("Scotland", ["Distilled in Scotland, bottled in Canada"]).verdict == Verdict.NEAR_MATCH
+
+
 def test_trailing_period_does_not_break_exact_match():
     assert compare_text("brand_name", "RIVER BEND BREWING CO.", "RIVER BEND BREWING CO").verdict == Verdict.MATCH
 
