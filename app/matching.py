@@ -290,6 +290,7 @@ def compare_alcohol(expected: str, label_text: str, *, statement: bool = False,
                        score=score, note=" ".join(notes))
 
 
+_METRIC = ("mL", "L", "cL")
 # Standard container sizes (27 CFR 5.203 spirits, 4.72 wine, common malt beverage packages), in mL.
 _STANDARD_ML = {50, 100, 180, 187, 200, 250, 300, 331, 350, 355, 365, 375, 473, 475, 500, 568, 570, 600, 620, 650,
                 700, 710, 720, 750, 900, 945, 946, 1000, 1500, 1750, 1800, 2000, 2250, 3000, 3750}
@@ -311,16 +312,21 @@ def compare_volume(expected: str, label_text: str, *, th: Thresholds = THRESHOLD
     if not cands:
         return not_found(key, expected, note="No net contents (e.g. '750 mL') was found on the label.")
 
-    def same(a: float, b: float) -> bool:   # US customary figures on labels are rounded ("750 mL / 25.4 OZ")
-        return abs(a - b) <= max(th.volume_tolerance_ml, 0.005 * b)
+    def same(c, e) -> bool:
+        # A US customary figure beside a metric one is rounded ("750 mL / 25.4 FL OZ" is 751.2 mL): 0.5% is
+        # allowed between the two systems. Within one system the figures must agree (753 mL is not 750 mL).
+        if (c.unit in _METRIC) != (e.unit in _METRIC):
+            return abs(c.ml - e.ml) <= max(th.volume_tolerance_ml, 0.005 * e.ml)
+        return abs(c.ml - e.ml) <= th.volume_tolerance_ml
 
-    matching = [c for c in cands if same(c.ml, exp.ml)]
+    matching = [c for c in cands if same(c, exp)]
     if matching:
-        shown = next((c for c in matching if c.unit in ("mL", "L", "cL")), matching[0])
+        shown = next((c for c in matching if c.unit in _METRIC), matching[0])
         # A reading with the same digits and no decimal point ("15L" beside "1.5L") is the same
-        # statement with the point lost by one pass, not a second statement.
+        # statement with the point lost by one pass, not a second statement. Any other reading that
+        # disagrees (a "760 mL" beside the "750 mL") is shown to the agent.
         lost_point = {(m.unit, m.digits) for m in matching}
-        others = [c for c in cands if abs(c.ml - exp.ml) > 0.02 * exp.ml
+        others = [c for c in cands if not same(c, exp)
                   and not ((c.unit, c.digits) in lost_point and "." not in c.text)]
         if others:
             return FieldResult(key=key, label=_spec(key).label, expected=expected,
@@ -330,7 +336,7 @@ def compare_volume(expected: str, label_text: str, *, th: Thresholds = THRESHOLD
                                               "statement. Please confirm.")
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=shown.text, verdict=Verdict.MATCH,
                            score=100, note=f"{exp.describe()} on both.")
-    got = next((c for c in cands if c.unit in ("mL", "L", "cL")), cands[0])
+    got = next((c for c in cands if c.unit in _METRIC), cands[0])
     if got.unit == exp.unit and got.digits == exp.digits and "." not in got.text:
         # Same digits and unit, but the label read has no decimal point ("L5L" for "1.5 L"): the
         # point was probably lost by OCR. Never silently accept it; ask the agent to look.

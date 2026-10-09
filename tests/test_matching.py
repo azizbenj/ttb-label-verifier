@@ -314,3 +314,16 @@ def test_alcoholic_and_volcanic_do_not_mark_a_percentage_as_alcohol():
 
 def test_a_vision_model_field_is_already_the_alcohol_statement():
     assert compare_alcohol("45%", "45%", statement=True).verdict == Verdict.MATCH
+
+
+def test_metric_figures_must_agree_exactly_us_figures_may_be_rounded():
+    assert compare_volume("750 mL", "753 mL").verdict != Verdict.MATCH
+    assert compare_volume("750 mL", "750 mL / 25.4 FL OZ").verdict == Verdict.MATCH     # 751.2 mL, rounded
+    assert compare_volume("12 fl oz", "12 FL OZ (355 mL)").verdict == Verdict.MATCH
+    assert compare_volume("1.75 L", "1.75 L (59.2 FL OZ)").verdict == Verdict.MATCH
+
+
+def test_a_second_reading_that_disagrees_is_shown_not_ignored():
+    r = compare_volume("750 mL", "750 mL\n760 mL")
+    assert r.verdict == Verdict.NEAR_MATCH and "760" in r.note
+    assert compare_volume("1.5 L", "1.5 L\n15 L").verdict == Verdict.MATCH   # the same statement, point lost
