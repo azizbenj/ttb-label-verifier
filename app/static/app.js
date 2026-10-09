@@ -303,7 +303,10 @@
       rows.forEach((r) => { r.hidden = !((!active || r.dataset.status === active) && (!q || r.dataset.text.includes(q))); });
       const n = visible().length;
       if (foot) foot.textContent = n === 0 ? (q ? `No labels match "${q}"${active ? " in " + word[active] : ""}. Clear the search or pick another filter.` : "No labels in this list.") : (n === rows.length ? "End of list" : `${n} of ${rows.length} labels shown`);
-      if (cur >= 0 && rows[cur].hidden) setCursor(-1);
+      if (cur < 0 || rows[cur].hidden) {          // keep the detail panel on something visible
+        const first = visible()[0];
+        if (first) setCursor(rows.indexOf(first), false); else { setCursor(-1); if (detail) detail.hidden = true; }
+      }
     }
     function setFilter(f) {
       active = f;
