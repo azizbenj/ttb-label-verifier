@@ -171,14 +171,16 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `locate_max_lines` | 3 | A value may wrap over up to this many OCR lines (addresses, long class names) |
 | `whole_phrase_fields` | brand, class/type | A MATCH inside a longer phrase on its line ("Rum" in "SPICED RUM", no punctuation between) → **NEAR MATCH** showing the whole line |
 | `brand_small_print_ratio` | 0.5 | A brand found only in text under half the height of the label's largest line → **NEAR MATCH** |
+| `conflict_floor` | 70 | Another reading of the same place on the label (a second OCR pass or view) at least this similar to the value but saying something else turns a MATCH on the brand, class/type or bottler into a **NEAR MATCH** quoting both readings |
 | `abv_tolerance` | 0.05 pp | Alcohol content compared as numbers; any larger difference is a **MISMATCH** |
 | `proof_tolerance` | 0.5 proof | A label whose proof disagrees with its own percentage by more than this ("45% (80 Proof)") → **NEAR MATCH** |
-| `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`). Same digits and unit but no decimal point on the label (`15 L` read for `1.5 L`) → NEAR MATCH, never a silent match |
+| `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`). Between a US figure and a metric one 0.5% is allowed (`750 mL / 25.4 FL OZ`); within one system the figures must agree (`753 mL` is not `750 mL`). Same digits and unit but no decimal point on the label (`15 L` read for `1.5 L`) → NEAR MATCH, never a silent match |
 | `warning_locate` | 75 | Similarity needed to recognise the "GOVERNMENT WARNING" line |
 | `warning_near` | 97 | Warning wording at or above this (but not exact) → NEEDS REVIEW with a diff; below → FAIL |
 | `bold_ratio` | 1.30 | Heading stroke width ÷ body stroke width at or above this → "looks bold" (measured: bold headings 1.51-2.04, regular 1.03-1.14) |
 | `bold_min_text_px` | 14 | Below this text height the stroke measurement is not attempted |
 | `bold_failure_is_fail` | false | A "does not look bold" result asks for review instead of failing the label |
+| `unreadable_min_words` / `unreadable_word_conf` | 8 / 70 | Fewer clear words than this, nothing read for any field (not even a disagreeing value) and no warning → "We couldn't read this label", no verdict |
 
 Real labels taught a few more rules, each covered by tests:
 
@@ -186,7 +188,14 @@ Real labels taught a few more rules, each covered by tests:
   (`750 mL` on the front, `75 cl` on the back), and OCR may produce two readings of one statement. If any
   reading agrees with the application and another one disagrees, the result is a NEAR MATCH that lists both.
   A reading that only lost its decimal point is treated as the same statement, and US and metric figures within
-  0.5% of each other (`16 FL OZ` and `473 mL`) agree.
+  0.5% of each other (`16 FL OZ` and `473 mL`) agree. The same holds for the brand, class/type and bottler: a
+  MATCH found in one reading while another reading of the same place says something else ("BARK BREW" printed,
+  one pass reading "BARN BREW") is a NEAR MATCH. Readings that differ only by OCR's usual letter confusions
+  (`rn`/`m`, `0`/`O`, `5`/`S`...) or are cut short do not count as disagreeing.
+- **A percentage is only an alcohol content when the label says so.** It must sit next to `Alc./Vol.`, `ABV`,
+  `alcohol by volume` or a proof figure (OCR slips such as `ALG/VGL` included; "alcoholic" in the warning and
+  "volcanic" are not). A matching figure without such a word ("Blend: 13.5% Petit Verdot") is a NEAR MATCH,
+  never a MATCH.
 - **A likely misread is not a mismatch.** A volume that is not a standard size and is one digit away from the
   application's (`760 mL` for `750 mL`) is a NEAR MATCH explained as a probable reading error.
 - **Letter-spaced brands** (`B A R N  B R E W`) are matched with the spaces closed up; a single-letter
@@ -216,13 +225,16 @@ Four separate results are shown so the agent sees exactly what is wrong:
    contrast) is searched on its own, its lines in top-to-bottom order; the statement is grown line by line while
    that brings it closer to the required text, passing over up to four lines that belong to something else (a
    neighbouring column, "For sale only in Ohio"). Words at the start or end of a line that belong to text printed
-   beside the statement are left out, and the wording result then asks for a look, quoting them.
+   beside the statement are left out, and the wording result then asks for a look, always quoting them: they may
+   instead be words added to the statement. (Their position cannot tell the two apart: on a real keg collar the
+   neighbouring column sits a normal word gap away.)
 2. **Wording**: compared word for word after normalization. Punctuation is ignored because OCR drops commas and
    periods unreliably. Any difference is listed as "required text says / label says". A difference with similarity
    ≥ 97 is flagged for **review** (it may be a misprint or an OCR error; the diff lets the agent decide in a second);
    anything larger (missing sentence, paraphrase) **fails**.
 3. **Heading in capitals**: the OCR text of the heading must read `GOVERNMENT WARNING:`; title case fails, a missing
-   colon asks for review, and capitals with a letter OCR could not read cleanly (`WARNlNG`) ask for review.
+   colon asks for review, and capitals with a letter OCR could not read cleanly (`WARNlNG`, or `ERNMENT` cut at the
+   image edge) ask for review. A different word that was read clearly (`HEALTH WARNING:`, `GOVT WARNING:`) fails.
 4. **Heading bold (heuristic)**: from the word boxes, we take the heading words and the body words of the statement
    and estimate each group's mean stroke width as 2 × ink area ÷ ink perimeter on the binarized image (for a stroke
    of width w and length L the area is wL and the perimeter about 2L, so the estimate does not depend on stroke
@@ -293,9 +305,14 @@ next. Missing fields are checked in the browser before anything is sent, each in
 summary links to it; without JavaScript the server returns the same page with the typed values kept. The drop
 zone itself becomes the error for a missing, unreadable or oversized image, with the file name quoted. A CSV
 with the wrong headers gets a table of expected header vs the near-miss header in the file. An image that
-opens but yields almost no text ("fewer than 8 confident words and nothing matched") gets a grey, verdict-free
-card with what usually fixes it, never a FAIL. The page works at 1280, 768 and 390 px without horizontal
-scrolling; on a phone the batch table becomes a list.
+opens but yields almost no text ("fewer than 8 confident words and nothing read for any field") gets a grey,
+verdict-free card with what usually fixes it, never a FAIL; a label where a value was read and disagrees is a
+normal FAIL however few words it has. The page works at 1280, 768 and 390 px without horizontal scrolling; on a
+phone the batch table becomes a list.
+
+Every screen also works without JavaScript: both tabs show one under the other, the forms post and come back as
+whole pages, a running batch's page (`/batch/<id>`) reloads itself every 3 seconds until it is done, each row
+links to its full comparison, and the review queue's answers are forms.
 
 ## Test data
 
@@ -357,7 +374,8 @@ pytest -q
 - `test_formats.py`: JPG, TIFF, WEBP and BMP uploads and zips of them, single and batch
 - `test_multi_image.py`: several images per application, in the form and in batch rows
 - `test_errors.py`: every error state (missing fields with and without JavaScript, bad or oversized image, CSV headers, batch limits, reader failure with retry) and the unreadable-image card and ERROR row
-- `test_decisions.py`: review prompts, decisions kept with a batch, the review queue (with and without JavaScript), export scopes and column groups, printable reports, the shared batch link
+- `test_decisions.py`: review prompts (Yes always means the label is fine), decisions kept with a batch, the review queue (with and without JavaScript), export scopes and column groups, printable reports, the shared batch link
+- `test_nojs.py`: the batch flow as a browser without JavaScript runs it: post, redirect, self-reloading progress page, row links, whole-page errors
 - `test_claude_reader.py`: the cloud reader's mapping, error handling, refusal fallbacks and client limits, with the SDK mocked
 
 OCR-dependent tests skip automatically when the Tesseract binary is absent. `.github/workflows/ci.yml` runs the whole
@@ -436,12 +454,17 @@ application fields:
 
 | | Before the real-label work | Now |
 |---|---|---|
-| Fields with the expected verdict | 54/104 | 59/104 |
+| Fields with the expected verdict | 54/104 | 57/104 |
 | Flagged for review (NEAR MATCH where MATCH was expected) | not measured | 29 |
+| Accepted without the look the ground truth expects (MATCH where NEAR MATCH was expected) | not measured | 2 |
 | False alarms: MISMATCH or NOT FOUND for text that is on the label | 32 | 16 |
 | Government warning: pass / review / fail (all 20 carry it) | 13 fail | 5 / 11 / 4 |
 | Planted wrong alcohol content or net contents reported as MATCH | 0 of 40 | 0 of 40 |
-| Time per label: median / max | | 2.4 s / 4.3 s |
+| Time per label: median / max | | 2.3 s / 4.3 s |
+
+(Until the second code review the scorer counted a MATCH where the ground truth expects a look as "expected",
+which read 59/104. The two such fields are the class "GIN" printed under "THE SPIRIT OF TENNESSEE" and the country
+"MEXICO" read from "HECHO EN MEXICO"; both are defensible readings, so they are reported rather than changed.)
 
 Read this honestly: no real label passes untouched. 8 come back REVIEW and 12 FAIL, so on real artwork the tool is a
 fast first pass that points the agent at what to look at, not an unattended approver. What it does not do is let a
@@ -451,6 +474,13 @@ display or curved typefaces, light text over photographs, a handwritten keg coll
 image. Real labels take longer than the synthetic ones (median 2.4 s against under 1 s) because most of them need the
 extra turned and contrast passes; the slowest was 4.3 s, inside the 5-second budget on a laptop. Re-measure on
 Railway before relying on that there.
+
+**After the second code review (October 2026, local, Tesseract 5.5.3):** samples 15/15, median 0.87 s; batch
+243/250 with the same seven misses, 0 planted defects reported as PASS; real labels as in the table above; stress
+test identical to the table below. None of the round-two fixes changed a verdict on these sets: the cases they
+close (a blend percentage taken for the ABV, a misread that agrees with the application, a clearly read wrong
+heading word, an unreadable card hiding a mismatch, 753 mL against 750 mL) do not occur in them, which is why each
+fix has its own tests.
 
 **Stress test (`scripts/stress_test.py`, the 15 sample labels per condition, local).**
 
@@ -505,6 +535,15 @@ a look or a defect caught with a different severity (FAIL where REVIEW was expec
   brand is deliberately small next to a large fanciful name gets a NEAR MATCH for the agent to confirm.
 - Uploads are size-checked from their Content-Length; a chunked upload without one is only limited per file after
   it arrives. A reverse proxy limit is the production answer.
+- A letter-spaced brand is compared with its spaces closed up, so "B A R N O N E" matches both "BARN ONE" and
+  "BAR NONE": OCR does not keep the wider gap between words.
+- Two readings of the same place that disagree are only flagged when OCR was at least as confident of the one
+  that disagrees; a label misprint that OCR also reads with less confidence than a misread of it would pass.
+- A warning statement printed in two halves (the first sentence on the front, the second on the back) is
+  assembled into one and can pass.
+- Single-label checks and batch jobs share one pool of four Tesseract processes for the second pass and the
+  optional passes; measured locally, a single check took 0.6-0.7 s during a 250-label batch against 0.4-0.7 s
+  idle, but a smaller container will queue more.
 
 ## Security notes
 
