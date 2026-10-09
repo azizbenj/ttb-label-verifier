@@ -38,20 +38,21 @@ FIELDS = ("brand_name", "class_type", "alcohol_content", "net_contents", "bottle
 
 
 def stitch() -> None:
+    """Combine each record's images (front, back, neck) into one file, the way the app stacks several
+    uploads for one application (same function, same pixel cap), so the scorer sees what the app would."""
+    import warnings
+    from app.images import stitch as stack
+    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+    Image.MAX_IMAGE_PIXELS = None
     recs = json.loads((REAL / "raw" / "records.json").read_text())
+    n = 0
     for t, r in recs.items():
         ims = [ImageOps.exif_transpose(Image.open(REAL / "raw" / im["file"])).convert("RGB") for im in r["images"]]
         if not ims:
             continue
-        w = max(i.width for i in ims)
-        h = sum(i.height for i in ims) + 30 * (len(ims) - 1)
-        canvas = Image.new("RGB", (w, h), "white")
-        y = 0
-        for i in ims:
-            canvas.paste(i, ((w - i.width) // 2, y))
-            y += i.height + 30
-        canvas.save(REAL / f"{t}.jpg", quality=92)
-    print(f"stitched {len(recs)} records into {REAL}")
+        stack(ims).save(REAL / f"{t}.jpg", quality=92)
+        n += 1
+    print(f"stitched {n} records into {REAL}")
 
 
 def wrong_abv(text: str) -> str:

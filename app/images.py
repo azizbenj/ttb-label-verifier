@@ -76,7 +76,7 @@ def stitch(images: list[Image.Image]) -> Image.Image:
     width = max(p.width for p in parts)
     height = sum(p.height for p in parts) + _PART_GAP * (len(parts) - 1)
     if width * height > MAX_IMAGE_PIXELS:
-        scale = (MAX_IMAGE_PIXELS / (width * height)) ** 0.5
+        scale = (0.97 * MAX_IMAGE_PIXELS / (width * height)) ** 0.5   # a little under the cap: rounding must not push it over
         parts = [p.resize((max(1, round(p.width * scale)), max(1, round(p.height * scale))), Image.LANCZOS) for p in parts]
         width = max(p.width for p in parts)
         height = sum(p.height for p in parts) + _PART_GAP * (len(parts) - 1)
