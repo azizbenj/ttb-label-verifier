@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from time import perf_counter
 
@@ -18,6 +19,10 @@ from .base import LabelReading, OCRResult, OCRWord, ReaderError
 
 if TESSERACT_CMD:
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
+# Tesseract's OpenMP threads fight each other (and our batch workers) for the CPU. One thread per
+# process measured 0.66 s instead of 1.30 s median per label, and a 250-label batch with four workers
+# in 44 s instead of 157 s, with identical verdicts. Set the variable yourself to override.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 
 @lru_cache(maxsize=1)
