@@ -136,3 +136,29 @@ def test_previews_follow_the_straightened_image():
     img = _I.new("RGB", (400, 600), "white")
     assert make_preview(img, 3.0)
     assert preview_data_url(img, 3.0).startswith("data:image/jpeg;base64,")
+
+
+def test_previews_of_a_transparent_label_are_on_white_not_black():
+    import base64
+
+    from app.batch import make_preview
+    from app.main import preview_data_url
+    label = _transparent_label()
+    single = Image.open(io.BytesIO(base64.b64decode(preview_data_url(label).split(",", 1)[1]))).convert("L")
+    batch_preview = Image.open(io.BytesIO(make_preview(label))).convert("L")
+    assert np.asarray(single).mean() > 200 and np.asarray(batch_preview).mean() > 200
+
+
+def test_preview_budget_is_released_when_a_job_is_pruned(monkeypatch):
+    from app import batch
+    monkeypatch.setattr(batch, "JOBS", {})
+    monkeypatch.setattr(batch, "BATCH_JOBS_KEPT", 0)
+    monkeypatch.setattr(batch, "_preview_bytes", 0)
+    item = batch.BatchItem(row=2, application_id="A1", image_name="a.png")
+    item.preview = batch.make_preview(Image.new("RGB", (400, 600), "white"))
+    assert batch._preview_bytes == len(item.preview) > 0
+    job = batch.BatchJob(id="old", source="t", items=[item], done=1)
+    batch.JOBS[job.id] = job
+    with batch._JOBS_LOCK:
+        batch._prune_jobs()
+    assert "old" not in batch.JOBS and batch._preview_bytes == 0

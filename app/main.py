@@ -17,14 +17,14 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
-from PIL import Image, ImageOps
+from PIL import Image
 
 from . import batch as batchmod
 from .evidence import crop_for, bold_meter_percent, evidence_for, pin_labels
 from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELD_BY_KEY, FIELDS, MANDATED_WARNING, MAX_BATCH_UPLOAD_BYTES,
                      MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS)
 from .decisions import prompt_map
-from .images import MAX_LABEL_PARTS, ImageError, open_image, stitch
+from .images import MAX_LABEL_PARTS, ImageError, flatten, open_image, stitch
 from .models import Application, Status, VerificationResult, Verdict
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
@@ -305,9 +305,7 @@ PREVIEW_MAX_SIDE = 1000
 def preview_data_url(image: Image.Image, skew: float = 0.0) -> str:
     """A downscaled JPEG of the label, inlined so the result can show it without storing the upload.
     Straightened by the same angle as the image the reader used, so the highlights line up."""
-    img = ImageOps.exif_transpose(image)
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
+    img = flatten(image)   # upright, transparency on white (a plain RGB conversion paints it black)
     if skew:
         img = img.convert("RGB").rotate(skew, resample=Image.BICUBIC, expand=True, fillcolor=(255, 255, 255))
     img.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE))

@@ -21,7 +21,7 @@ from time import perf_counter
 
 from .config import (BATCH_JOBS_KEPT, BATCH_JOB_TTL_S, BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES,
                      MAX_BATCH_UPLOAD_BYTES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS, MAX_ZIP_UNCOMPRESSED)
-from .images import MAX_LABEL_PARTS, ImageError, open_image, stitch
+from .images import MAX_LABEL_PARTS, ImageError, flatten, open_image, stitch
 from .models import Application, Status, Verdict, VerificationResult
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
@@ -60,7 +60,8 @@ _TOO_MANY = "That's more than one batch can take."
 
 PREVIEW_MAX_SIDE = 900                 # px, the copy of each label kept for the detail panel
 PREVIEW_BUDGET_BYTES = 120 * 1024 * 1024   # across all jobs in memory; beyond it, no previews are kept
-_preview_bytes = 0
+_preview_bytes = 0                     # previews held by the jobs in memory (released when a job is pruned)
+_PREVIEW_LOCK = threading.Lock()
 _ORDER = {"REVIEW": 0, "FAIL": 1, "ERROR": 2, "PASS": 3, "PENDING": 4}
 
 
@@ -112,15 +113,13 @@ def needs_phrase(result: VerificationResult) -> tuple[str, list[float] | None]:
 
 
 def make_preview(image, skew: float = 0.0) -> bytes | None:
-    """A small JPEG of the label for the detail panel, within the process-wide memory budget."""
+    """A small JPEG of the label for the detail panel, within the memory budget of the jobs in memory."""
     global _preview_bytes
     if _preview_bytes >= PREVIEW_BUDGET_BYTES:
         return None
     try:
-        from PIL import Image, ImageOps
-        img = ImageOps.exif_transpose(image)
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
+        from PIL import Image
+        img = flatten(image)   # upright, transparency on white (a plain RGB conversion paints it black)
         if skew:
             img = img.convert("RGB").rotate(skew, resample=Image.BICUBIC, expand=True, fillcolor=(255, 255, 255))
         img.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE))
@@ -129,7 +128,8 @@ def make_preview(image, skew: float = 0.0) -> bytes | None:
     except Exception:  # a preview is a convenience, never a reason to fail the label
         return None
     data = buf.getvalue()
-    _preview_bytes += len(data)
+    with _PREVIEW_LOCK:
+        _preview_bytes += len(data)
     return data
 
 
@@ -239,12 +239,18 @@ _executor = ThreadPoolExecutor(max_workers=BATCH_WORKERS, thread_name_prefix="ba
 
 
 def _prune_jobs() -> None:
-    """Forget finished jobs past their retention so a long-running server does not grow without bound."""
+    """Forget finished jobs past their retention so a long-running server does not grow without bound.
+    Their previews go back to the budget: it was counted for the life of the process, so after 120 MB
+    of previews no later batch ever showed a label image again."""
+    global _preview_bytes
     finished = sorted((j for j in JOBS.values() if j.is_done), key=lambda j: j.created_at)
     cutoff = datetime.now(timezone.utc).timestamp() - BATCH_JOB_TTL_S
     for i, job in enumerate(finished):
         if job.created_at.timestamp() < cutoff or i < len(finished) - BATCH_JOBS_KEPT:
             JOBS.pop(job.id, None)
+            freed = sum(len(it.preview) for it in job.items if it.preview)
+            with _PREVIEW_LOCK:
+                _preview_bytes = max(0, _preview_bytes - freed)
 
 
 # --- CSV ------------------------------------------------------------------------------------------
