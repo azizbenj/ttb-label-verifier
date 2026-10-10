@@ -187,3 +187,36 @@ def test_finished_jobs_are_pruned(monkeypatch):
             batch._prune_jobs()
             batch.JOBS[job.id] = job
     assert sorted(batch.JOBS) == ["j2", "j3", "j4", "j5"]  # three kept plus the one just added
+
+
+def test_an_image_whose_row_was_rejected_is_not_reported_as_rowless():
+    csv_bytes = ("image,application_id,brand_name,class_type,alcohol_content,net_contents\n"
+                 "old_tom_clean.png,A1,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol.,750 mL\n"
+                 "wrong_abv.png,A2,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,forty five,750 mL\n").encode()
+    files = [("csv_file", ("apps.csv", csv_bytes, "text/csv")),
+             ("files", ("old_tom_clean.png", (SAMPLES / "old_tom_clean.png").read_bytes(), "image/png")),
+             ("files", ("wrong_abv.png", (SAMPLES / "wrong_abv.png").read_bytes(), "image/png"))]
+    r = client.post("/batch", files=files)
+    job_id = re.search(r'data-job="([a-f0-9]+)"', r.text).group(1)
+    t = _wait_done(job_id).text
+    assert "wrong_abv.png&#39; has no matching row" not in t and "wrong_abv.png' has no matching row" not in t
+    assert client.get(f"/api/batch/{job_id}").json()["items"][1]["status"] == "ERROR"
+
+
+def test_page_has_a_skip_link_and_honest_copy():
+    t = client.get("/").text
+    assert '<a class="skip" href="#main">' in t and 'id="main"' in t
+    assert "Takes about a second" not in t and "Nothing you upload is stored" not in t
+
+
+def test_problem_count_includes_the_warning(monkeypatch):
+    class NoWarning:
+        name = "fake"
+
+        def read(self, image):
+            lines = OLD_TOM_LINES[:5]   # no government warning on this label
+            return LabelReading(ocr=OCRResult(text="\n".join(lines), lines=lines, engine="fake"))
+    monkeypatch.setitem(main._readers, "tesseract", NoWarning())
+    r = client.post("/verify", data={**OLD_TOM, "alcohol_content": "40% Alc./Vol.", "sample": "old_tom_clean"},
+                    headers={"X-Partial": "1"})
+    assert "2 problems:" in r.text and "government warning" in r.text

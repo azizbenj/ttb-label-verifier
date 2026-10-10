@@ -496,6 +496,7 @@ def _row_to_application(row: dict) -> tuple[Application | None, str | None]:
 def build_items(rows: list[dict], images: dict[str, bytes | None]) -> tuple[list[BatchItem], list[tuple[BatchItem, bytes]], list[str]]:
     items, work, issues = [], [], []
     used: set[str] = set()
+    referenced: set[str] = set()
     for row in rows:
         item = BatchItem(row=row["_row"], application_id=row.get("application_id") or f"row {row['_row']}",
                          image_name=row.get("image", ""))
@@ -503,6 +504,7 @@ def build_items(rows: list[dict], images: dict[str, bytes | None]) -> tuple[list
         item.application = app
         # Several images for one application: "front.png; back.png" (or separated by "|").
         names = [n.strip() for n in re.split(r"[;|]", item.image_name) if n.strip()] if item.image_name else []
+        referenced.update(Path(n).name.lower() for n in names)   # a rejected row still names its image
         found = [_lookup_image(images, n) for n in names]
         data = None
         missing = [n for n, d in zip(names, found) if d is None]
@@ -523,8 +525,11 @@ def build_items(rows: list[dict], images: dict[str, bytes | None]) -> tuple[list
             work.append((item, data))
         items.append(item)
     for name, data in images.items():
-        if data is not None and name not in used and not any(Path(name).stem == Path(u).stem for u in used):
-            issues.append(f"Image '{name}' has no matching row in the CSV, so it was not checked.")
+        if data is None or name in used or any(Path(name).stem == Path(u).stem for u in used):
+            continue
+        if name in referenced or any(Path(name).stem == Path(u).stem for u in referenced):
+            continue   # its row was rejected; that row's own message says why
+        issues.append(f"Image '{name}' has no matching row in the CSV, so it was not checked.")
     return items, work, issues
 
 

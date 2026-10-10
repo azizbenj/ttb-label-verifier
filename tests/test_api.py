@@ -114,3 +114,5 @@ def test_batch_end_to_end_with_export():
     assert csv_out.count("\n") == 4 and "alcohol_content_verdict" in csv_out
     detail = client.get(f"/batch/{job_id}/item/1").text
     assert "Problems found" in detail
+
+

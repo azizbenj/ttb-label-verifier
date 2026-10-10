@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/static/style.css?v={{ static_version() }}">
 </head>
 <body>
+<a class="skip" href="#main">Skip to the check</a>
 <div class="strip"><div class="wrap">
   <b>Label Check</b><span aria-hidden="true">·</span><span>Label approval review</span><span aria-hidden="true">·</span><span>Prototype</span>
   <span class="right">{{ icon('lock', 12) }}Internal tool · sample data only</span>
@@ -18,12 +19,12 @@
   <span class="mark" aria-hidden="true">{{ icon('mark', 26) }}</span>
   <div><h1>Label Check</h1><p class="tagline">Verify a label against its label approval application.</p></div>
   <div class="right">
-    <span>{{ reader_info }} · nothing you upload is stored</span>
+    <span>{{ reader_info }} · single checks are not stored</span>
     <button class="btn icon" type="button" id="help-btn" aria-label="How it works (help)" aria-expanded="false" aria-controls="help-drawer">{{ icon('help', 20) }}</button>
   </div>
 </div></header>
-<main class="wrap page">{% block content %}{% endblock %}</main>
-<footer class="wrap page-foot">Prototype · Mandatory label information under 27 CFR parts 4, 5 and 7; health warning statement under 27 CFR part 16 · Uploads are processed in memory and not stored · <a href="/healthz">service status</a></footer>
+<main class="wrap page" id="main" tabindex="-1">{% block content %}{% endblock %}</main>
+<footer class="wrap page-foot">Prototype · Mandatory label information under 27 CFR parts 4, 5 and 7; health warning statement under 27 CFR part 16 · Single checks are not stored; batch images and results are kept in memory for 24 hours, then deleted · <a href="/healthz">service status</a></footer>
 {% block drawer %}{% endblock %}
 <script src="/static/app.js?v={{ static_version() }}"></script>
 </body>

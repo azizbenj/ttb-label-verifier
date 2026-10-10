@@ -66,7 +66,8 @@
     <span class="badge {{ cls }}">{{ icon(r.overall|glyph, 24) }}</span>
     <div class="text">
       <h2>{{ r.overall|headline }}</h2>
-      <p>{% if problem_fields %}{{ problem_fields|length }} problem{{ 's' if problem_fields|length > 1 }}: {% for f in problem_fields %}<a class="problem" href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if r.warning.overall.value == 'FAIL' %}, <a class="problem" href="#warning-section">government warning</a>{% endif %}.{% elif r.warning.overall.value == 'FAIL' %}1 problem: <a class="problem" href="#warning-section">government warning</a>.{% endif %}
+      {% set n_problems = problem_fields|length + (1 if r.warning.overall.value == 'FAIL' else 0) %}
+      <p>{% if problem_fields %}{{ n_problems }} problem{{ 's' if n_problems > 1 }}: {% for f in problem_fields %}<a class="problem" href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if r.warning.overall.value == 'FAIL' %}, <a class="problem" href="#warning-section">government warning</a>{% endif %}.{% elif r.warning.overall.value == 'FAIL' %}1 problem: <a class="problem" href="#warning-section">government warning</a>.{% endif %}
         {% if review_fields or r.warning.overall.value == 'REVIEW' %} Needs a look: {% for f in review_fields %}<a href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if r.warning.overall.value == 'REVIEW' %}{{ ', ' if review_fields }}<a href="#warning-section">government warning</a>{% endif %}.{% endif %}
         {% if r.overall.value == 'PASS' %}{{ r.summary }}{% elif not problem_fields and r.warning.overall.value != 'FAIL' and r.warning.overall.value != 'REVIEW' %} Everything else matches and the government warning is correct.{% elif r.warning.overall.value == 'PASS' %} Everything else matches and the government warning is correct.{% endif %}</p>
     </div>
