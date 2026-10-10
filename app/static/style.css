@@ -638,3 +638,8 @@ dialog.export::backdrop { background: rgba(28,31,36,.35); }
   .decide .answers, .decide .fine { display: none !important; }
   .queue-bar, .pager, .ask .fine { display: none !important; }
 }
+
+/* skip link: off screen until it has keyboard focus */
+.skip-link { position: absolute; left: 8px; top: -60px; z-index: 100; background: var(--surface); color: var(--action); border: 2px solid var(--action); border-radius: 4px; padding: 8px 12px; font-weight: 600; text-decoration: none; }
+.skip-link:focus { top: 8px; }
+@media print { .skip-link { display: none !important; } }

@@ -205,7 +205,7 @@ def test_an_image_whose_row_was_rejected_is_not_reported_as_rowless():
 
 def test_page_has_a_skip_link_and_honest_copy():
     t = client.get("/").text
-    assert '<a class="skip" href="#main">' in t and 'id="main"' in t
+    assert '<a class="skip-link" href="#main">' in t and 'id="main"' in t
     assert "Takes about a second" not in t and "Nothing you upload is stored" not in t
 
 
