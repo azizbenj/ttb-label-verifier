@@ -8,11 +8,13 @@ they travel with the batch into the export."""
 
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass
 
 from .config import FIELD_BY_KEY, THRESHOLDS
 from .matching import NOTE_AMBIGUOUS_MISREAD
 from .models import Status, VerificationResult, Verdict
+from .warning import reported_meaning_changes
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,23 @@ class Prompt:
 
 def _quote(s: str) -> str:
     return '"' + s.replace('"', "'") + '"'
+
+
+def _split_phrases(required: str, found: str) -> tuple[tuple[str, str, str], tuple[str, str, str]]:
+    """(before, differing words, after) of the required and the label's phrase: "should not drink" and
+    "should drink" give ("should ", "not", " drink") and ("should ", "", " drink")."""
+    a, b = required.split(), found.split()
+    sm = difflib.SequenceMatcher(a=a, b=b, autojunk=False)
+    ops = [op for op in sm.get_opcodes() if op[0] != "equal"]
+    if not ops:
+        return ("", required, ""), ("", found, "")
+    _tag, i1, i2, j1, j2 = ops[0]
+
+    def parts(ws: list[str], s: int, e: int) -> tuple[str, str, str]:
+        before, mid, after = " ".join(ws[:s]), " ".join(ws[s:e]), " ".join(ws[e:])
+        return (before + " " if before else "", mid, (" " + after) if after else "")
+
+    return parts(a, i1, i2), parts(b, j1, j2)
 
 
 def prompts_for(result: VerificationResult) -> list[Prompt]:
@@ -88,7 +107,25 @@ def prompts_for(result: VerificationResult) -> list[Prompt]:
                           "No, it is missing", w.wording_note or "", "Required", "On the label",
                           ("", "GOVERNMENT WARNING: (1) According to the Surgeon General…", ""),
                           ("", "(nothing read)", ""), w.box, lean=False))
-    if w.present and w.wording in (Status.REVIEW, Status.FAIL) and w.diff:
+    meaning = reported_meaning_changes(w.wording_note) if w.present and w.wording == Status.FAIL else []
+    if meaning:
+        # A difference that changes what the warning says ("should drink" for "should not drink"): the
+        # question names the word at stake so a "Yes" is a deliberate look at the label, never a reflex.
+        found, required = meaning[0]
+        (rb, rw, ra), (fb, fw, fa) = _split_phrases(required, found)
+        if rw and fw:
+            q = f"Does the label print {_quote(rw)} in {_quote(required)}, not {_quote(fw)}?"
+        elif rw:
+            q = f"Does the label print {_quote(rw)} in {_quote(required)}?"
+        else:
+            q = f"Does the label print {_quote(required)}, without {_quote(fw)}?"
+        why = (f"{w.wording_note} The warning must be printed word for word (27 CFR 16.21); this difference "
+               "fails the label unless the label itself is correct and the tool misread it.")
+        out.append(Prompt("warning_wording", "Government warning · wording", "CHANGES MEANING",
+                          q, f"Yes, it prints {_quote(required)}: reading error",
+                          f"No, it says {_quote(found)}: misprint", why, "Required text says", "Label says",
+                          (rb, rw or "", ra), (fb, fw or "(nothing)", fa), w.box, lean=False))
+    elif w.present and w.wording in (Status.REVIEW, Status.FAIL) and w.diff:
         d = w.diff[0]
         n = len(w.diff)
         exp, found = d.expected or "(nothing)", d.found or "(nothing)"

@@ -30,6 +30,7 @@ from rapidfuzz import fuzz
 from rapidfuzz.distance import Levenshtein
 
 from .config import MANDATED_WARNING, THRESHOLDS, Thresholds
+from .matching import _OCR_CONFUSIONS
 from .models import DiffItem, Status, WarningResult
 from .normalize import normalize_loose, normalize_strict
 from .readers.base import OCRWord, upright_box
@@ -510,22 +511,209 @@ def sentence_structure(found_text: str) -> list[str]:
     return problems
 
 
-def check_wording(found_text: str, *, th: Thresholds = THRESHOLDS) -> tuple[Status, int, str, list[DiffItem]]:
+# --- meaning-changing differences ---------------------------------------------------------------
+# A difference that changes what the statement says ("should drink" for "should not drink", "can cause"
+# for "may cause", "men" for "women") fails the wording; any other small difference (most are OCR slips)
+# asks for a look. The word lists and thresholds are in config.Thresholds (meaning_*).
+_MEANING_NOTE = "The label says '{found}' where the warning requires '{required}': this changes its meaning."
+MEANING_NOTE_RE = re.compile(r"The label says '([^']*)' where the warning requires '([^']*)': this changes its meaning\.")
+
+
+@dataclass(frozen=True)
+class MeaningChange:
+    kind: str        # "missing" (a required word left out), "replaced", "inserted" (a word the text does not have)
+    word: str        # the required word lost or replaced, or the word inserted
+    found: str       # the label's words, with a word of context
+    required: str    # the required words at the same place
+
+    @property
+    def note(self) -> str:
+        return _MEANING_NOTE.format(found=self.found, required=self.required)
+
+
+def _fold(token: str) -> str:
+    """A word with the letter shapes OCR confuses collapsed (app/matching.py's map): "wornen" -> "women"."""
+    s = token.lower()
+    for a, b in _OCR_CONFUSIONS:
+        s = s.replace(a, b)
+    return s
+
+
+def _garble(found: str, required: str) -> bool:
+    """The label's word is the required one misread: equal once OCR's usual confusions are undone."""
+    return _fold(found) == _fold(required)
+
+
+def _phrase(words: list[str], at: int, width: int = 1) -> str:
+    """``width`` words from ``at`` with the next word, or the previous one at the end of the text."""
+    if at + width < len(words):
+        return " ".join(words[at:at + width + 1])
+    return " ".join(words[max(0, at - 1):at + width])
+
+
+def meaning_changes(got: list[str], token_words: list[OCRWord | None] | None = None, *,
+                    th: Thresholds = THRESHOLDS) -> list[MeaningChange]:
+    """The differences between the label's words (``got``, loose tokens) and the required text that change
+    its meaning. ``token_words`` gives the OCR word each token was read from (None where the reader gave no
+    box), whose confidence and position gate each difference; without it the text is classified as read
+    (``check_wording`` then does not act on the result: a difference needs a confident reading to fail)."""
+    subs = {k: set(v.split()) for k, v in th.meaning_substitutes}
+    inserted = set(th.meaning_inserted)
+    req = _MANDATED_WORDS
+
+    def sure(j: int) -> bool:
+        if token_words is None:
+            return True
+        w = token_words[j] if 0 <= j < len(token_words) else None
+        # RapidOCR scores a whole line and its word boxes are cut from the line's box: neither says how
+        # sure it is of one word, so its reading never fails the wording this way.
+        return w is not None and w.engine != "rapid" and w.conf >= th.meaning_conf
+
+    def tight_gap(j: int) -> bool:
+        """A word is missing between got[j-1] and got[j], and the label leaves no room for it."""
+        if j <= 0 or j >= len(got):
+            return False
+        if token_words is None:
+            return True
+        a, b = token_words[j - 1], token_words[j]
+        if a is None or b is None or a is b or not (sure(j - 1) and sure(j)):
+            return False
+        room = th.meaning_gap * max(a.height, b.height)
+        if a.view != b.view:
+            return False
+        if a.line_index == b.line_index:
+            return b.left - a.right <= room
+        # Across a line break the gap is the end of one line and the start of the next: there is no room
+        # for a word only when the first line runs to the statement's right edge and the next starts at its
+        # left edge (justified type). Ragged or centred lines cannot tell, and ask for a look.
+        # The edges count only when other lines of the statement end there too (two at least): otherwise the
+        # first line may just be the longest of ragged type, short of a word OCR dropped at its end.
+        ends: dict[int, tuple[int, int]] = {}
+        for w in token_words:
+            if w is not None and w.view == a.view:
+                lo, hi = ends.get(w.line_index, (w.left, w.right))
+                ends[w.line_index] = (min(lo, w.left), max(hi, w.right))
+        left = min(lo for lo, _hi in ends.values())
+        right = max(hi for _lo, hi in ends.values())
+        flush = sum(1 for i, (_lo, hi) in ends.items() if i != a.line_index and hi >= right - room)
+        return b.top > a.top and flush >= 2 and a.right >= right - room and b.left <= left + room
+
+    def in_line(j: int) -> bool:
+        """An inserted got[j] sits between two words of the statement on its own line."""
+        if j <= 0 or j + 1 >= len(got) or not sure(j):
+            return False
+        if token_words is None:
+            return True
+        a, w, b = token_words[j - 1], token_words[j], token_words[j + 1]
+        return all(x is not None for x in (a, b)) and a.line_index == w.line_index == b.line_index
+
+    def missing(i: int, j: int) -> MeaningChange:   # req[i] left out between got[j-1] and got[j]
+        return MeaningChange("missing", req[i], " ".join(got[max(0, j - 1):j + 1]),
+                             " ".join(req[max(0, i - 1):i + 2]))
+
+    def replaced(i: int, j: int) -> MeaningChange:
+        return MeaningChange("replaced", req[i], _phrase(got, j), _phrase(req, i))
+
+    def added(i: int, j: int) -> MeaningChange:     # got[j] inserted before req[i]
+        return MeaningChange("inserted", got[j], " ".join(got[max(0, j - 1):j + 2]),
+                             " ".join(req[max(0, i - 1):i + 1]))
+
+    def matches(e_words: list[str], f_words: list[str]) -> bool:
+        return len(e_words) == len(f_words) and all(e == f or _garble(f, e) for e, f in zip(e_words, f_words))
+
+    out: list[MeaningChange] = []
+    sm = difflib.SequenceMatcher(a=req, b=got, autojunk=False)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            continue
+        E, F = req[i1:i2], got[j1:j2]
+        if E and F and _fold("".join(E)) == _fold("".join(F)):
+            continue    # a word split or run together, or garbled: "no t", "shouldnot", "rnay"
+        if tag == "delete":
+            # Only the words that carry the meaning left out ("not", "should not"): a longer run missing is
+            # a line OCR did not read, whatever words it held.
+            if all(e in th.meaning_missing for e in E) and tight_gap(j1):
+                out.append(missing(i1 + next(k for k, e in enumerate(E) if e == "not") if "not" in E else i1, j1))
+        elif tag == "insert":
+            for k, f in enumerate(F):
+                if f in inserted and in_line(j1 + k):
+                    out.append(added(i1, j1 + k))
+        elif len(E) == len(F):
+            for k, (e, f) in enumerate(zip(E, F)):
+                if not _garble(f, e) and f in subs.get(e, ()) and sure(j1 + k):
+                    out.append(replaced(i1 + k, j1 + k))
+        elif len(F) == len(E) - 1:      # one required word left out, the rest misread: "shou1d drink"
+            for k, e in enumerate(E):
+                if e in th.meaning_missing and matches(E[:k] + E[k + 1:], F) and tight_gap(j1 + k):
+                    out.append(missing(i1 + k, j1 + k))
+                    break
+        elif len(F) == len(E) + 1:      # one word added, the rest misread
+            for k, f in enumerate(F):
+                if f in inserted and matches(E, F[:k] + F[k + 1:]) and in_line(j1 + k):
+                    out.append(added(i1 + k, j1 + k))
+                    break
+        # A longer stretch that reads differently is not judged word by word: it is other text read into
+        # the statement (a neighbouring column, a slogan) far more often than a rewritten warning, and its
+        # difference from the required text already fails the wording on similarity.
+    return out
+
+
+def _token_words(found_text: str, words: tuple[OCRWord, ...] | list[OCRWord]) -> list[OCRWord | None]:
+    """The OCR word each loose token of ``found_text`` was read from (None where none lines up: a word
+    rejoined over a line break, text with no box)."""
+    got = normalize_loose(found_text).split()
+    stream: list[str] = []
+    owners: list[OCRWord] = []
+    for w in words:
+        for t in _loose_tokens(w):
+            stream.append(t)
+            owners.append(w)
+    out: list[OCRWord | None] = [None] * len(got)
+    sm = difflib.SequenceMatcher(a=stream, b=got, autojunk=False)
+    for a0, b0, size in sm.get_matching_blocks():
+        for k in range(size):
+            out[b0 + k] = owners[a0 + k]
+    return out
+
+
+def check_wording(found_text: str, *, th: Thresholds = THRESHOLDS,
+                  token_words: list[OCRWord | None] | None = None) -> tuple[Status, int, str, list[DiffItem]]:
+    """``token_words``: the OCR word behind each loose token of ``found_text`` (see ``meaning_changes``);
+    a meaning-changing difference fails the wording only when they are given and confident."""
     got = normalize_loose(found_text)
     if got == _MANDATED_LOOSE:
         return Status.PASS, 100, "Wording matches the required statement word for word.", []
     score = int(round(fuzz.ratio(_MANDATED_LOOSE, got)))
     diff = word_diff(found_text)
     structure = sentence_structure(found_text)
+    # Without word confidences (the cloud reader gives none) a meaning-changing difference cannot be told
+    # from a misread, so it asks for a look like any other.
+    # Below meaning_min_score the statement was not read closely enough for one word to be judged.
+    changes = (meaning_changes(got.split(), token_words, th=th)
+               if token_words is not None and score >= th.meaning_min_score else [])
+    meaning = " ".join(dict.fromkeys(c.note for c in changes))
     n = len(diff)
     if structure:
         return (Status.FAIL, score,
-                f"The statement must carry each sentence once, in order: {'; '.join(structure)}.", diff)
+                f"The statement must carry each sentence once, in order: {'; '.join(structure)}."
+                + (f" {meaning}" if meaning else ""), diff)
+    if changes:
+        others = n - len(changes)
+        rest = (f" {others} other difference{'s' if others != 1 else ''} from the required wording."
+                if others > 0 else "")
+        if score < th.warning_near:
+            rest += " The wording also differs too much from the required statement to be a reading error."
+        return Status.FAIL, score, meaning + rest, diff
     if score >= th.warning_near:
         return (Status.REVIEW, score,
                 f"{n} difference{'s' if n != 1 else ''} from the required wording. "
                 "This may be a misprint on the label or a reading error. Please check the label.", diff)
     return Status.FAIL, score, "The wording does not match the required statement.", diff
+
+
+def reported_meaning_changes(wording_note: str) -> list[tuple[str, str]]:
+    """(label's words, required words) of each meaning-changing difference a wording note names."""
+    return MEANING_NOTE_RE.findall(wording_note or "")
 
 
 # --- heading capitalization -------------------------------------------------------------------
@@ -728,7 +916,10 @@ def check_warning(lines: list[str], words: list[OCRWord] | None = None, ink: np.
                              heading_bold=Status.FAIL, heading_bold_note="Not found.", overall=Status.FAIL)
     found_lines = join_hyphenated(list(span.texts) if span.texts else [lines[i] for i in span.line_ids])
     found_text = "\n".join(found_lines)
-    wording, score, wording_note, diff = check_wording(found_text, th=th)
+    # A meaning-changing difference counts only on words read confidently: each token of the statement is
+    # traced to the OCR word it came from. Without word boxes (the cloud reader) none is counted.
+    token_words = _token_words(found_text, span.kept_words) if words else None
+    wording, score, wording_note, diff = check_wording(found_text, th=th, token_words=token_words)
     if span.second_copies:
         # Sentence (1) printed on the front and again on the back, or (2) left out of one copy: the agent
         # must see that the statement is not printed once, whole.

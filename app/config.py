@@ -137,6 +137,58 @@ class Thresholds:
     # required fields and the warning) could not be read clearly: 11 of the 187 correct real labels, none of
     # the synthetic ones (a majority, 3, would flag 2; one unclear check is common, 38 labels, and a look settles it).
     poor_image_unclear: int = 2
+    # Meaning-changing differences in the warning's wording (app/warning.py, README "Government warning
+    # check"). A difference fails the wording, instead of asking for a look, when the required word is one
+    # whose loss or replacement changes what the statement says and the label's word is a real word read
+    # confidently, not an OCR garble. The real-word test is these lists: a word the label prints in place
+    # of a required word counts only when it is listed for that word below. A word that becomes the
+    # required one once OCR's usual confusions are undone (rn/m, cl/d, 0/o, 1/l/i, 5/s, 8/b: "wornen",
+    # "rnay", "n0t"), or a word split or run together ("no t"), is a garble whatever the lists say.
+    # Each word of the label that makes the change must have been read with at least this confidence
+    # (Tesseract, 0-100); a word the reader gave no box for is not trusted, nor a RapidOCR word (its score
+    # is the whole line's, its box a share of the line's), and without word boxes at all (the cloud reader)
+    # no difference fails this way: it asks for a look like any other.
+    meaning_conf: int = 70
+    # A missing "not" or modal counts only when the words on both sides of the gap were read with
+    # meaning_conf, on the same line, and no further apart than this many times the text height: a gap
+    # wide enough to hold a word is a word OCR dropped, not a word the label left out.
+    meaning_gap: float = 1.2
+    # Words are judged one by one only when the statement as read is at least this similar to the required
+    # text (rapidfuzz, 0-100): below it, what was read is mostly something else and fails on similarity.
+    meaning_min_score: int = 90
+    # Required words whose absence changes the statement ("not"; the modals "should" and "may").
+    meaning_missing: tuple[str, ...] = ("not", "should", "may")
+    # Words that, inserted where the required text has none, change what it says (negations, quantifiers,
+    # hedges). An inserted word counts only between two words of the statement on its own line: a word at
+    # a line's end may belong to a neighbouring column ("FOR SALE ONLY IN OHIO").
+    meaning_inserted: tuple[str, ...] = ("not", "no", "never", "only", "sometimes", "rarely", "seldom",
+                                         "occasionally", "always", "usually", "often", "hardly", "cannot",
+                                         "possibly", "barely")
+    # Required word -> the real words that, printed in its place, change the statement. Plural and
+    # singular of the same noun ("problem", "defect") and a verb's other form ("impair") are left out on
+    # purpose: they break the fixed text (a look is asked for) but do not change what it warns about;
+    # "woman" is in, because the regulation's "women" names a group, not a person.
+    meaning_substitutes: tuple[tuple[str, str], ...] = (
+        ("not", "now also always only ever even then too just still often rather soon"),
+        ("should", "can could may might must will would shall need do does cannot"),
+        ("may", "can could might must will would shall should need do does cannot"),
+        ("women", "men man woman people persons adults children kids mothers girls ladies everyone anyone "
+                  "nobody wives"),
+        ("pregnancy", "childhood infancy adolescence nursing breastfeeding lactation meals work holidays"),
+        ("birth", "brain heart liver mental physical"),
+        ("defects", "weight"),
+        ("impairs", "improves improve enhances enhance increases increase boosts boost helps aids sharpens "
+                    "benefits affects affect reduces reduce"),
+        ("drive", "ride walk fly steer park own buy"),
+        ("car", "vehicle truck boat bike bicycle plane horse bus"),
+        ("operate", "use run own fix repair build"),
+        ("machinery", "machines equipment tools vehicles computers"),
+        ("cause", "prevent prevents cure cures avoid reduce solve treat ease"),
+        ("health", "wealth heart money legal family financial"),
+        ("problems", "benefits improvements"),
+        ("surgeon", "attorney president secretary doctor physician governor"),
+        ("drink", "eat consume buy sell serve enjoy use taste touch try smoke"),
+    )
 
 
 THRESHOLDS = Thresholds()
