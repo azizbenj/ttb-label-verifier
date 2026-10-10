@@ -29,10 +29,10 @@ KINDS = ("alcohol", "volume")
 _FIGURE_LIKE_RE = re.compile(r"(?<![A-Za-z0-9])(?=[0-9LlIOoSsB.,]{2,6}(?![A-Za-z0-9]))"
                              r"(?=[0-9.,]*[LlIOoSsB])[0-9LlIOoSsB.,]*[0-9][0-9LlIOoSsB.,]*")
 _VOLUME_LIKE_RE = re.compile(_FIGURE_LIKE_RE.pattern + r"(?![0-9LlIOoSsB.,])(?!\s*%)")   # a percentage is not a volume
-# Letters alone in the shape of a litre figure ("LSL", "LSOL" for "1.5 L"): the page pass never makes
+# Letters alone in the shape of a volume ("LSL", "LSOL" for "1.5 L", "SOML" for "50ML"): the page pass never makes
 # a figure of these (app/normalize.py), the crop reads them with their digits. Not a state code
 # before a ZIP ("IL 60607").
-_LETTERS_LIKE_LITRES_RE = re.compile(r"(?<![A-Za-z0-9])[LlIOoSsB][LlIOoSsB.,]{0,3}L(?![A-Za-z0-9])(?!\s*\d{5}\b)")
+_LETTERS_LIKE_LITRES_RE = re.compile(r"(?<![A-Za-z0-9])[LlIOoSsB][LlIOoSsB.,]{0,3}(?:L|\s?[mM][lL])(?![A-Za-z0-9])(?!\s*\d{5}\b)")
 # Words that mark a figure as an alcohol content or a volume, with OCR's usual slips ("ALG", "V0L").
 _ALC_HINT_RE = re.compile(r"%|\bproof\b|\ba[l1i][cg]\b|\bv[o0g][l1i]\b|\babv\b", re.IGNORECASE)
 _VOL_HINT_RE = re.compile(r"\b(?:m\s?l|cl|l|oz|fl|liters?|litres?|pints?|quarts?|gal|gallons?)\b", re.IGNORECASE)

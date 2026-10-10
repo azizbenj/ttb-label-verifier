@@ -259,6 +259,23 @@ def test_crop_lines_do_not_become_the_brand_line():
     assert brand.verdict == Verdict.MISMATCH and brand.found == "OLD TOM DISTILLERY"
 
 
+def test_a_second_read_never_adds_a_country_or_a_text_field_reading():
+    # A real label: the crop of "WHITE WINE + PRODUCT OF FRANCE + ALC. 12.5% BY VOL. + 750ML" came back
+    # "PRODUCT OF FRANCE - ALC" and was taken for a second origin statement, so a NEAR MATCH became a MISMATCH.
+    app = Application(brand_name="CA ROULE", class_type="White Wine", alcohol_content="12.5%", net_contents="750 mL",
+                      country_of_origin="France")
+    page = ["CA ROULE", "WHITE WINE + PRODUCT OF FRANCE + ALC. 12.5% BY VOL. + 750ML", WARNING]
+    before = {f.key: f for f in extract_and_compare(app, make_ocr(page))}
+    ocr = make_ocr(page)
+    view = View(rot=0, inverted=False, ink=np.zeros((30, 300), bool), size=(300, 30), scale=0.5, offset=(100, 200))
+    N.record(ocr, 1, ("volume",), "fake", ["PRODUCT OF FRANCE - ALC 750ML"],
+             [OCRWord(text="PRODUCT", left=0, top=0, width=30, height=20, conf=80, line_index=0)], view)
+    after = {f.key: f for f in extract_and_compare(app, ocr)}
+    for key in ("brand_name", "class_type", "bottler_name_address", "country_of_origin"):
+        assert (after[key].verdict, after[key].found) == (before[key].verdict, before[key].found), key
+    assert after["country_of_origin"].verdict != Verdict.MISMATCH
+
+
 # --- the reader's bookkeeping: crops, views, time limit -------------------------------------------------
 def test_crop_view_words_map_back_onto_the_page():
     views = [View(rot=0, inverted=False, ink=np.zeros((10, 10), bool), size=(2000, 1000)),
@@ -278,6 +295,7 @@ def test_which_lines_are_worth_a_second_read():
     assert N.line_kinds("ALC. 15% BY VOL. LSL") == {"alcohol": True, "volume": False}   # letters shaped like litres
     assert N.line_kinds("L751") == {"volume": False}                      # digits mixed with their look-alikes
     assert N.line_kinds("CHICAGO IL 60607") == {}                         # a state code before a ZIP
+    assert N.line_kinds("66 PROOF * 33%ALC/VOL * SOML") == {"alcohol": True, "volume": False}   # "50ML", all letters
     assert N.line_kinds("4S% ALC./VOL.") == {"alcohol": False}
     assert N.line_kinds("Milwaukee, WI 53202") == {}                      # a run of digits alone is not a figure
     assert N.line_kinds("GOVERNMENT WARNING: (1) According to") == {}

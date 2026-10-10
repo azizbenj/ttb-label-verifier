@@ -68,6 +68,9 @@ def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
     reread_lines = {r.new_line for r in ocr.rereads if r.new_line is not None}
     heights = {i: h for i, h in line_heights(ocr).items() if i not in reread_lines}
     boxes = {i: b for i, b in line_boxes(ocr).items() if i not in reread_lines}
+    # The text fields and the country search the page's own lines only (blanked, so indices still hold):
+    # a crop of "WHITE WINE + PRODUCT OF FRANCE + ALC. 12.5%" must not add an origin statement or a brand.
+    text_lines = ["" if i in reread_lines else line for i, line in enumerate(lines)]
     confs: dict[int, list[tuple[str, float]]] = {}
     for w in ocr.words:
         confs.setdefault(w.line_index, []).append((w.text, w.conf))
@@ -75,14 +78,14 @@ def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
     alcohol_text, alcohol_rereads = figure_text(ocr, "alcohol")
     volume_text, volume_rereads = figure_text(ocr, "volume")
     return [
-        locate_and_compare("brand_name", app.brand_name, lines, preferred_line=brand_line, line_heights=heights,
+        locate_and_compare("brand_name", app.brand_name, text_lines, preferred_line=brand_line, line_heights=heights,
                            line_boxes=boxes, line_words=confs,
                            fallback_found=lines[brand_line] if brand_line is not None else None),
-        locate_and_compare("class_type", app.class_type, lines, line_boxes=boxes, line_words=confs),
+        locate_and_compare("class_type", app.class_type, text_lines, line_boxes=boxes, line_words=confs),
         compare_alcohol(app.alcohol_content, alcohol_text, rereads=alcohol_rereads),
         compare_volume(app.net_contents, volume_text, rereads=volume_rereads),
-        locate_and_compare("bottler_name_address", app.bottler_name_address, lines, line_boxes=boxes, line_words=confs),
-        compare_country(app.country_of_origin, lines),
+        locate_and_compare("bottler_name_address", app.bottler_name_address, text_lines, line_boxes=boxes, line_words=confs),
+        compare_country(app.country_of_origin, text_lines),
     ]
 
 
