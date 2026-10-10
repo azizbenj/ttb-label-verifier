@@ -183,6 +183,9 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `bold_ratio` | 1.30 | Heading stroke width ÷ body stroke width at or above this → "looks bold" (measured: bold headings 1.51-2.04, regular 1.03-1.14) |
 | `bold_min_text_px` | 14 | Below this text height the stroke measurement is not attempted |
 | `bold_failure_is_fail` | false | A "does not look bold" result asks for review instead of failing the label |
+| `same_place_overlap` | 0.5 | Two OCR lines whose boxes overlap by this fraction of the smaller one's height and width are two readings of one printed line of the warning: only one is taken |
+| `column_tolerance` / `column_min_lines` | 0.25 / 2 | A word whose box ends before the warning's left edge or starts after its right edge (allowing this fraction of the text height) is outside its column; the edge counts as a neighbouring column, and such words are set aside and quoted, only when they occur on at least this many of the statement's rows |
+| `duplicate_sentence` | 90 | Lines outside the warning that match one of its sentences at least this well (partial similarity) are that sentence printed again → NEEDS REVIEW, quoting them; a complete second statement is not reported |
 | `unreadable_min_words` / `unreadable_word_conf` | 8 / 70 | Fewer clear words than this, nothing read for any field (not even a disagreeing value) and no warning → "We couldn't read this label", no verdict |
 
 Real labels taught a few more rules, each covered by tests:
@@ -224,22 +227,47 @@ Required text (27 CFR 16.21):
 
 Four separate results are shown so the agent sees exactly what is wrong:
 
-1. **Present**: the statement (or its body) was found on the label. Each reading of the label (upright, turned,
-   contrast) is searched on its own, its lines in top-to-bottom order; the statement is grown line by line while
-   that brings it closer to the required text, passing over up to four lines that belong to something else (a
-   neighbouring column, "For sale only in Ohio"). Words at the start or end of a line that belong to text printed
-   beside the statement are left out, and the wording result then asks for a look, always quoting them: they may
-   instead be words added to the statement. (Their position cannot tell the two apart: on a real keg collar the
-   neighbouring column sits a normal word gap away.)
+1. **Present**: the statement (or its body) was found on the label. The OCR lines are grouped by *frame*: the
+   upright read and the contrast read of the same image share one frame (their boxes are in the same coordinates,
+   so a heading read in one and a body read in the other still make one statement); each turned read is a frame of
+   its own. Within a frame the lines are ordered top to bottom and the statement is grown line by line while that
+   brings it closer to the required text, passing over up to four rows that belong to something else ("For sale
+   only in Ohio"). The word boxes then decide what belongs to it:
+   - *Two readings of one printed line.* The block pass and the sparse pass often read the same row differently
+     (one across two columns, the other each column; one with a stray mark). Two lines whose boxes overlap by half
+     their height and width are two readings of one row: the one closer to the required text is kept, never both
+     (equal readings: the one OCR was surer of). A duplicate read can no longer add a sentence fragment twice.
+   - *A neighbouring column.* The words of the provisional statement that align with the required text define the
+     statement's own left and right extent across all its lines. A word whose box lies entirely beyond that extent
+     is outside the column; when words lie beyond the same edge on at least two of the statement's rows, that
+     edge borders another column (a keg collar's "ATTENTION-READ BEFORE TAPPING", a "12 FL OZ" to the left) and
+     all words beyond it are set aside and quoted in the note without affecting the verdict. The gap between the
+     columns plays no part (on a real keg collar it is a normal word gap); only the extent does. A single line with
+     words sticking out is left alone and judged as wording: they may be words added to the statement. Stray
+     marks with no letters beyond the extent ("~", "|", a "4" at the edge of a can) are dropped silently.
+   - *No boxes* (the cloud reader, or a test): words at the start or end of a line that belong beside the
+     statement are left out on wording alone, and the wording result then asks for a look, quoting them, because
+     their position cannot tell a neighbouring column from words added to the statement.
+   - A heading split over two lines ("GOVERNMENT" / "WARNING:") is one heading: both lines are the heading for the
+     capitals check and both words are measured for the bold check.
 2. **Wording**: compared word for word after normalization. Punctuation is ignored because OCR drops commas and
-   periods unreliably. Any difference is listed as "required text says / label says". A difference with similarity
-   ≥ 97 is flagged for **review** (it may be a misprint or an OCR error; the diff lets the agent decide in a second);
-   anything larger (missing sentence, paraphrase) **fails**.
+   periods unreliably, and a word the label hyphenates over a line break ("SUR-" / "GEON") is rejoined when the
+   join spells a word of the required text. Any difference is listed as "required text says / label says". A
+   difference with similarity ≥ 97 is flagged for **review** (it may be a misprint or an OCR error; the diff lets
+   the agent decide in a second); anything larger (missing sentence, paraphrase) **fails**. The statement must
+   carry each sentence once, in order: sentence (1) printed twice inside the statement, or (2) before (1), fails;
+   a sentence printed again elsewhere on the label (sentence (1) on the front and again on the back, without (2))
+   asks for a look and quotes the second copy, while a complete second statement is not a problem. When a
+   discarded reading of a statement line disagrees on a word that is not in the required text and OCR was at
+   least as sure of it, the wording asks for a look and names both readings: a misread that happens to agree
+   with the required text must not hide a misprint the other reading saw.
 3. **Heading in capitals**: the OCR text of the heading must read `GOVERNMENT WARNING:`; title case fails, a missing
    colon asks for review, and capitals with a letter OCR could not read cleanly (`WARNlNG`, or `ERNMENT` cut at the
    image edge) ask for review. A different word that was read clearly (`HEALTH WARNING:`, `GOVT WARNING:`) fails.
-4. **Heading bold (heuristic)**: from the word boxes, we take the heading words and the body words of the statement
-   and estimate each group's mean stroke width as 2 × ink area ÷ ink perimeter on the binarized image (for a stroke
+4. **Heading bold (heuristic)**: from the word boxes, we take the heading words (read cleanly, glued to a
+   neighbour such as `WARNING:(1)`, or misread the way the capitals check tolerates, `ERNMENT WARMING:`) and the
+   body words of the statement, measured in the ink of the view that read the statement, and estimate each
+   group's mean stroke width as 2 × ink area ÷ ink perimeter on the binarized image (for a stroke
    of width w and length L the area is wL and the perimeter about 2L, so the estimate does not depend on stroke
    orientation or letter case), normalized by cap height. If the heading's strokes are at least `bold_ratio`
    (1.30×) thicker than the body's it "looks bold". Ink polarity is decided per word, so a light-on-dark warning
@@ -497,7 +525,7 @@ application fields:
 | Flagged for review (NEAR MATCH where MATCH was expected) | not measured | 29 |
 | Accepted without the look the ground truth expects (MATCH where NEAR MATCH was expected) | not measured | 2 |
 | False alarms: MISMATCH or NOT FOUND for text that is on the label | 32 | 16 |
-| Government warning: pass / review / fail (all 20 carry it) | 13 fail | 5 / 11 / 4 |
+| Government warning: pass / review / fail (all 20 carry it) | 13 fail | 5 / 11 / 4, then 8 / 9 / 3 with the layout rules below |
 | Planted wrong alcohol content or net contents reported as MATCH | 0 of 40 | 0 of 40 |
 | Time per label: median / max | | 2.3 s / 4.3 s |
 
@@ -513,6 +541,32 @@ display or curved typefaces, light text over photographs, a handwritten keg coll
 image. Real labels take longer than the synthetic ones (median 2.4 s against under 1 s) because most of them need the
 extra turned and contrast passes; the slowest was 4.3 s, inside the 5-second budget on a laptop. Re-measure on
 Railway before relying on that there.
+
+**Government warning, layout rules (October 2026).** Before the word-box rules in "Government warning check" the
+warning came back 5 pass / 11 review / 4 fail on the 20 real labels, every one of which carries a correct warning;
+after them 8 / 9 / 3, with no change to the field verdicts (the old and the new warning code were scored back to
+back through the same scorer and images and gave the same 56/104, 27 flagged, 19 false alarms, 2 accepted; the
+scorer's own inputs had moved since the table above), the sample set (15/15), the batch set (243/250, the same
+seven misses, 0 planted defects passed), the stress table or the 40 planted real-label defects. The warning check
+can only reach the fields through the pipeline's decision to run the extra OCR passes, and on these labels that
+decision changes for one label whose field verdicts are the same either way. What changed, label by label:
+
+- Three wine and spirits labels whose two OCR passes had read the same row differently (one with a stray mark from
+  the artwork, one clean) went from REVIEW to PASS: the duplicate readings are no longer both assembled, so the
+  wording is exact (a condensed wine warning, a rosé, a letter-spaced whiskey where the wording is now exact but the
+  type is too small to measure the bold heading, so it stays REVIEW for that reason).
+- A beer can whose last line started with a stray "4" outside the statement's left edge: REVIEW to PASS.
+- A gin label hyphenating "SUR-GEON" and "BEVER-AGES" over line breaks: wording REVIEW to PASS (8 px type, so the
+  bold check still asks for a look).
+- The handwritten keg collar: FAIL to REVIEW. The neighbouring column ("ATTENTION-READ BEFORE TAPPING ... THIS KEG
+  MAY RUPTURE ...") is now set aside by its boxes and quoted; what remains is a genuine reading difference on the
+  first line ("(1)" lost, or "TO" read as "10", depending on which of two readings is kept), which the agent must
+  look at.
+- A tequila label went from 3 reading differences to 1 (same REVIEW). The rest are unchanged: two labels whose
+  warning the OCR did not read at all (light text over a photo, a slanted panel), one whose 6 px body is unreadable,
+  three REVIEWs for "to" read as "10"/"T0" or a one-word last line that the turned-view reader drops, one cropped at
+  the image edge, and three honest bold measurements (1.05, 1.26 and 1.27 against the 1.30 threshold; one of them
+  really is set in the same weight as its body).
 
 **After the second code review (October 2026, local, Tesseract 5.5.3):** samples 15/15, median 0.87 s; batch
 243/250 with the same seven misses, 0 planted defects reported as PASS; real labels as in the table above; stress
@@ -568,8 +622,10 @@ a look or a defect caught with a different severity (FAIL where REVIEW was expec
 - No authentication: the prototype assumes it runs on an internal network.
 - Text at 90° is read only when the first, upright read leaves something missing; text at other angles (curved
   around a seal, set diagonally) is not read.
-- A "GOVERNMENT WARNING" heading split across two lines is not recognised, so the capitals check fails (a false
-  FAIL, never a false PASS).
+- A warning statement printed in two side-by-side panels (sentence (1) left, sentence (2) right) interleaves in
+  top-to-bottom order and fails as wording; one above the other, or wrapped around a seal, assembles correctly.
+- A one-word last line of a sideways warning ("PROBLEMS.") is dropped by the turned-view reader, which keeps only
+  lines of two or more words, so that label asks for a look over a missing word that is on the label.
 - The brand's small-print rule assumes the brand is printed larger than the bottler statement. A label whose
   brand is deliberately small next to a large fanciful name gets a NEAR MATCH for the agent to confirm.
 - Uploads are size-checked from their Content-Length; a chunked upload without one is only limited per file after
@@ -579,7 +635,11 @@ a look or a defect caught with a different severity (FAIL where REVIEW was expec
 - Two readings of the same place that disagree are only flagged when OCR was at least as confident of the one
   that disagrees; a label misprint that OCR also reads with less confidence than a misread of it would pass.
 - A warning statement printed in two halves (the first sentence on the front, the second on the back) is
-  assembled into one and can pass.
+  assembled into one and can pass; each sentence must appear once and in order, and a sentence printed again
+  elsewhere is reported, but the regulation's requirement that the statement be printed as one unit is not judged.
+- Words beyond the statement's column on two or more of its rows are taken for a neighbouring column and set
+  aside (quoted, not judged). A label that deliberately added words to the statement on two lines, each sticking
+  out past every other line, would be read the same way; the quote in the note is the agent's guard.
 - Single-label checks and batch jobs share one pool of four Tesseract processes for the second pass and the
   optional passes; measured locally, a single check took 0.6-0.7 s during a 250-label batch against 0.4-0.7 s
   idle, but a smaller container will queue more.

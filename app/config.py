@@ -75,6 +75,18 @@ class Thresholds:
     # (A mean-confidence floor alone is not used: a real beer can averages 41% and still matches 4 of 5 fields.)
     unreadable_min_words: int = 8
     unreadable_word_conf: int = 70
+    # Government warning layout (word boxes). Two OCR lines whose boxes overlap by this fraction of the
+    # smaller one's height and width are two readings of one printed line: only one is taken.
+    same_place_overlap: float = 0.5
+    # A word is outside the statement's column when its box ends before the column's left edge or starts
+    # after its right edge, allowing this fraction of the text height; the edge counts as a neighbouring
+    # column only when words lie beyond it on at least column_min_lines of the statement's rows (a single
+    # line sticking out may be words added to the statement, and is judged as wording).
+    column_tolerance: float = 0.25
+    column_min_lines: int = 2
+    # A run of lines outside the statement whose text matches a sentence of it at least this well
+    # (partial similarity) is that sentence printed a second time; a complete second statement is not reported.
+    duplicate_sentence: int = 90
 
 
 THRESHOLDS = Thresholds()
