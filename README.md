@@ -236,6 +236,10 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`). Between a US figure and a metric one 0.5% is allowed (`750 mL / 25.4 FL OZ`); within one system the figures must agree (`753 mL` is not `750 mL`). Same digits and unit but no decimal point on the label (`15 L` read for `1.5 L`) → NEAR MATCH, never a silent match |
 | `warning_locate` | 75 | Similarity needed to recognise the "GOVERNMENT WARNING" line |
 | `warning_near` | 97 | Warning wording at or above this (but not exact) → NEEDS REVIEW with a diff; below → FAIL |
+| `meaning_conf` | 70 | A difference that changes the warning's meaning ("should drink", "can cause", "men") → **FAIL** instead of a look, only when every label word that makes it was read with at least this confidence (the "clear word" level of `unreadable_word_conf`) |
+| `meaning_gap` | 1.2 | A missing "not" or modal fails only when its neighbours, on one line, are at most this many text heights apart: a wider gap is a word OCR dropped |
+| `meaning_min_score` | 90 | Words are judged for meaning only when the statement as read is at least this similar to the required text |
+| `meaning_missing` / `meaning_inserted` / `meaning_substitutes` | lists | The required words whose absence changes the statement (not, should, may); the words whose insertion does (never, only, sometimes, no...); and, per required word, the real words that change it when printed in its place (see "Government warning check") |
 | `bold_ratio` | 1.30 | Heading stroke width ÷ body stroke width at or above this → "looks bold" (measured: bold headings 1.51-2.04, regular 1.03-1.14) |
 | `bold_min_text_px` | 14 | Below this text height the stroke measurement is not attempted |
 | `bold_failure_is_fail` | false | A "does not look bold" result asks for review instead of failing the label |
@@ -335,6 +339,47 @@ Four separate results are shown so the agent sees exactly what is wrong:
    discarded reading of a statement line disagrees on a word that is not in the required text and OCR was at
    least as sure of it, the wording asks for a look and names both readings: a misread that happens to agree
    with the required text must not hide a misprint the other reading saw.
+
+   **A difference that changes what the warning says fails**, even when it is one word. Each difference is
+   classified (`meaning_changes` in `app/warning.py`, word lists and thresholds in `app/config.py`):
+   - *"not" or a modal left out*: "should drink" for "should not drink", "women not drink" for "women should not
+     drink" (`meaning_missing`: not, should, may);
+   - *a modal replaced*: "can cause" or "must not" (`meaning_substitutes` for should and may: can, could,
+     might, must, will, would, shall, need, do, does, cannot, and should/may for each other);
+   - *a negation, quantifier or hedge inserted*: "may never cause", "only", "sometimes", "no"
+     (`meaning_inserted`);
+   - *a key word replaced by another real word*: "men", "woman" or "people" for "women", "improves" for
+     "impairs", "benefits" for "problems", "Attorney" for "Surgeon", "vehicle" for "car" (the per-word lists in
+     `meaning_substitutes`).
+
+   The real-word test is those lists: a word counts only when it is listed for the required word it replaces,
+   so a garble never does. A word that becomes the required one once OCR's usual confusions are undone (the
+   same map the field matcher uses: `rn`/`m`, `cl`/`d`, `vv`/`w`, `0`/`o`, `1`/`l`/`i`, `5`/`s`, `8`/`b`, so
+   "wornen", "rnay", "n0t"), and a word split or run together ("no t", "shouldnot"), are misreads whatever the
+   lists say. A change of form that leaves the meaning ("impair", "defect", "problem") is left out of the lists
+   on purpose: it breaks the fixed text, so it asks for a look, but it does not reverse the warning. And the
+   reading must be sure: every word of the label that makes the change must have been read with confidence of
+   at least `meaning_conf` (70, the confidence this project already calls a clear word); for a missing word,
+   both neighbours must be read that surely, on the same line, no further apart than `meaning_gap` (1.2) times
+   the text height, because a gap wide enough to hold "not" is a word OCR dropped, not one the label left out.
+   Across a line break the gap counts as closed only in justified type: the first line runs to the statement's
+   right edge (as two other lines do) and the next starts at its left edge; ragged or centred lines cannot tell
+   a word dropped at a line's end from one left out, and ask for a look. Only the meaning words themselves may
+   be missing ("not", "should not"): a longer run missing is a line OCR did not read.
+   An inserted word counts only between two words of its own line (one at a line's end may belong to a
+   neighbouring column: "FOR SALE ONLY IN OHIO"). Words are judged where the label's words line up with the
+   required ones (as many words, or one more or one fewer, the rest the same or misreads of them), and only
+   when the statement as read is at least `meaning_min_score` (90) similar to the required text: a stretch
+   that reads differently in some other way is other text read into the statement far more often than a
+   rewritten warning, and it fails on similarity anyway. Without word boxes (the cloud reader) there is no
+   confidence to check, so a meaning-changing difference asks for a look like any other; the same holds for a
+   statement read by RapidOCR, whose score is the whole line's and whose word boxes are shares of the line's box.
+
+   The note names the change in plain words ("The label says 'should drink' where the warning requires 'should
+   not drink': this changes its meaning."), and the review question names the word at stake ("Does the label
+   print "not" in "should not drink"?"). "Yes" is still the first button and still means the label is fine
+   (the tool misread it), but it is not offered as the suggested answer. Every other difference keeps the rule
+   above: a look at 97 or more, a failure below.
 3. **Heading in capitals**: the OCR text of the heading must read `GOVERNMENT WARNING:`; title case fails, a missing
    colon asks for review, and capitals with a letter OCR could not read cleanly (`WARNlNG`, or `ERNMENT` cut at the
    image edge) ask for review. A different word that was read clearly (`HEALTH WARNING:`, `GOVT WARNING:`) fails.
@@ -823,6 +868,64 @@ and costs a second resize, so grayscale stays. With four ONNX Runtime threads a 
 thread 2.6 s, the runtime's default 1.4 s); four concurrent reads of one shared engine took 2.7 s together and
 returned exactly the sequential results.
 
+### Meaning-changing warning differences (October 2026, local)
+
+Before is `main` at `c514b36`, after is the same code with the rule in "Government warning check", both run back
+to back on this machine (Tesseract 5.5.3, RapidOCR escalation on), one label at a time
+(`scripts/real_labels.py -j 1`, with and without `--csv scripts/calibration_labels.csv`). Every label in both real
+sets carries a correct warning, so any wording FAIL the rule added there would be a false alarm.
+
+| Set | Warning before: pass / review / fail | After |
+|---|---|---|
+| Real labels (20) | 8 / 9 / 3 | 8 / 9 / 3 |
+| Calibration labels (167) | 47 / 83 / 37 | 47 / 83 / 37 |
+| Samples (15) | 15/15 expected verdicts | 15/15, with `warning_text_altered` now expected to FAIL |
+| Batch (250) | 249/250 | 249/250 (the same miss, label 0047), with the three altered-warning labels now expected to FAIL |
+
+No correct label is newly failed: the warning verdict is the same on every one of the 187 real labels, label by
+label, and no wording note names a meaning change. Before the confidence and gap tests are applied, the
+classifier finds candidates on only two calibration labels, both already failing on similarity (66 and 75:
+"may" lost where half the statement was not read, and a stretch of lines OCR did not read); `meaning_min_score`
+keeps them from being judged word by word, and the confidence and line tests would have rejected them too. Planted defects reported as PASS: 0 on the samples and the batch. The
+sample `warning_text_altered` prints "can cause" for "may cause" and the batch's three altered labels print
+"must not" for "should not": each replaces a modal, which changes what the warning says, so their expected
+verdict is now FAIL (`scripts/generate_labels.py` records the same; its third variant, "impair" for "impairs",
+stays a REVIEW). (The field counts on the calibration set moved on four labels between the two runs, a brand,
+two net contents and a class/type, by which optional OCR passes fit the time budget on a loaded machine; the
+warning rule cannot reach the fields.)
+
+**Planted edits on real labels.** `prompts/06-evaluation-data/tools/edit_warning.py` erases words using
+Tesseract's word boxes and paints the replacement in their place, closed up from the left. Nine labels with a
+clear warning (wording PASS before), four edits each and an unedited control re-saved the same way; the
+replacement was set in DejaVu Sans, as close as the tool's fonts come to these labels' sans-serif warnings, and
+in the case of the words it replaces. Two changes to the tool for this run: ink is the colour farthest from the
+local background (it took the darkest pixels, which painted black on the white-on-black 26265001000907), and
+the words to replace must share one printed line (it erased the box around all of them, which on two labels
+wiped two lines of the statement); where "should not drink" spans a line break, "not drink" -> "drink" was
+planted instead. A sideways warning (26209001000730) was edited turned upright and turned back.
+
+| Label | "should drink" | "can cause" | "men" | "improves" | Control |
+|---|---|---|---|---|---|
+| 26205001000418 (tequila) | FAIL | FAIL | FAIL | FAIL | PASS (as before) |
+| 26265001000907 (wine, white on black) | FAIL (line break, justified) | FAIL | FAIL | FAIL | PASS |
+| 11145001000540 | FAIL | FAIL | FAIL | FAIL | PASS |
+| 12048001000331 | FAIL | FAIL | FAIL | FAIL | PASS |
+| 26232001000435 | FAIL | FAIL | FAIL | FAIL | PASS |
+| 26252001000585 (wine) | FAIL (line break) | FAIL | **REVIEW** | FAIL | PASS |
+| 26258001000346 (keg collar) | FAIL | FAIL | FAIL | FAIL | PASS |
+| 26209001000730 (sideways) | FAIL | FAIL | FAIL | FAIL | PASS |
+| 26251001000627 | not planted | FAIL | FAIL | not planted | REVIEW (as the re-saved image reads) |
+
+33 of 34 planted edits fail, each with a note naming it and a question naming the word ("Does the label print
+"not" in "should not drink"?"). The miss: on 26252001000585 the painted "men" is legible but Tesseract read it
+at confidence 13, so it asks for a look (one difference, "men" for "women"). The tool found no "should not drink"
+or "impairs" on 26251001000627's Tesseract read; 17007001000031 was tried and dropped for the same reason. The
+controls keep the verdict the label had before; 26251001000627's re-saved control reads REVIEW (another reading
+of one line says "hea" for "health") with and without the rule, the JPEG re-save and not the rule. Replacement
+words were read at confidence 77-96 on the other labels, which is what set `meaning_conf` at 70: at 80,
+11145001000540's legible "MEN" (77) would have asked for a look. Painting a serif replacement into a sans warning (the tool's default font)
+lowered the confidence of the painted word (52-78), which is why the run above matches the face.
+
 ## Assumptions
 
 - Labels arrive as flat artwork files or straight-on scans, the way they are attached to applications. Scans
@@ -881,6 +984,12 @@ returned exactly the sequential results.
 - A warning statement printed in two halves (the first sentence on the front, the second on the back) is
   assembled into one and can pass; each sentence must appear once and in order, and a sentence printed again
   elsewhere is reported, but the regulation's requirement that the statement be printed as one unit is not judged.
+- A meaning-changing warning edit fails only when OCR read it surely. Measured on planted edits (see
+  "Measured results"), the misses ask for a look instead: a replacement word read below confidence 70 (a
+  legible "men" that Tesseract scored 13), a neighbour of a missing "not" read below it, and a "not" removed at
+  a line break in ragged or centred type, where the gap cannot be judged. The word lists are finite: a
+  replacement they do not name ("teenagers" for "women") asks for a look, never passes. With the cloud reader,
+  which reports no confidences, or a statement only RapidOCR read, every wording difference only asks for a look.
 - Words beyond the statement's column on two or more of its rows are taken for a neighbouring column and set
   aside (quoted, not judged). A label that deliberately added words to the statement on two lines, each sticking
   out past every other line, would be read the same way; the quote in the note is the agent's guard.
