@@ -403,3 +403,175 @@ def test_hyphenated_word_over_a_line_break_is_rejoined():
     assert check_warning(lines, bold_hint=True).wording == Status.PASS
     lines[0] = lines[0].replace("Sur-", "Sor-")
     assert check_warning(lines, bold_hint=True).wording != Status.PASS
+
+
+# --- meaning-changing differences: they fail; an OCR slip still asks for a look -------------------------
+import dataclasses  # noqa: E402
+
+from app.models import Application  # noqa: E402
+from app.normalize import normalize_loose  # noqa: E402
+from app.readers.base import LabelReading, OCRResult  # noqa: E402
+from app.warning import meaning_changes  # noqa: E402
+
+
+def _statement(old: str | None = None, new: str | None = None, rows=STATEMENT_ROWS, conf: dict | None = None):
+    """The statement typeset with real word boxes (confidence 95), ``old`` replaced by ``new`` where it first
+    occurs; ``conf`` sets the confidence of the words it names (loose spelling)."""
+    rows = list(rows)
+    if old is not None:
+        k = next(i for i, r in enumerate(rows) if old in r)
+        rows[k] = rows[k].replace(old, new, 1)
+    ink, lines, words = _typeset([[(r, 10)] for r in rows])
+    for w in words:
+        if conf and normalize_loose(w.text) in conf:
+            w.conf = conf[normalize_loose(w.text)]
+    return ink, lines, words
+
+
+MEANING = [
+    ("should not drink", "should drink", "The label says 'should drink' where the warning requires 'should not drink'"),
+    ("may cause", "can cause", "The label says 'can cause' where the warning requires 'may cause'"),
+    ("should not", "must not", "The label says 'must not' where the warning requires 'should not'"),
+    ("women", "men", "The label says 'men should' where the warning requires 'women should'"),
+    ("women", "woman", "The label says 'woman should' where the warning requires 'women should'"),
+    ("impairs", "improves", "The label says 'improves your' where the warning requires 'impairs your'"),
+    ("may cause", "may never cause", "The label says 'may never cause' where the warning requires 'may cause'"),
+    ("Surgeon General", "Attorney General", "The label says 'attorney general' where the warning requires 'surgeon general'"),
+    ("health problems", "health benefits", "The label says 'health benefits' where the warning requires 'health problems'"),
+]
+
+
+@pytest.mark.parametrize("old,new,note", MEANING)
+def test_a_meaning_changing_difference_fails_and_says_so(old, new, note):
+    ink, lines, words = _statement(old, new)
+    r = check_warning(lines, words, ink)
+    assert r.wording == Status.FAIL and r.overall == Status.FAIL, (r.wording_note, r.diff)
+    assert note + ": this changes its meaning." in r.wording_note
+
+
+@pytest.mark.parametrize("old,new", [("women", "wornen"), ("may", "rnay"), ("not", "n0t"), ("drink", "drlnk"),
+                                     ("impairs", "impair"), ("defects", "defect"), ("drive a car", "drive a can"),
+                                     ("not drink", "no t drink"), ("should not", "should no")])
+def test_an_ocr_garble_or_a_change_of_form_still_asks_for_a_look(old, new):
+    # "wornen", "rnay", "n0t" are the required word once OCR's usual confusions are undone; "impair" and
+    # "defect" break the fixed text without changing what it warns about; "can" is not a word that
+    # replaces "car"; "no t" is "not" split; "no" for "not" is a letter lost, not another word.
+    ink, lines, words = _statement(old, new)
+    r = check_warning(lines, words, ink)
+    assert r.wording == Status.REVIEW, (r.wording_note, r.diff)
+    assert "changes its meaning" not in r.wording_note
+
+
+def test_a_meaning_changing_word_read_without_confidence_asks_for_a_look():
+    ink, lines, words = _statement("may cause", "can cause", conf={"can": THRESHOLDS.meaning_conf - 1})
+    r = check_warning(lines, words, ink)
+    assert r.wording == Status.REVIEW, r.wording_note
+    ink, lines, words = _statement("may cause", "can cause", conf={"can": THRESHOLDS.meaning_conf})
+    assert check_warning(lines, words, ink).wording == Status.FAIL
+    # The threshold is a setting: raising it turns the same reading back into a look.
+    strict = dataclasses.replace(THRESHOLDS, meaning_conf=99)
+    assert check_warning(lines, words, ink, th=strict).wording == Status.REVIEW
+
+
+def test_a_missing_not_fails_only_where_the_label_leaves_no_room_for_it():
+    # Printed "should drink": the two words sit a normal word gap apart.
+    ink, lines, words = _statement("should not drink", "should drink")
+    assert check_warning(lines, words, ink).wording == Status.FAIL
+    # Printed "should not drink" and OCR dropped "not": the gap would hold a word, so it is a misread.
+    ink, lines, words = _statement()
+    dropped = [w for w in words if w.text != "not"]
+    lines = [" ".join(w.text for w in dropped if w.line_index == i) for i in range(len(lines))]
+    r = check_warning(lines, dropped, ink)
+    assert r.wording == Status.REVIEW and [(d.expected, d.found) for d in r.diff] == [("not", "")], r.wording_note
+    # Either neighbour read with low confidence: a look.
+    ink, lines, words = _statement("should not drink", "should drink", conf={"drink": 40})
+    assert check_warning(lines, words, ink).wording == Status.REVIEW
+    # The gap falls at a line break: the word may have been lost at the edge of the line.
+    rows = ["GOVERNMENT WARNING: (1) According to the Surgeon General, women should",
+            "drink alcoholic beverages during pregnancy"] + STATEMENT_ROWS[2:]
+    ink, lines, words = _statement(rows=rows)
+    assert check_warning(lines, words, ink).wording == Status.REVIEW
+
+
+def _justified(text: str, last_word: str, short_by: int = 0, indent: int = 0) -> list[OCRWord]:
+    """Word boxes for ``text`` set justified, seven words to a line spread over 0-800 px, with a line break
+    after ``last_word``; that line ends ``short_by`` px short of the edge, the next starts ``indent`` px in."""
+    toks = normalize_loose(text).split()
+    cut = toks.index(last_word) + 1
+    starts = list(range(cut % 7, cut, 7)) if cut % 7 else list(range(0, cut, 7))
+    starts = ([0] if starts[0] else []) + starts + list(range(cut, len(toks), 7))
+    out = []
+    for line, (s0, s1) in enumerate(zip(starts, starts[1:] + [len(toks)])):
+        chunk, step = toks[s0:s1], 800 / (s1 - s0)
+        for k, t in enumerate(chunk):
+            left, right = int(k * step), int((k + 1) * step) - 12
+            if s0 + k == cut - 1:
+                right -= short_by
+            if s0 + k == cut:
+                left += indent
+            out.append(OCRWord(t, left, 30 * line, right - left, 20, 95, line))
+    return out
+
+
+def test_a_missing_not_at_a_line_break_fails_only_in_justified_type():
+    text = MANDATED_WARNING.replace("should not drink", "should drink")
+    # "should" ends its line at the right edge and "drink" starts the next at the left edge: no room for "not".
+    assert check_wording(text, token_words=_justified(text, "should"))[0] == Status.FAIL
+    # The first line ends short of the edge (ragged, or a word dropped at its end): a look.
+    assert check_wording(text, token_words=_justified(text, "should", short_by=60))[0] == Status.REVIEW
+    # The next line starts indented (a word dropped at its start): a look.
+    assert check_wording(text, token_words=_justified(text, "should", indent=60))[0] == Status.REVIEW
+
+
+def test_an_inserted_word_counts_only_inside_a_line_of_the_statement():
+    ink, lines, words = _statement("may cause", "may never cause")
+    assert check_warning(lines, words, ink).wording == Status.FAIL
+    # At the end of a line it may belong to text beside the statement ("FOR SALE ONLY IN OHIO").
+    ink, lines, words = _statement("drive a car or", "drive a car or only")
+    r = check_warning(lines, words, ink)
+    assert r.wording == Status.REVIEW, r.wording_note
+
+
+def test_without_word_boxes_a_meaning_change_asks_for_a_look():
+    # The cloud reader gives no confidences: the change is classified but cannot be told from a misread.
+    text = MANDATED_WARNING.replace("should not drink", "should drink")
+    assert check_wording(text)[0] == Status.REVIEW
+    assert [c.word for c in meaning_changes(normalize_loose(text).split())] == ["not"]
+    lines = LABEL_LINES + [r.replace("should not drink", "should drink") for r in WARNING_LINES]
+    assert check_warning(lines, bold_hint=True).wording == Status.REVIEW
+
+
+def _sure(text: str) -> list[OCRWord]:
+    """One confidently read word per token, a normal word gap apart on one line."""
+    return [OCRWord(t, 60 * i, 0, 50, 20, 95, 0) for i, t in enumerate(normalize_loose(text).split())]
+
+
+def test_words_are_judged_for_meaning_only_when_the_statement_was_read_closely():
+    text = MANDATED_WARNING.replace("may cause", "can cause")
+    status, _, note, _ = check_wording(text, token_words=_sure(text))
+    assert status == Status.FAIL and "'can cause'" in note
+    # Most of the statement missing: it fails on similarity, and one word in what is left is not judged.
+    short = text.split(" (1)")[0] + " (2) Consumption of alcoholic beverages may cause health problems, and can cause"
+    status, score, note, _ = check_wording(short, token_words=_sure(short))
+    assert status == Status.FAIL and score < THRESHOLDS.meaning_min_score and "changes its meaning" not in note
+
+
+def test_the_question_for_a_meaning_change_names_the_word_at_stake():
+    from app.decisions import prompts_for
+    from app.pipeline import verify
+
+    ink, lines, words = _statement("should not drink", "should drink")
+
+    class Typeset:
+        name = "typeset"
+
+        def read(self, image):
+            return LabelReading(ocr=OCRResult(text="\n".join(lines), lines=lines, words=words, ink=ink))
+    app = Application(brand_name="OLD TOM DISTILLERY", class_type="Bourbon", alcohol_content="45%", net_contents="750 mL")
+    r = verify(app, Image.new("RGB", (ink.shape[1], ink.shape[0]), "white"), Typeset())
+    assert r.warning.wording == Status.FAIL
+    p = next(p for p in prompts_for(r) if p.key == "warning_wording")
+    assert p.question == 'Does the label print "not" in "should not drink"?'
+    assert p.yes.startswith("Yes") and p.no.startswith("No") and p.lean is False   # Yes = the label is fine
+    assert p.left == ("should ", "not", " drink") and p.right[1] == "(nothing)"
+    assert "changes its meaning" in p.why
