@@ -473,6 +473,14 @@ def test_a_meaning_changing_word_read_without_confidence_asks_for_a_look():
     assert check_warning(lines, words, ink, th=strict).wording == Status.REVIEW
 
 
+def test_a_rapidocr_word_never_fails_the_wording_on_meaning():
+    # RapidOCR's score is the whole line's and its word boxes are shares of the line's box.
+    text = MANDATED_WARNING.replace("may cause", "can cause")
+    rapid = [dataclasses.replace(w, conf=99, engine="rapid") for w in _sure(text)]
+    assert check_wording(text, token_words=rapid)[0] == Status.REVIEW
+    assert check_wording(text, token_words=_sure(text))[0] == Status.FAIL
+
+
 def test_a_missing_not_fails_only_where_the_label_leaves_no_room_for_it():
     # Printed "should drink": the two words sit a normal word gap apart.
     ink, lines, words = _statement("should not drink", "should drink")

@@ -107,8 +107,9 @@ class Thresholds:
     # required one once OCR's usual confusions are undone (rn/m, cl/d, 0/o, 1/l/i, 5/s, 8/b: "wornen",
     # "rnay", "n0t"), or a word split or run together ("no t"), is a garble whatever the lists say.
     # Each word of the label that makes the change must have been read with at least this confidence
-    # (0-100); a word the reader gave no box for is not trusted, and without word boxes at all (the cloud
-    # reader) no difference fails this way: it asks for a look like any other.
+    # (Tesseract, 0-100); a word the reader gave no box for is not trusted, nor a RapidOCR word (its score
+    # is the whole line's, its box a share of the line's), and without word boxes at all (the cloud reader)
+    # no difference fails this way: it asks for a look like any other.
     meaning_conf: int = 70
     # A missing "not" or modal counts only when the words on both sides of the gap were read with
     # meaning_conf, on the same line, and no further apart than this many times the text height: a gap

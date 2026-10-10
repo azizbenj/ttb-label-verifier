@@ -565,7 +565,9 @@ def meaning_changes(got: list[str], token_words: list[OCRWord | None] | None = N
         if token_words is None:
             return True
         w = token_words[j] if 0 <= j < len(token_words) else None
-        return w is not None and w.conf >= th.meaning_conf
+        # RapidOCR scores a whole line and its word boxes are cut from the line's box: neither says how
+        # sure it is of one word, so its reading never fails the wording this way.
+        return w is not None and w.engine != "rapid" and w.conf >= th.meaning_conf
 
     def tight_gap(j: int) -> bool:
         """A word is missing between got[j-1] and got[j], and the label leaves no room for it."""
