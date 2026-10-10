@@ -127,13 +127,24 @@ def needs_phrase(result: VerificationResult) -> tuple[str, list[float] | None]:
     """Short instruction for the triage panel, plus the region to outline on the label."""
     reviews = [f for f in result.fields if f.verdict == Verdict.NEAR_MATCH]
     problems = [f for f in result.fields if f.verdict in (Verdict.MISMATCH, Verdict.NOT_FOUND)]
+    problems.sort(key=lambda f: f.clear is False)   # what was read clearly first: that is what fails the label
     w = result.warning
+    if result.overall == Status.FAIL and problems and problems[0].clear is False and w.overall == Status.FAIL \
+            and w.clear is not False:
+        return "Check the government warning", w.box   # the warning is the clear problem
     if result.overall == Status.PASS:
         return "Nothing", None
+    if result.poor_image:
+        # Most required fields could not be read clearly: a better image settles more than a look would.
+        return "Ask for a clearer image", (problems[0].box if problems else None) or w.box
     if result.overall == Status.FAIL:
         # Check before sending anything back: on real artwork a FAIL is often a misread the agent can clear.
         if problems:
             return f"Check the {problems[0].label.lower()}", problems[0].box or w.box
+        return "Check the government warning", w.box
+    if problems:   # REVIEW with a MISMATCH or NOT FOUND: read unclearly, so it may be a misreading
+        return f"Check the {problems[0].label.lower()}", problems[0].box or w.box
+    if w.overall == Status.FAIL:
         return "Check the government warning", w.box
     if reviews:
         return f"Confirm the {reviews[0].label.lower()}", reviews[0].box

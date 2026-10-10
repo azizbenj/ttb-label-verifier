@@ -4,7 +4,12 @@
 {% set prompts = prompts or {} %}
 {% set cls = r.overall|chip %}
 {% set pins = pin_labels(r) %}
-{% set problem_fields = r.fields|selectattr('verdict.value', 'in', ['MISMATCH', 'NOT FOUND'])|list %}
+{#- A FAIL is a problem read clearly; a MISMATCH or NOT FOUND whose evidence is unclear (clear is false) only asks for a look. -#}
+{% set all_problems = r.fields|selectattr('verdict.value', 'in', ['MISMATCH', 'NOT FOUND'])|list %}
+{% set problem_fields = all_problems|rejectattr('clear', 'sameas', false)|list %}
+{% set unclear_fields = all_problems|selectattr('clear', 'sameas', false)|list %}
+{% set warn_fail = r.warning.overall.value == 'FAIL' and r.warning.clear is not sameas false %}
+{% set warn_unclear = r.warning.overall.value == 'FAIL' and r.warning.clear is sameas false %}
 {% set review_fields = r.fields|selectattr('verdict.value', 'equalto', 'NEAR MATCH')|list %}
 <div class="result-wrap" data-app-card data-status="{{ r.overall.value }}"{% if job_id %} data-job="{{ job_id }}" data-index="{{ item_index }}"{% endif %}>
 {% if not r.unreadable %}
@@ -66,10 +71,12 @@
     <span class="badge {{ cls }}">{{ icon(r.overall|glyph, 24) }}</span>
     <div class="text">
       <h2>{{ r.overall|headline }}</h2>
-      {% set n_problems = problem_fields|length + (1 if r.warning.overall.value == 'FAIL' else 0) %}
-      <p>{% if problem_fields %}{{ n_problems }} problem{{ 's' if n_problems > 1 }}: {% for f in problem_fields %}<a class="problem" href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if r.warning.overall.value == 'FAIL' %}, <a class="problem" href="#warning-section">government warning</a>{% endif %}.{% elif r.warning.overall.value == 'FAIL' %}1 problem: <a class="problem" href="#warning-section">government warning</a>.{% endif %}
+      {% set n_problems = problem_fields|length + (1 if warn_fail else 0) %}
+      <p>{% if problem_fields %}{{ n_problems }} problem{{ 's' if n_problems > 1 }}: {% for f in problem_fields %}<a class="problem" href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if warn_fail %}, <a class="problem" href="#warning-section">government warning</a>{% endif %}.{% elif warn_fail %}1 problem: <a class="problem" href="#warning-section">government warning</a>.{% endif %}
+        {% if unclear_fields or warn_unclear %} Could not be read clearly: {% for f in unclear_fields %}<a href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if warn_unclear %}{{ ', ' if unclear_fields }}<a href="#warning-section">government warning</a>{% endif %}.{% endif %}
         {% if review_fields or r.warning.overall.value == 'REVIEW' %} Needs a look: {% for f in review_fields %}<a href="#row-{{ f.key }}">{{ f.label|lower }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if r.warning.overall.value == 'REVIEW' %}{{ ', ' if review_fields }}<a href="#warning-section">government warning</a>{% endif %}.{% endif %}
-        {% if r.overall.value == 'PASS' %}{{ r.summary }}{% elif not problem_fields and r.warning.overall.value != 'FAIL' and r.warning.overall.value != 'REVIEW' %} Everything else matches and the government warning is correct.{% elif r.warning.overall.value == 'PASS' %} Everything else matches and the government warning is correct.{% endif %}</p>
+        {% if r.overall.value == 'PASS' %}{{ r.summary }}{% elif not all_problems and r.warning.overall.value != 'FAIL' and r.warning.overall.value != 'REVIEW' %} Everything else matches and the government warning is correct.{% elif r.warning.overall.value == 'PASS' %} Everything else matches and the government warning is correct.{% endif %}</p>
+      {% if r.poor_image %}<p class="better-image">Much of this label could not be read clearly. If possible, ask for a sharper image or the artwork file.</p>{% endif %}
     </div>
     <div class="timing"><b>{{ r.timings.total_ms|seconds }}</b><small>reading {{ r.timings.read_ms|seconds }} · comparing {{ r.timings.match_ms|seconds }}</small></div>
     {% if not compact %}
@@ -110,7 +117,7 @@
             <td class="k" data-th="Field">{{ f.label }}</td>
             <td data-th="On the application">{{ f.expected if f.expected else '—' }}</td>
             <td data-th="On the label">{% if f.found %}{% if v in ('MISMATCH',) %}<strong>{{ f.found }}</strong>{% else %}{{ f.found }}{% endif %}{% else %}—{% endif %}</td>
-            <td data-th="Result">{{ chip(f.verdict) }}<div class="why {{ 'bad' if v in ('MISMATCH', 'NOT FOUND') else ('rv' if v == 'NEAR MATCH' else '') }}">{{ f.note }}</div></td>
+            <td data-th="Result">{{ chip(f.verdict) }}<div class="why {{ 'bad' if v in ('MISMATCH', 'NOT FOUND') else ('rv' if v == 'NEAR MATCH' else '') }}">{{ f.note }}</div>{% if f.clear is sameas false and f.clear_note %}<div class="why rv">{{ f.clear_note }}</div>{% endif %}</td>
           </tr>
           {% if strip %}
           {% set ev = evidence_for(f, r) %}
@@ -140,6 +147,7 @@
         </div>
         {% if not w.present %}
           <p class="why bad">{{ w.wording_note }}</p>
+          {% if w.clear is sameas false and w.clear_note %}<p class="why rv">{{ w.clear_note }}</p>{% endif %}
           {% if prompts.get('warning_present') %}{{ decide(prompts['warning_present'], job_id, item_index, (answers or {}).get('warning_present', '')) }}{% endif %}
         {% else %}
         <div class="chks">
@@ -148,6 +156,7 @@
             {{ chip(w.wording) }}<span class="name">Wording</span>
             <div class="body">
               <div class="t">{{ w.wording_note }}</div>
+              {% if w.clear is sameas false and w.clear_note %}<div class="s">{{ w.clear_note }}</div>{% endif %}
               {% if w.diff %}
               <table class="diff">
                 <thead><tr><th style="width: 50%">Required text says</th><th>Label says</th></tr></thead>

@@ -175,6 +175,7 @@ html:not(.js) .modes, html:not(.js) .js-only { display: none !important; }
 .banner.pass h2 { color: var(--pass); } .banner.review h2 { color: var(--review); } .banner.fail h2 { color: var(--fail); }
 .banner p { font-size: 15.5px; color: var(--ink); }
 .banner p a.problem { color: var(--fail); font-weight: 600; }
+.banner p.better-image { margin-top: 6px; font-weight: 600; }
 .banner .acts { display: flex; gap: 8px; flex: none; margin-left: 12px; flex-wrap: wrap; }
 .badge { width: 44px; height: 44px; border-radius: 999px; display: grid; place-items: center; color: #fff; flex: none; }
 .badge .i { width: 24px; height: 24px; }
