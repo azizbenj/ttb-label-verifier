@@ -315,7 +315,8 @@ decides the overall status is whether that evidence is **clear** (`app/pipeline.
   is clear only on a well-read label on which no more than one of the statement's rarer words ("Surgeon",
   "pregnancy", "machinery", ...) was read anywhere; otherwise the warning may be printed sideways or too small to
   read and the label asks for a look. A wording or capitals failure is clear when the words inside the
-  statement's box were read with mean confidence 90 or more.
+  statement's box were read with mean confidence 90 or more, and a meaning-changing difference ("can cause" for
+  "may cause") is always clear, since the check already requires its words to be read confidently one by one.
 - An application value that cannot be read as a figure, or a required value left blank, is the application's
   problem and always clear.
 
@@ -335,7 +336,7 @@ row, which says why (low confidence, sideways, implausible text, a poorly read l
 | `clear_plausible` / `clear_min_chars` | 0.8 / 3 | ... and the found text is at least this share letters and digits, with at least this many |
 | `clear_label_share` / `clear_label_low_share` | 0.9 / 0.1 | A NOT FOUND is clear only when at least this share of the label's words read with confidence 70+ and at most this share of its marks read below 50 (every synthetic label: 0.933+ / 0.053 or less; 124 of the 187 real labels fail one or the other) |
 | `clear_warning_words` | 2 | "No warning found" is unclear when this many of the statement's rarer words were read anywhere (synthetic labels without a warning: 0) |
-| `clear_warning_conf` | 90 | A wording or capitals failure is clear when the statement's words read with this mean confidence (synthetic warning defects: 94.9+) |
+| `clear_warning_conf` | 90 | A wording or capitals failure is clear when the statement's words read with this mean confidence (synthetic warning defects: 94.9+; 25 of the 34 such failures on correct real labels are below it). A meaning-changing difference is clear regardless |
 | `poor_image_unclear` | 2 | This many unclear required checks ask for a better image (11 of 187 correct real labels) |
 
 The decision prompts are unchanged: an unclear MISMATCH still asks "Does the label say ...?" with "Yes = the
@@ -974,6 +975,81 @@ words were read at confidence 77-96 on the other labels, which is what set `mean
 11145001000540's legible "MEN" (77) would have asked for a look. Painting a serif replacement into a sans warning (the tool's default font)
 lowered the confidence of the painted word (52-78), which is why the run above matches the face.
 
+### Evidence strength: FAIL only on what was read clearly (October 2026, local)
+
+Before is `main` at `eab19e9` (with the meaning-changing warning rule), after is this branch, each a git archive
+run outside the synced folder, the two sides interleaved set by set on the same machine (Tesseract 5.5.3,
+RapidOCR escalation on), real labels one at a time. Other sessions were loading this machine heavily (at one
+point a load average above 100), and under load the 5-second budget skips the RapidOCR escalation, which changes
+field verdicts from run to run; so both sides ran with `LABEL_TIME_BUDGET_S=0`, which on a quiet machine is what
+the budget allows anyway (an earlier quiet run with the default budget gave the same verdicts on the 20 real
+labels). Field and warning verdicts are identical before and after on every label of every set: only the overall
+status, its summary and the new clarity fields changed.
+
+```bash
+LABEL_TIME_BUDGET_S=0 python scripts/bench.py --fail-under 1.0
+LABEL_TIME_BUDGET_S=0 python scripts/bench.py --set batch --fail-under 0.95
+LABEL_TIME_BUDGET_S=0 python scripts/real_labels.py -j 1 --defects --json real20.json
+LABEL_TIME_BUDGET_S=0 python scripts/real_labels.py -j 1 --defects --csv scripts/calibration_labels.csv --json calib.json
+LABEL_TIME_BUDGET_S=0 python scripts/stress_test.py --verbose
+```
+
+| Set | Before | After |
+|---|---|---|
+| Correct real labels (20): PASS / REVIEW / FAIL | 0 / 10 / 10 | **0 / 16 / 4** |
+| Correct calibration labels (167): PASS / REVIEW / FAIL | 6 / 70 / 91 | **6 / 107 / 54** |
+| All 187 correct real labels | 6 / 80 / 101 | **6 / 123 / 58** |
+| Planted wrong figures on real labels (40 + 330): FAIL / REVIEW / PASS | 369 / 1 / 0 | 353 / 17 / **0** |
+| Planted field reported as MATCH | 0 of 370 | 0 of 370 |
+| Field verdicts (real 20 / calibration) | 62/104 and 576/913 as expected, 12 and 109 false alarms | unchanged |
+| Samples (15) | 15/15, 0 planted defects passed, median 1.8 s | 15/15, 0, 1.7 s |
+| Batch (250) | 249/250 (label 0047), 0 planted defects passed | 249/250, the same miss, 0 |
+| Stress test (24 conditions × 15) | 0 planted defects passed | 0; Didot 11/15 → 8/15, third resolution 14/15 → 13/15, every other row the same |
+| Time per real label, median / max (budget off) | 2.36 s / 4.23 s (20), 2.55 s / 7.33 s (167) | 2.38 s / 4.22 s, 2.53 s / 7.37 s |
+
+The evaluation of the live build measured 1 / 21 / 23 on its 45 correct labels; on the 187 here the FAIL share
+falls from 54% to 31%. What still fails a correct label is evidence the rule cannot see as unclear: a matcher
+that took a partial or wrong span of clearly read text (50 text MISMATCHes read at 60+ / 80+), a misread figure
+(always clear, by measurement), and 9 warning statements read at 90+ that still fail as wording.
+
+**Separation.** Over the clean runs of both real sets (ground truth for every field):
+
+| | Unclear (REVIEW) | Clear (FAIL) |
+|---|---|---|
+| Field false alarms (120): text MISMATCH | 29 | 50 |
+| ... text NOT FOUND | 9 | 1 |
+| ... figure NOT FOUND | 14 | 10 (5 of them an application value that cannot be read as a figure) |
+| ... figure MISMATCH | 0 | 7 |
+| Warning false alarms (40; every real label carries a correct warning) | 31 (25 failures on a statement read below 90, 6 "not found") | 9 |
+| Real problems: planted wrong figures (368 that came back MISMATCH or NOT FOUND) | 21 (all NOT FOUND: the label's own figure was never read) | 347 |
+| Real problems: net contents genuinely absent (3 labels) | 3 | 0 |
+
+So 52 of 120 field false alarms and 31 of 40 warning false alarms no longer fail a label; 68 field false alarms
+stay clear; 24 real problems became unclear, and 16 labels carrying a planted defect moved from FAIL to REVIEW
+(on the other 5 another clear problem keeps the FAIL). Every one of the 16, with the planted field NOT FOUND
+because the label's own figure was not read:
+
+- Real labels (4): 11145001000540, 15117001000279, 15117001000284 (net contents; all three labels genuinely
+  print none) and 26189001000502 (net contents; "16 fl oz" is printed but was not read).
+- Calibration labels (12): alcohol content on 26210001000327, 26232001000450, 26251001000296, 26258001000801,
+  26271001000532; net contents on 26210001000327, 26232001000450, 26251001000782, 26259001000159, 26261001000185,
+  26264001000814, 26271001000514.
+
+The same rule on the stress renderings moved 4 planted defects from FAIL to REVIEW, none to PASS: in Didot (hairline
+serifs; the label as a whole read with 86-90% confident words) `missing_warning`, `missing_net_contents` and
+`wrong_country` (its "Product of Ireland" read at 26 for the least sure word), and at a third of the resolution
+`wrong_brand` (RapidOCR read "RIVEr BENd BREWiNG CO" at 72). 70 / 85 and a 6% unread-marks floor, the first
+values tried, had moved 8; the looser 60 / 80 and 10% cost 2 more correct real labels that FAIL (58 against 56).
+
+**Planted warning edits on real labels.** The 34 edits of the run above (9 labels; "should drink", "can cause",
+"men", "improves") give the same verdict on this branch as on `main`, 33 FAIL and the one REVIEW: a
+meaning-changing difference that `check_warning` fails is always clear, because it already requires the words
+that make it to be read confidently one by one. Without that exception the statement-confidence floor sent all
+four edits of 12048001000331 (statement read at 84-87) and one of 26209001000730 to REVIEW.
+
+**Request a better image.** 11 of the 187 correct real labels (2 of the 20, 9 of the 167) get "Much of this
+label could not be read clearly"; none of the synthetic labels do.
+
 ## Assumptions
 
 - Labels arrive as flat artwork files or straight-on scans, the way they are attached to applications. Scans
@@ -1000,8 +1076,10 @@ lowered the confidence of the painted word (52-78), which is why the run above m
 - The evidence-strength rule has a cost, paid knowingly: a NOT FOUND on a label that was not read well is REVIEW,
   never FAIL, even when the field really is missing. On the real labels that moved 16 of the 370 planted wrong
   figures from FAIL to REVIEW (the label's own figure was never read, so the planted one could not be compared),
-  and the 3 labels whose net contents really is absent are REVIEW. They are still flagged, with "NOT FOUND" on
-  the field, but they are not in the FAIL pile.
+  and the 3 labels whose net contents really is absent are REVIEW; on the stress renderings it moved 4 planted
+  defects (Didot's hairline serifs, a third of the resolution) the same way. They are still flagged, with the
+  field's MISMATCH or NOT FOUND and the reason shown, but they are not in the FAIL pile, and the "Fails only"
+  export does not hold them.
 - Text clarity is calibrated on two kinds of evidence only: the real labels' false alarms (none of which is a
   wrong text, since the real sets plant only wrong figures) and the synthetic labels' planted wrong brand and
   country, which are read at 86+ confidence. A real wrong brand set in a display face that OCR reads with low
