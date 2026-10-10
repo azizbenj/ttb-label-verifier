@@ -1,7 +1,7 @@
 image,application_id,brand_name,class_type,alcohol_content,net_contents,bottler_name_address,country_of_origin,variant,expected_overall,expected_issue
 label_0001.png,APP-0001,OLD BARREL VINEYARDS,Chardonnay,12.5% Alc./Vol.,750 mL,"Old Barrel Vineyards, St. Helena, CA 94574",,clean,PASS,
 label_0002.png,APP-0002,CEDAR COMPASS CELLARS,Red Table Wine,13.5% Alc./Vol.,375 mL,"Cedar Compass Cellars, St. Helena, CA 94574",,clean,PASS,
-label_0003.png,APP-0003,GRANITE BARREL BREWERY,Pilsner,7.2% Alc./Vol.,12 fl oz,"Granite Barrel Brewery, Bardstown, KY 40004",,warning_text_altered,REVIEW,warning
+label_0003.png,APP-0003,GRANITE BARREL BREWERY,Pilsner,7.2% Alc./Vol.,12 fl oz,"Granite Barrel Brewery, Bardstown, KY 40004",,warning_text_altered,FAIL,warning
 label_0004.png,APP-0004,Red Ridge Distillery,Irish Whiskey,46% Alc./Vol.,1 L,"Atlantic Wine & Spirits, Miami, FL 33130",Ireland,warning_not_caps,FAIL,warning
 label_0005.png,APP-0005,GRANITE OAK VINEYARDS,Chardonnay,12.5% ABV,1.5 L,"Granite Oak Vineyards, Milwaukee, WI 53202",,clean,PASS,
 label_0006.png,APP-0006,SILVER RIVER WINERY,Pinot Noir,13% ABV,375 mL,"Silver River Winery, Sonoma, CA 95476",,wrong_net_contents,FAIL,net_contents
@@ -37,7 +37,7 @@ label_0035.png,APP-0035,GOLDEN RIVER DISTILLERS,London Dry Gin,45%,1.75 L,"Golde
 label_0036.png,APP-0036,HIGH LANTERN VINI,Prosecco,13.5% Alc./Vol.,1 L,"Atlantic Wine & Spirits, Miami, FL 33130",Italy,clean,PASS,
 label_0037.png,APP-0037,HOLLOW OAK DISTILLERY,Straight Rye Whiskey,46% Alc./Vol.,1.75 L,,,clean,PASS,
 label_0038.png,APP-0038,HOLLOW CROW DISTILLERS,London Dry Gin,86 Proof,1 L,"Hollow Crow Distillers, St. Helena, CA 94574",,clean,PASS,
-label_0039.png,APP-0039,SILVER KETTLE DISTILLERY,Straight Rye Whiskey,40%,750 mL,"Silver Kettle Distillery, Bardstown, KY 40004",,warning_text_altered,REVIEW,warning
+label_0039.png,APP-0039,SILVER KETTLE DISTILLERY,Straight Rye Whiskey,40%,750 mL,"Silver Kettle Distillery, Bardstown, KY 40004",,warning_text_altered,FAIL,warning
 label_0040.png,APP-0040,GRANITE RIDGE DISTILLING CO.,Vodka,40% Alc./Vol.,1 L,"Granite Ridge Distilling Co., Portland, OR 97209",,wrong_abv,FAIL,alcohol_content
 label_0041.png,APP-0041,HIGH TIMBER RUM CO.,Silver Rum,100 Proof,375 mL,"High Timber Rum Co., Louisville, KY 40202",,clean,PASS,
 label_0042.png,APP-0042,White Valley Vineyards,Chardonnay,14.5,1.5 L,"White Valley Vineyards, Burlington, VT 05401",,clean,PASS,
@@ -80,7 +80,7 @@ label_0078.png,APP-0078,CROOKED RIDGE BREWERY,Pilsner,4.5% Alc./Vol.,22 fl oz,"C
 label_0079.png,APP-0079,CROOKED RIDGE CELLARS,Cabernet Sauvignon,13% ABV,750 mL,"Crooked Ridge Cellars, Burlington, VT 05401",,clean,PASS,
 label_0080.png,APP-0080,WHITE FOX BREWERY,Pilsner,4.5% ABV,12 fl oz,"White Fox Brewery, Nashville, TN 37203",,warning_not_caps,FAIL,warning
 label_0081.png,APP-0081,CROOKED KETTLE VINI,Prosecco,12.5% Alc./Vol.,700 mL,"Atlantic Wine & Spirits, Miami, FL 33130",Italy,clean,PASS,
-label_0082.png,APP-0082,STONE HARVEST DISTILLERS,London Dry Gin,50%,375 mL,"Stone Harvest Distillers, St. Helena, CA 94574",,warning_text_altered,REVIEW,warning
+label_0082.png,APP-0082,STONE HARVEST DISTILLERS,London Dry Gin,50%,375 mL,"Stone Harvest Distillers, St. Helena, CA 94574",,warning_text_altered,FAIL,warning
 label_0083.png,APP-0083,WHITE TOM TEQUILA,Tequila Blanco,46% Alc./Vol.,750 mL,"Highland Imports, Inc., New York, NY 10001",Mexico,clean,PASS,
 label_0084.png,APP-0084,BLACK HARVEST DISTILLERY,Kentucky Straight Bourbon Whiskey,40% Alc./Vol.,375 mL,"Black Harvest Distillery, Sonoma, CA 95476",,clean,PASS,
 label_0085.png,APP-0085,HARBOR RIDGE DISTILLERS,London Dry Gin,40%,50 mL,"Harbor Ridge Distillers, Denver, CO 80202",,clean,PASS,
