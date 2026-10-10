@@ -79,7 +79,7 @@ def main() -> None:
     ap.add_argument("--reader", default="tesseract", choices=["tesseract", "rapid", "rapid+tesseract"],
                     help="the primary reader (RapidOCR escalation of tesseract follows RAPID_ESCALATION)")
     ap.add_argument("--csv", default=str(ROOT / "scripts" / "real_labels.csv"),
-                    help="ground truth to score (default: the 20 hand-checked labels); several: a,b")
+                    help="ground truth to score (default: the 20 labels transcribed during development); several: a,b")
     ap.add_argument("--json", help="write every field's verdict, found text and note here, for diffs between builds")
     ap.add_argument("--only", help="comma-separated kinds to score (spirits,wine,beer,import)")
     a = ap.parse_args()

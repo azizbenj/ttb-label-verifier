@@ -9,6 +9,11 @@ government health warning.
 - **Live demo:** https://ttb-label-verifier-production-28e6.up.railway.app
 - **Source:** https://github.com/azizbenj/ttb-label-verifier
 
+**Tools used.** Python 3.12, FastAPI and Jinja; Tesseract 5 and RapidOCR (PP-OCRv4 on ONNX Runtime) for local OCR;
+Pillow and NumPy for images; pytest. Developed with Claude Code (Anthropic) as a coding assistant. The ground truth
+for the real-label sets was transcribed from the label images with an AI vision model; it was not verified by a
+person.
+
 | What you give it | What you get back |
 |---|---|
 | Brand name, class/type, alcohol content, net contents, bottler name & address, country of origin (imports) | One row per field: the application value, the text found on the label, and a verdict: **MATCH**, **NEAR MATCH** (agent decides), **MISMATCH** or **NOT FOUND**, with a one-line reason |
@@ -637,7 +642,7 @@ government warning, and `--defects` re-runs every label with a wrong alcohol con
 |---|---|---|---|
 | Samples, 15 synthetic labels, one per failure type | 15/15 expected verdicts | 0 | median 1.8 s, max 2.1 s |
 | Batch, 250 synthetic labels (202 clean, 48 planted) | 249/250 expected verdicts (the miss asks for a look) | 0 of 48 | median 0.4 s, max 2.0 s |
-| Real, 20 hand-checked labels, 104 fields | 62/104 fields as expected, 12 false alarms; correct labels 0 PASS / 16 REVIEW / 4 FAIL | 0 of 40 planted | median 2.3 s, max 4.0 s |
+| Real, 20 labels transcribed during development, 104 fields | 62/104 fields as expected, 12 false alarms; correct labels 0 PASS / 16 REVIEW / 4 FAIL | 0 of 40 planted | median 2.3 s, max 4.0 s |
 | Calibration, 167 real labels, 913 fields | 576/913 fields as expected, 109 false alarms; correct labels 6 PASS / 107 REVIEW / 54 FAIL | 0 of 330 planted | median 2.4 s, max 6.2 s (4 over 5 s) |
 | Stress test, 24 typefaces and image conditions x 15 | 22 of 24 conditions at 13/15 or better; Didot 8/15, Herculanum 12/15 (clean labels flagged) | 1 (Copperplate draws lowercase as small capitals, so the planted case change disappears) | median 2.3-3.3 s |
 
@@ -925,7 +930,7 @@ in both is the Copperplate brand-capitalization sample described above (the type
 Medians roughly double under (b) (1.2 s → 2.3-3.6 s, four labels at a time) because most stress labels carry a
 planted defect, and a label that really is wrong always pays for every optional pass.
 
-What the escalation buys, read honestly: six fewer false alarms on the 20 hand-checked labels and 45 fewer on
+What the escalation buys, read honestly: six fewer false alarms on the 20 development labels and 45 fewer on
 the 167 calibration labels, all of them brand names, class/types and bottler lines in display faces, white or
 small text on photographs and coloured panels, which RapidOCR reads and Tesseract does not. The warning results
 do not move: RapidOCR's reading of a statement is used only when Tesseract found none (next paragraph). It never
