@@ -65,7 +65,8 @@ platform's health check at it. Optional environment variables:
 | `OCR_ENGINE` | `tesseract` | Default reader (`tesseract`, `rapid` or `claude`) |
 | `RAPID_ESCALATION` | `1` | Read a label once more with RapidOCR when Tesseract's passes leave a field missing or the warning short of PASS (`0` turns it off; with `OCR_ENGINE=rapid` the same switch lets Tesseract escalate RapidOCR) |
 | `RAPID_INPUT` | `gray` | What RapidOCR reads: Tesseract's preprocessed grayscale, or `color` (the scaled, straightened original) |
-| `RAPID_THREADS` / `RAPID_WORKERS` | `4` / `4` | ONNX Runtime threads per read; reads in flight at once |
+| `RAPID_THREADS` / `RAPID_WORKERS` | `4` / `2` | ONNX Runtime threads per read; RapidOCR worker processes (each about 500-600 MB) |
+| `RAPID_ISOLATE` | `1` | Run RapidOCR in worker processes, so a crash in its native code fails one read, not the server; `0` runs it on threads in the server process |
 | `LABEL_TIME_BUDGET_S` | `5` | Per-label time budget: the turned/contrast passes and the RapidOCR escalation run only while the time spent plus their expected cost fits (`0` = no budget) |
 | `ANTHROPIC_API_KEY` | unset | When set, the UI shows a "Reader" toggle and the cloud reader can be selected per request |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Model used by the cloud reader |
@@ -1101,10 +1102,13 @@ label could not be read clearly"; none of the synthetic labels do.
   than its average still finishes. With four batch labels at a time on this machine the slowest label took
   5.4 s against the 5 s budget. The RapidOCR read itself is bounded separately by `RAPID_TIMEOUT_S` (10 s).
 - A RapidOCR read cannot be interrupted: one that runs past `RAPID_TIMEOUT_S` is abandoned (the label goes on
-  without it) but finishes on its thread, holding one of the `RAPID_WORKERS` slots until it does.
+  without it) but finishes in its worker process, holding one of the `RAPID_WORKERS` workers until it does.
 - An OpenCV 5.0.0 `resize` of an unpadded 1799-pixel-wide label crashed the process once on macOS/arm64 while
-  this was measured; handing RapidOCR a fresh array padded to the detector's 32-pixel grid did not crash in
-  140 reads, but it is a mitigation, not a root-cause fix.
+  this was measured. Two defences, neither a root-cause fix: RapidOCR gets a fresh array padded to the
+  detector's 32-pixel grid (no crash in 140 reads since), and it runs in separate worker processes
+  (`RAPID_ISOLATE`, on by default), so a crash fails that one read, the label keeps its Tesseract verdict, and
+  a new worker starts; the server and its batches are untouched. Each worker holds its own copy of the models,
+  about 500-600 MB, which is why the default is two.
 - The bold heuristic is calibrated on synthetic labels and assumes the statement body is in regular weight. A
   real-world calibration set would be needed before trusting it unattended, which is why it only asks for review.
 - Batch jobs are kept in memory and disappear on restart; for production they would go to a queue and a database.
