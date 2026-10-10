@@ -42,26 +42,53 @@ class OCRWord:
 
 @dataclass
 class View:
-    """One image the OCR read: the label as is, turned 90 degrees either way (sideways text), or
-    inverted (light text on a dark panel). Word boxes are in the coordinates of their view."""
+    """One image the OCR read: the label as is, turned 90 degrees either way (sideways text), inverted
+    (light text on a dark panel), or a crop of one line scaled up for a second read of a figure
+    (app/readers/numbers.py). Word boxes are in the coordinates of their view."""
 
     rot: int                      # 0, 90 (turned counter-clockwise) or 270 (turned clockwise)
     inverted: bool
     ink: np.ndarray               # True = ink, in this view's coordinates
     size: tuple[int, int]         # (width, height) of this view
+    scale: float = 1.0            # a crop was enlarged by this factor before it was read
+    offset: tuple[int, int] = (0, 0)   # where the crop's top-left corner sits on the upright image
 
 
 def upright_box(word: "OCRWord", views: list[View]) -> tuple[int, int, int, int]:
     """(left, top, width, height) of a word in the upright view's coordinates."""
     if not views or word.view == 0 or word.view >= len(views):
         return word.left, word.top, word.width, word.height
-    v, base = views[word.view], views[0]
-    w0, h0 = base.size
-    if v.rot == 90:      # image turned counter-clockwise: x' = y, y' = W - x
-        return w0 - word.top - word.height, word.left, word.height, word.width
-    if v.rot == 270:     # image turned clockwise: x' = H - y, y' = x
-        return word.top, h0 - word.left - word.width, word.height, word.width
-    return word.left, word.top, word.width, word.height
+    v = views[word.view]
+    left, top, width, height = word.left, word.top, word.width, word.height
+    if v.scale != 1.0:
+        left, top = round(left / v.scale), round(top / v.scale)
+        width, height = round(width / v.scale), round(height / v.scale)
+    # The region of the upright image this view shows, as the view's size before the turn.
+    region_w, region_h = round(v.size[0] / v.scale), round(v.size[1] / v.scale)
+    if v.rot == 90:      # image turned counter-clockwise: x' = y, y' = W - x  (W = the region's upright width)
+        left, top, width, height = region_h - top - height, left, height, width
+    elif v.rot == 270:   # image turned clockwise: x' = H - y, y' = x  (H = the region's upright height)
+        left, top, width, height = top, region_w - left - width, height, width
+    return left + v.offset[0], top + v.offset[1], width, height
+
+
+def text_height(word: "OCRWord", views: list[View]) -> float:
+    """The height of a word's letters on the page: a word read from an enlarged crop is scaled back."""
+    if views and 0 < word.view < len(views):
+        return word.height / views[word.view].scale
+    return float(word.height)
+
+
+@dataclass
+class Reread:
+    """A second read of one line's own crop, made for a figure (app/readers/numbers.py)."""
+
+    line: int                   # the OCR line that was cropped
+    kinds: tuple[str, ...]      # the figures it was read for: "alcohol" and/or "volume"
+    text: str                   # what the second read says
+    mode: str                   # how it was read (Tesseract page-segmentation mode and scale)
+    conf: float                 # mean word confidence of the second read
+    new_line: int | None = None  # index in OCRResult.lines, or None when the second read repeats a line
 
 
 @dataclass
@@ -77,6 +104,7 @@ class OCRResult:
     extended: bool = False          # the extra rotated / inverted passes have run
     source: object = None           # the preprocessed upright image, kept so extra passes need not redo it
     skew: float = 0.0               # degrees the image was turned to straighten it (boxes refer to the straightened image)
+    rereads: list[Reread] = field(default_factory=list)   # second reads of figure lines, each a line of its own
 
 
 @dataclass
