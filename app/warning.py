@@ -628,10 +628,10 @@ def meaning_changes(got: list[str], token_words: list[OCRWord | None] | None = N
         if E and F and _fold("".join(E)) == _fold("".join(F)):
             continue    # a word split or run together, or garbled: "no t", "shouldnot", "rnay"
         if tag == "delete":
-            for k, e in enumerate(E):
-                if e in th.meaning_missing and tight_gap(j1):
-                    out.append(missing(i1 + k, j1))
-                    break
+            # Only the words that carry the meaning left out ("not", "should not"): a longer run missing is
+            # a line OCR did not read, whatever words it held.
+            if all(e in th.meaning_missing for e in E) and tight_gap(j1):
+                out.append(missing(i1 + next(k for k, e in enumerate(E) if e == "not") if "not" in E else i1, j1))
         elif tag == "insert":
             for k, f in enumerate(F):
                 if f in inserted and in_line(j1 + k):
