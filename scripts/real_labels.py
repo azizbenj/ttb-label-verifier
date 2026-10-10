@@ -56,8 +56,10 @@ def stitch() -> None:
     print(f"stitched {n} records into {REAL}")
 
 
-def wrong_abv(text: str) -> str:
+def wrong_abv(text: str) -> str | None:
     v = parse_alcohol(text)
+    if v is None:   # a statement the parser does not read ("57.5 ALC BY VOL"): nothing to plant
+        return None
     return f"{v.abv + (5 if v.abv > 20 else 1.5):g}% Alc./Vol."
 
 
@@ -195,6 +197,8 @@ def main() -> None:
         def planted(row):
             out = []
             for key, val in (("alcohol_content", wrong_abv(row["alcohol_content"])), ("net_contents", wrong_volume(row["net_contents"]))):
+                if val is None:
+                    continue
                 try:
                     out.append((key, val, run(row, {key: val})))
                 except Exception as e:
