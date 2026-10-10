@@ -106,8 +106,10 @@ def test_a_figure_the_page_pass_never_read_is_taken_from_the_crop_and_says_so():
 
 
 def test_a_closer_read_with_the_point_lost_beside_one_with_it_is_harmless():
-    r = compare_volume("1.5 L", "ALC. 15% BY VOL. LSL\n15L\n1.5L", rereads=[("ALC. 15% BY VOL. LSL", ["15L", "1.5L"])])
+    r = compare_volume("1.5 L", "ALC. 15% BY VOL. L5L\n15L\n1.5L", rereads=[("ALC. 15% BY VOL. L5L", ["15L", "1.5L"])])
     assert r.verdict == Verdict.MATCH and NOTE_CONFIRMED in r.note, r
+    r = compare_volume("1.5 L", "ALC. 15% BY VOL. LSL\n15L\n1.5L", rereads=[("ALC. 15% BY VOL. LSL", ["15L", "1.5L"])])
+    assert r.verdict == Verdict.MATCH and NOTE_READ_ON_CROP in r.note, r
 
 
 def test_without_rereads_the_rules_are_unchanged():
@@ -273,8 +275,9 @@ def test_crop_view_words_map_back_onto_the_page():
 def test_which_lines_are_worth_a_second_read():
     assert N.line_kinds("45% ALC./VOL. (90 PROOF)") == {"alcohol": True}
     assert N.line_kinds("12 FL OZ (355 mL)") == {"volume": True}
-    assert N.line_kinds("ALC. 15% BY VOL. LSL") == {"alcohol": True, "volume": True}
+    assert N.line_kinds("ALC. 15% BY VOL. LSL") == {"alcohol": True, "volume": False}   # letters shaped like litres
     assert N.line_kinds("L751") == {"volume": False}                      # digits mixed with their look-alikes
+    assert N.line_kinds("CHICAGO IL 60607") == {}                         # a state code before a ZIP
     assert N.line_kinds("4S% ALC./VOL.") == {"alcohol": False}
     assert N.line_kinds("Milwaukee, WI 53202") == {}                      # a run of digits alone is not a figure
     assert N.line_kinds("GOVERNMENT WARNING: (1) According to") == {}

@@ -4,6 +4,7 @@ from app.normalize import (
     normalize_strict,
     parse_alcohol,
     parse_net_contents,
+    volume_candidates,
 )
 
 
@@ -87,9 +88,10 @@ def test_accents_are_folded_in_loose_normalization():
 
 def test_one_read_as_L_before_decimal_or_litre_unit():
     assert parse_net_contents("L.75L").ml == 1750.0
-    assert parse_net_contents("LL").ml == 1000.0
+    assert parse_net_contents("L75L").text == "175L"   # the point is lost; the matcher asks for a look, the crop re-reads it
     assert parse_net_contents("L.5 L").ml == 1500.0
     assert parse_net_contents("LITERS") is None  # a plain word is not a volume
+    assert parse_net_contents("LL") is None      # no digit read as a digit: "LLC" cut short is not "1 L"
 
 
 def test_parse_alcohol_text_shows_whole_statement():
@@ -99,17 +101,30 @@ def test_parse_alcohol_text_shows_whole_statement():
 
 
 def test_mangled_volume_letters_are_repaired_only_as_a_fallback():
-    assert parse_net_contents("ALC. 15% BY VOL. LSL").ml == 15000.0  # "15 L": the matcher turns it into a near match
     assert parse_net_contents("7S0 mL").ml == 750.0
+    assert parse_net_contents("L5L").ml == 15000.0   # "15 L": the matcher turns it into a near match
     assert parse_net_contents("750 mL").ml == 750.0
     assert parse_net_contents("MILLERS LITERS CLUB") is None
     assert parse_net_contents("BOLS L") is None  # a word in front of a unit is not a number
+    # Letters alone are never a figure: the second read of the line's crop reads the digits instead.
+    assert parse_net_contents("ALC. 15% BY VOL. LSL") is None
+    assert volume_candidates("LSOL") == []
 
 
-def test_state_codes_in_addresses_are_not_volumes():
-    assert parse_net_contents("Imported by Great Lakes Beverage Imports, Chicago, IL 60607") is None
-    assert parse_net_contents("Bottled in Springfield, IL") is None
-    assert parse_net_contents("50% ALC./VOL. (100 PROOF) LL").ml == 1000.0
+def test_state_codes_and_scraps_in_addresses_are_never_volumes():
+    # Two real labels: a filed "1 L" came back MATCH because "IL" / "LLC" cut short became "1 L".
+    for line in ("CHICAGO IL 60607", "SANTI IMPORTS LLC, CHICAGO IL 60607", "IMPORTED BY: SANTI IMPORTS LL",
+                 "Imported by Great Lakes Beverage Imports, Chicago, IL 60607", "Bottled in Springfield, IL",
+                 "50% ALC./VOL. (100 PROOF) LL", "AFOODCHAIN ID ean OL", "0L", "CHICAGO 0L 60607"):
+        assert volume_candidates(line) == [], line
+        assert parse_net_contents(line) is None, line
+    # ... with and without a real volume elsewhere on the label.
+    assert [c.ml for c in volume_candidates("750ml\nCHICAGO IL 60607")] == [750.0]
+    assert [c.ml for c in volume_candidates("CHICAGO IL 60607\n700ML")] == [700.0]
+    assert parse_net_contents("CHICAGO IL 60607\nIMPORTED BY: SANTI IMPORTS LL") is None
+    # A figure with a digit in it is still repaired, but not inside an address.
+    assert parse_net_contents("7S0 mL").ml == 750.0
+    assert parse_net_contents("CHICAGO 7SO ML 60607") is None
 
 
 def test_thousands_separator_in_volumes():
