@@ -155,6 +155,8 @@ def main():
     ap.add_argument("--reader", default="tesseract", choices=["tesseract", "rapid", "rapid+tesseract"],
                     help="the primary reader (RapidOCR escalation of tesseract follows RAPID_ESCALATION)")
     a = ap.parse_args()
+    from app.readers.rapid import warm_up as rapid_warm_up
+    rapid_warm_up()   # start the RapidOCR workers first, as the server does at start-up
     specs = gen.sample_specs()
     conditions = [("Baseline (DejaVu)", None, None, None, None)]
     conditions += [(f"Typeface: {n}", str(r), str(b), None, None) for n, (r, b) in FAMILIES.items() if r.exists()]

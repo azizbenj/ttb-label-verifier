@@ -20,17 +20,20 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
+import multiprocessing
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
+from concurrent.futures.process import BrokenProcessPool
 from functools import lru_cache
 from time import perf_counter
 
 import numpy as np
 from PIL import Image
 
-from ..config import (RAPID_ESCALATION, RAPID_INPUT, RAPID_MIN_LINE_CONF, RAPID_THREADS, RAPID_TIMEOUT_S,
-                      RAPID_WORKERS)
+from ..config import (RAPID_ESCALATION, RAPID_INPUT, RAPID_ISOLATE, RAPID_MIN_LINE_CONF, RAPID_START_TIMEOUT_S,
+                      RAPID_THREADS, RAPID_TIMEOUT_S, RAPID_WORKERS)
+from . import rapid_worker
 from ..images import flatten
 from ..normalize import normalize_loose
 from .base import LabelReading, OCRResult, OCRWord, ReaderError, View
@@ -116,9 +119,91 @@ def _call(eng, arr: np.ndarray) -> list:
     return res or []
 
 
+# --- worker processes (RAPID_ISOLATE) ------------------------------------------------------------
+_procs: ProcessPoolExecutor | None = None
+_procs_lock = threading.Lock()
+_procs_warm = False
+_last = threading.local()     # .cold: the read on this thread also started the workers (not a cost sample)
+
+
+def last_read_was_cold() -> bool:
+    return bool(getattr(_last, "cold", False))
+
+
+def _process_pool() -> ProcessPoolExecutor:
+    global _procs
+    with _procs_lock:
+        if _procs is None:
+            # "spawn", never "fork": the server has threads, and forking a process with threads (and
+            # ONNX Runtime's thread pools) can deadlock the child.
+            _procs = ProcessPoolExecutor(max_workers=max(1, RAPID_WORKERS), mp_context=multiprocessing.get_context("spawn"),
+                                         initializer=rapid_worker.init, initargs=(RAPID_THREADS,))
+        return _procs
+
+
+def _discard_pool(pool: ProcessPoolExecutor) -> None:
+    """A worker died: drop the broken pool so the next read starts a fresh one."""
+    global _procs, _procs_warm
+    with _procs_lock:
+        if _procs is pool:
+            _procs, _procs_warm = None, False
+    pool.shutdown(wait=False, cancel_futures=True)
+
+
+def warm_up() -> bool:
+    """Start the workers and load the models before the first label needs them (called at start-up)."""
+    global _procs_warm
+    if not RAPID_ISOLATE or rapid_version() is None:
+        return False
+    pool = _process_pool()
+    try:
+        ok = pool.submit(rapid_worker.ping).result(timeout=RAPID_START_TIMEOUT_S)
+    except Exception as e:   # noqa: BLE001 - a failed warm-up only means the first read pays for it
+        log.warning("RapidOCR warm-up failed: %s", e)
+        if isinstance(e, BrokenProcessPool):
+            _discard_pool(pool)
+        return False
+    _procs_warm = bool(ok)
+    return _procs_warm
+
+
+def run_isolated(arr: np.ndarray, timeout: float = RAPID_TIMEOUT_S, fn=None) -> list:
+    """Read in a worker process. A crashed worker, a timeout or an engine error becomes a ReaderError,
+    and the server keeps running. ``fn`` replaces the worker's read function (tests)."""
+    global _procs_warm
+    if rapid_version() is None:
+        raise ReaderError("The RapidOCR reader is not installed on this server "
+                          "(pip install rapidocr-onnxruntime). Please tell the administrator.")
+    pool = _process_pool()
+    _last.cold = not _procs_warm
+    limit = timeout if _procs_warm else max(timeout, RAPID_START_TIMEOUT_S)
+    try:
+        future = pool.submit(fn or rapid_worker.read, arr)
+    except BrokenProcessPool:
+        _discard_pool(pool)
+        pool = _process_pool()
+        future = pool.submit(fn or rapid_worker.read, arr)
+    try:
+        res = future.result(timeout=limit)
+    except FutureTimeout:
+        raise ReaderError(f"Reading the label with RapidOCR took longer than {timeout:g} s and was stopped. "
+                          "Please try a smaller or cleaner image.") from None
+    except BrokenProcessPool:
+        log.error("RapidOCR worker stopped unexpectedly (native crash); starting a new one")
+        _discard_pool(pool)
+        raise ReaderError("RapidOCR stopped unexpectedly on this label. The label was checked with Tesseract alone.") from None
+    except Exception as e:  # noqa: BLE001 - a model or OpenCV failure must read as a plain message
+        log.warning("RapidOCR failed: %s", e)
+        raise ReaderError("RapidOCR could not read this label. Please try another image or the Tesseract reader.") from e
+    _procs_warm = True
+    return res
+
+
 def run_engine(arr: np.ndarray, timeout: float = RAPID_TIMEOUT_S) -> list:
     """RapidOCR's raw result: a list of [quad (4 points), text, confidence 0-1] per line, bounded in time
-    (the one-off engine start-up is not counted against it)."""
+    (the one-off engine start-up is not counted against it). In worker processes unless RAPID_ISOLATE=0."""
+    if RAPID_ISOLATE:
+        return run_isolated(arr, timeout)
     eng = engine()
     future = _POOL.submit(_call, eng, arr)
     try:

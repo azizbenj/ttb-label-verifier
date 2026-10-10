@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import threading
+from contextlib import asynccontextmanager
 from datetime import datetime
 import csv
 import io
@@ -30,6 +32,7 @@ from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
 from .readers.base import LabelReader, ReaderError
 from .readers.rapid import rapid_version
+from .readers.rapid import warm_up as rapid_warm_up
 from .readers.tesseract import TesseractReader, parse_psm, tesseract_version
 
 log = logging.getLogger("labelcheck")
@@ -38,7 +41,16 @@ APP_DIR = Path(__file__).resolve().parent
 SAMPLES_DIR = ROOT / "data" / "samples"
 _SAFE_NAME = re.compile(r"[a-z0-9_\-]+")  # used with fullmatch: "$" would also accept a trailing newline
 
-app = FastAPI(title="Label Check", docs_url="/api/docs", redoc_url=None)
+@asynccontextmanager
+async def lifespan(_app):
+    # Start the RapidOCR worker processes in the background, so the first label that needs the
+    # escalation does not pay for loading the models. Never blocks start-up or the health check.
+    if (RAPID_ESCALATION or OCR_ENGINE == "rapid") and rapid_version() is not None:
+        threading.Thread(target=rapid_warm_up, name="rapid-warm-up", daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Label Check", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 
 

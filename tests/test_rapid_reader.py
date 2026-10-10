@@ -3,6 +3,8 @@ needed), the reader registry and the health check."""
 
 from pathlib import Path
 
+import time
+
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -259,3 +261,42 @@ def test_rapid_warning_is_used_only_when_tesseract_found_none():
     assert "pregnaney" in w.found_text and "GOVERNMENT WARNING:" in w.found_text
     w = with_rapid(["OLD TOM DISTILLERY", "750 mL"])     # Tesseract found no statement at all
     assert w.present and "GOVERNMENTWARNING:" in w.found_text
+
+
+# --- crash isolation: the engine runs in worker processes ------------------------------------------
+def _isolated(monkeypatch):
+    monkeypatch.setattr(R, "RAPID_ISOLATE", True)
+    monkeypatch.setattr(R, "rapid_version", lambda: "1.4.4")
+    R._discard_pool(R._procs) if R._procs is not None else None
+
+
+def test_a_crashing_worker_is_a_reader_error_and_the_pool_recovers(monkeypatch):
+    from tests import _rapid_crash
+    _isolated(monkeypatch)
+    arr = np.zeros((32, 64), dtype=np.uint8)
+    with pytest.raises(ReaderError, match="stopped unexpectedly"):
+        R.run_isolated(arr, timeout=30, fn=_rapid_crash.crash)
+    # the server process is still alive, and the next read gets a fresh pool
+    assert R.run_isolated(arr, timeout=30, fn=_rapid_crash.echo)[0][1] == "shape 32x64"
+
+
+def test_a_slow_worker_times_out_without_blocking_the_caller(monkeypatch):
+    from tests import _rapid_crash
+    _isolated(monkeypatch)
+    arr = np.zeros((8, 8), dtype=np.uint8)
+    R.run_isolated(arr, timeout=30, fn=_rapid_crash.echo)          # warm the pool first
+    t0 = time.perf_counter()
+    with pytest.raises(ReaderError, match="longer than"):
+        R.run_isolated(arr, timeout=0.5, fn=_rapid_crash.sleep)
+    assert time.perf_counter() - t0 < 3
+
+
+def test_escalation_survives_a_crash_and_keeps_the_first_pass(monkeypatch):
+    from tests import _rapid_crash
+    _isolated(monkeypatch)
+    monkeypatch.setattr(R, "run_engine", lambda arr, timeout=0: R.run_isolated(arr, timeout=30, fn=_rapid_crash.crash))
+    img = Image.new("L", (200, 100), 255)
+    ocr = OCRResult(text="A", lines=["A"], words=[], ink=np.zeros((100, 200), bool),
+                    views=[View(rot=0, inverted=False, ink=np.zeros((100, 200), bool), size=(200, 100))],
+                    source=(img, img, 0.0, (200, 100)))
+    assert R.add_rapid_view(ocr) is False and ocr.lines == ["A"]

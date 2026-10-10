@@ -12,6 +12,7 @@ from .models import Application, FieldResult, Status, Timings, VerificationResul
 from .readers.base import LabelReader
 from .matching import wants_second_read
 from .readers.extract import attach_boxes, compare_from_fields, extract_and_compare
+from .readers.rapid import last_read_was_cold as rapid_last_read_was_cold
 from .warning import check_warning
 
 
@@ -122,7 +123,8 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
                 continue
             t_step = clock()
             added = step(reading)
-            cost.add(clock() - t_step)
+            if not (name == "escalate" and rapid_last_read_was_cold()):   # a cold start is not what a read costs
+                cost.add(clock() - t_step)
             if added:
                 t_read = perf_counter()
                 fields = extract_and_compare(app, ocr)

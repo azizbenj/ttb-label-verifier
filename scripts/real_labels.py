@@ -83,6 +83,8 @@ def main() -> None:
     ap.add_argument("--json", help="write every field's verdict, found text and note here, for diffs between builds")
     ap.add_argument("--only", help="comma-separated kinds to score (spirits,wine,beer,import)")
     a = ap.parse_args()
+    from app.readers.rapid import warm_up as rapid_warm_up
+    rapid_warm_up()   # start the RapidOCR workers first, as the server does at start-up
     if a.stitch:
         stitch()
         return

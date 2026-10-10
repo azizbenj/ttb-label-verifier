@@ -96,6 +96,9 @@ def main():
     ap.add_argument("--reader", default="tesseract", choices=["tesseract", "rapid", "rapid+tesseract"],
                     help="local runs: the primary reader (RapidOCR escalation of tesseract follows RAPID_ESCALATION)")
     a = ap.parse_args()
+    if not a.url:
+        from app.readers.rapid import warm_up as rapid_warm_up
+        rapid_warm_up()   # start the RapidOCR workers first, as the server does at start-up
     image_dir, rows = rows_for(a.set)
     results = run_remote(a.url, rows, image_dir, a.psm) if a.url else run_local(rows, image_dir, a.psm, a.workers, a.reader)
     ok, missed, errors, times = 0, 0, 0, []

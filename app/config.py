@@ -143,7 +143,11 @@ RAPID_MIN_LINE_CONF = 60                                # escalation lines below
 # against any Tesseract reading of the same place; below it, its score competes as read.
 RAPID_TRUST_CONF = 90
 RAPID_THREADS = int(os.getenv("RAPID_THREADS", "4"))   # ONNX Runtime threads per read (0 = the runtime's default)
-RAPID_WORKERS = int(os.getenv("RAPID_WORKERS", "4"))   # reads in flight at once (one engine, shared)
+RAPID_WORKERS = int(os.getenv("RAPID_WORKERS", "4"))   # reads in flight at once
+# Run RapidOCR in worker processes (on by default): a crash in its native code then fails only that read
+# instead of the whole server. Off (RAPID_ISOLATE=0): one engine shared by threads in the server process.
+RAPID_ISOLATE = os.getenv("RAPID_ISOLATE", "1").strip().lower() not in ("0", "false", "no", "off")
+RAPID_START_TIMEOUT_S = 60                              # a worker's first read also loads the models
 
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
 CLAUDE_TIMEOUT_S = float(os.getenv("CLAUDE_TIMEOUT_S", "30"))  # per attempt; the SDK default is 10 minutes
