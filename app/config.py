@@ -143,7 +143,9 @@ RAPID_MIN_LINE_CONF = 60                                # escalation lines below
 # against any Tesseract reading of the same place; below it, its score competes as read.
 RAPID_TRUST_CONF = 90
 RAPID_THREADS = int(os.getenv("RAPID_THREADS", "4"))   # ONNX Runtime threads per read (0 = the runtime's default)
-RAPID_WORKERS = int(os.getenv("RAPID_WORKERS", "4"))   # reads in flight at once
+# Reads in flight at once. Each worker process holds its own copy of the models: about 500-600 MB
+# resident (measured), so 2 workers need about 1.2 GB; raise it on a container with memory to spare.
+RAPID_WORKERS = int(os.getenv("RAPID_WORKERS", "2"))
 # Run RapidOCR in worker processes (on by default): a crash in its native code then fails only that read
 # instead of the whole server. Off (RAPID_ISOLATE=0): one engine shared by threads in the server process.
 RAPID_ISOLATE = os.getenv("RAPID_ISOLATE", "1").strip().lower() not in ("0", "false", "no", "off")
