@@ -61,10 +61,12 @@ def figure_text(ocr: OCRResult, kind: str) -> tuple[str, list[tuple[str, list[st
 
 def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
     lines = ocr.lines
-    heights = line_heights(ocr)
     # The second reads of figure lines are readings of a number, not of the text around it: they are
-    # kept out of the boxes the text fields compare readings of the same place with.
+    # kept out of the boxes the text fields compare readings of the same place with, and out of the
+    # line heights that pick the brand line and judge small print (a crop of a garbled line can come
+    # back as a few tall letters).
     reread_lines = {r.new_line for r in ocr.rereads if r.new_line is not None}
+    heights = {i: h for i, h in line_heights(ocr).items() if i not in reread_lines}
     boxes = {i: b for i, b in line_boxes(ocr).items() if i not in reread_lines}
     confs: dict[int, list[tuple[str, float]]] = {}
     for w in ocr.words:

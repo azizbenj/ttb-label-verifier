@@ -16,7 +16,7 @@ from app.pipeline import verify
 from app.readers import numbers as N
 from app.readers import tesseract as T
 from app.readers.base import LabelReading, OCRResult, OCRWord, View, text_height, upright_box
-from app.readers.extract import line_heights, prominent_line_index
+from app.readers.extract import extract_and_compare, line_heights, prominent_line_index
 
 from .conftest import requires_tesseract
 
@@ -248,6 +248,13 @@ def test_crop_lines_do_not_become_the_brand_line():
     heights = line_heights(ocr)
     assert prominent_line_index(ocr, heights) == 0 and heights[5] == 40.0
     assert text_height(words[0], ocr.views) == 40.0
+    # A garbled line shrunk as far as the crop goes can come back as a few tall letters: the brand line
+    # (and its fallback, shown when nothing resembles the brand) is still chosen among the page's lines.
+    small = View(rot=0, inverted=False, ink=np.zeros((60, 600), bool), size=(600, 60), scale=0.25, offset=(100, 400))
+    N.record(ocr, 2, ("alcohol",), "fake", ["I ee"], [OCRWord(text="ee", left=0, top=0, width=30, height=30, conf=40, line_index=0)], small)
+    app = Application(brand_name="NOT ON THE LABEL", class_type="x", alcohol_content="45%", net_contents="1.5 L")
+    brand = next(f for f in extract_and_compare(app, ocr) if f.key == "brand_name")
+    assert brand.verdict == Verdict.MISMATCH and brand.found == "OLD TOM DISTILLERY"
 
 
 # --- the reader's bookkeeping: crops, views, time limit -------------------------------------------------
