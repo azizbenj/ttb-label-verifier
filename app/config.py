@@ -75,6 +75,18 @@ class Thresholds:
     # (A mean-confidence floor alone is not used: a real beer can averages 41% and still matches 4 of 5 fields.)
     unreadable_min_words: int = 8
     unreadable_word_conf: int = 70
+    # Government warning layout (word boxes). Two OCR lines whose boxes overlap by this fraction of the
+    # smaller one's height and width are two readings of one printed line: only one is taken.
+    same_place_overlap: float = 0.5
+    # A word is outside the statement's column when its box ends before the column's left edge or starts
+    # after its right edge, allowing this fraction of the text height; the edge counts as a neighbouring
+    # column only when words lie beyond it on at least column_min_lines of the statement's rows (a single
+    # line sticking out may be words added to the statement, and is judged as wording).
+    column_tolerance: float = 0.25
+    column_min_lines: int = 2
+    # A run of lines outside the statement whose text matches a sentence of it at least this well
+    # (partial similarity) is that sentence printed a second time; a complete second statement is not reported.
+    duplicate_sentence: int = 90
 
 
 THRESHOLDS = Thresholds()
@@ -130,6 +142,11 @@ CLOUD_READER_AVAILABLE = bool(ANTHROPIC_API_KEY)
 BATCH_JOBS_KEPT = 50                                    # finished batch jobs kept in memory
 BATCH_JOB_TTL_S = 24 * 3600                             # ... and for at most this long
 BATCH_WORKERS = int(os.getenv("BATCH_WORKERS", str(min(4, os.cpu_count() or 2))))
+# Review decisions: with DECISION_LOG set, every pass / fail / skip answer (and undo) from the review queue
+# is appended to that file as one JSON line with what the tool had concluded about the label, never the
+# image; scripts/decisions_report.py turns it into pass rates per rule. Off when unset. README: "Learning
+# from decisions".
+DECISION_LOG = os.getenv("DECISION_LOG", "")
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 40_000_000                           # decoded size limit (a 20 MB PNG can decode to gigabytes)
 MIN_IMAGE_SIDE = 50                                     # smaller images cannot be read
