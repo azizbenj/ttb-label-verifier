@@ -725,67 +725,85 @@ a look or a defect caught with a different severity (FAIL where REVIEW was expec
 
 ### RapidOCR: the second engine, measured four ways (October 2026, local)
 
-Same machine, Tesseract 5.5.3, rapidocr-onnxruntime 1.4.4 on onnxruntime 1.31.0. The four arrangements:
+Measured on the build that ships (after the layout-aware warning and the second read of the figures were
+merged), on an 11-core Mac: Tesseract 5.5.3, rapidocr-onnxruntime 1.4.4 on onnxruntime 1.31.0. The arrangements:
 
-- **(a)** Tesseract alone (`RAPID_ESCALATION=0`), the previous build's behaviour;
-- **(b)** Tesseract, then RapidOCR as the escalation (shipped default; `LABEL_TIME_BUDGET_S=5`, and `0` for the
-  unbudgeted ceiling);
+- **(a)** Tesseract alone (`RAPID_ESCALATION=0`), the behaviour before this change;
+- **(b)** Tesseract, then RapidOCR as the escalation, with the 5 s time budget (the shipped default; the same
+  runs with `LABEL_TIME_BUDGET_S=0` gave identical verdicts);
 - **(c)** RapidOCR as the primary reader, alone (`--reader rapid`, `RAPID_ESCALATION=0`);
-- **(d)** RapidOCR primary with Tesseract's two passes as its escalation (`--reader rapid+tesseract`).
+- **(d)** RapidOCR primary with Tesseract's two upright passes as its escalation (`--reader rapid+tesseract`).
 
 ```bash
-RAPID_ESCALATION=0 python scripts/bench.py                              # (a); drop the variable for (b)
-python scripts/bench.py --set batch -j 4 [--reader rapid|rapid+tesseract]
-python scripts/real_labels.py --defects -j 1 [--reader ...]             # -j 1: one label at a time, so the
-python scripts/stress_test.py [--reader ...]                            # times are per-label latencies
+RAPID_ESCALATION=0 python scripts/real_labels.py --defects -j 1        # (a); drop the variable for (b)
+python scripts/real_labels.py --defects -j 1 --reader rapid            # (c); rapid+tesseract for (d)
+python scripts/real_labels.py --csv scripts/calibration_labels.csv --defects
+python scripts/bench.py [--set batch -j 4] [--reader ...]
+python scripts/stress_test.py [--reader ...]
 ```
 
-**Real approved labels** (20 labels, 104 filled fields, one label at a time):
+| | (a) Tesseract | **(b) + RapidOCR escalation** | (c) RapidOCR alone | (d) RapidOCR + Tesseract |
+|---|---|---|---|---|
+| **Real labels (20, 104 fields, one at a time)** | | | | |
+| Fields with the expected verdict | 58/104 | **62/104** | 44/104 | 59/104 |
+| Flagged for review where MATCH was expected | 26 | 28 | 21 | 24 |
+| False alarms (MISMATCH / NOT FOUND for text on the label) | 18 | **12** | 37 | 19 |
+| Accepted without the expected look | 2 | 2 | 2 | 2 |
+| Warning pass / review / fail | 8 / 9 / 3 | 8 / 9 / 3 | 0 / 2 / 18 | 4 / 6 / 10 |
+| Planted wrong ABV or volume reported as MATCH | 0 of 40 | 0 of 40 | 0 of 40 | 0 of 40 |
+| Time per label, median / max | 1.45 s / 2.74 s | 2.48 s / 4.21 s | 1.23 s / 2.17 s | 1.87 s / 2.77 s |
+| **Calibration set (167 labels, 913 fields, four at a time)** | | | not run | not run |
+| Fields with the expected verdict | 523/913 | **552/913** | | |
+| False alarms | 175 | **130** | | |
+| Accepted without the expected look | 20 | 18 | | |
+| Warning pass / review / fail | 47 / 83 / 37 | 47 / 83 / 37 | | |
+| Planted defects reported as MATCH | 0 of 330 | 0 of 330 | | |
+| Time per label, median / max (four at a time) | 2.53 s / 7.46 s | 3.74 s / 7.60 s | | |
+| **Samples (15, one at a time)** | 15/15 | 15/15 | 11/15 | 13/15 |
+| median / max | 0.90 s / 1.12 s | 1.83 s / 3.10 s | 0.92 s / 1.78 s | 1.19 s / 1.86 s |
+| **Batch (250, four at a time)** | 248/250 | **249/250** | 108/250 | 158/250 |
+| median / p95 / max | 0.54 / 1.39 / 1.71 s | 0.62 / 3.24 / 5.39 s | 1.96 / 2.47 / 3.67 s | 2.07 / 2.83 / 4.00 s |
+| Planted defects reported as PASS (samples and batch) | 0 | 0 | 0 | 0 |
 
-| | (a) Tesseract | (b) + RapidOCR escalation, no budget | (b) with the 5 s budget | (c) RapidOCR alone | (d) RapidOCR + Tesseract |
-|---|---|---|---|---|---|
-| Fields with the expected verdict | 56/104 | **60/104** | 60/104 | 43/104 | 59/104 |
-| Flagged for review (NEAR MATCH where MATCH was expected) | 27 | 29 | 29 | 22 | 24 |
-| False alarms (MISMATCH / NOT FOUND for text on the label) | 19 | **13** | 13 | 37 | 19 |
-| Accepted without the expected look | 2 | 2 | 2 | 2 | 2 |
-| Warning pass / review / fail | 5 / 11 / 4 | 5 / 11 / 4 | 5 / 11 / 4 | 0 / 2 / 18 | 3 / 7 / 10 |
-| Planted wrong ABV / volume reported as MATCH | 0 / 40 | 0 / 40 | 0 / 40 | 0 / 40 | 0 / 40 |
-| Time per label, median / max | 1.45 s / 2.97 s | 2.97 s / 5.13 s | 2.97 s / 5.13 s | 1.91 s / 3.24 s | 2.66 s / 3.86 s |
+**Stress test, (a) against (b):** no condition got worse, five got better: Didot 10/15 → 11/15, Chalkduster
+brand 13/15 → 15/15, half resolution 14/15 → 15/15, tilted 4° 14/15 → 15/15 (Herculanum 12/15, third
+resolution 14/15 and Copperplate 14/15 unchanged; every other condition 15/15 in both). The one missed defect
+in both is the Copperplate brand-capitalization sample described above (the typeface has no lowercase).
+Medians roughly double under (b) (1.2 s → 2.3-3.6 s, four labels at a time) because most stress labels carry a
+planted defect, and a label that really is wrong always pays for every optional pass.
 
-The escalation turns six false alarms into the expected verdict (brand names in a distressed display face, white
-text over a painting, small white print on dark green, the condensed script name) at a cost of about 1.5 s on
-the labels that need it; here every real label fits the 5 s budget one at a time, so the budgeted and unbudgeted
-columns are the same. The same real labels read with `RAPID_INPUT=color` instead of the grayscale came back
-59/104 with 13 false alarms, so grayscale stays. With the cross-engine trust rule switched off (RapidOCR scores
-competing as read) the result is in the paragraph below the tables.
+What the escalation buys, read honestly: six fewer false alarms on the 20 hand-checked labels and 45 fewer on
+the 167 calibration labels, all of them brand names, class/types and bottler lines in display faces, white or
+small text on photographs and coloured panels, which RapidOCR reads and Tesseract does not. The warning results
+do not move: RapidOCR's reading of a statement is used only when Tesseract found none (next paragraph). It never
+let a planted defect through on any set. The cost is time on the labels that need it, about one second of
+RapidOCR plus the re-matching; clean labels that pass on the first read never pay it (the batch median barely
+moves, its p95 does). The time budget never had to skip anything in these runs on this machine.
 
-RapidOCR alone (c) is clearly worse on this set: it reads the display typefaces but often runs words together
-(`GLENMORAR`, `IndiaPaleAle`, `WOMENSHOULDNOTDRINKALCOHOLICBEVERAGESDURINGPREGNANCY`) and on small print it
-drops whole lines (on a clean black-on-white tequila label it lost the `GOVERNMENT WARNING: (1) According to the
-Surgeon General` line entirely), which fails the warning check on 18 of 20 labels and turns clean fields into
-near misses; Tesseract as its escalation (d) repairs most of the fields but not the warnings. These are measured,
-not tuned: a despaced comparison would likely close part of the gap, but (b) already has the best numbers on
-every count that matters, so the default stays Tesseract first. In the escalation (b) the run-together lines do
-no harm: the disagreeing-readings rule compares readings with their spaces removed, and the warning keeps
-Tesseract's view.
+Why not RapidOCR first. As the primary reader (c) it is worse on every set: in small print it often runs words
+together (`GLENMORAR`, `IndiaPaleAle`, `WOMENSHOULDNOTDRINKALCOHOLICBEVERAGESDURINGPREGNANCY`) and sometimes drops
+a whole line (on a clean black-on-white tequila label it lost the `GOVERNMENT WARNING: (1) According to the Surgeon
+General` line), which fails the warning's word-for-word and capitals checks on 18 of 20 real labels and turns
+generated labels' clean fields into near misses (108/250). Tesseract as its escalation (d) repairs most fields on
+the real labels but not the generated ones. These numbers are untuned: a comparison with the spaces removed would
+likely close part of the gap, but (b) is already best on every count that matters, so Tesseract stays first.
 
-**Synthetic sets** (every planted defect caught in every arrangement; the batch set measured four labels at a
-time, so its times are inflated):
+Two rules keep RapidOCR's habits from hurting in (b), both covered by tests:
 
-| Set | (a) | (b), 5 s budget | (b), no budget | (c) | (d) |
-|---|---|---|---|---|---|
-| Samples (15), expected verdict | 15/15 | 15/15 | 15/15 | 11/15 | 13/15 |
-| Samples, median / max | 1.26 s / 1.48 s | 2.89 s / 4.50 s | 3.06 s / 6.91 s | 2.81 s / 5.87 s | 3.61 s / 4.45 s |
-| Batch (250), expected verdict | BATCH_A | BATCH_B | BATCH_B0 | BATCH_C | BATCH_D |
-| Batch, median / p95 | BATCH_A_T | BATCH_B_T | BATCH_B0_T | BATCH_C_T | BATCH_D_T |
+- **Warning: Tesseract's reading first.** The statement is searched without RapidOCR's lines, and with them only
+  when that finds nothing. Letting RapidOCR's reading compete turned one real label's warning from REVIEW into
+  FAIL (its `GOVERNMENTWARNING:` fails the capitals check); before that, sharing Tesseract's frame made it worse on
+  six. RapidOCR's read is also a frame of its own (`View.engine`), so its lines are never taken for Tesseract's.
+- **Disagreeing readings across engines** (`RAPID_TRUST_CONF`, in the thresholds table): Tesseract's word
+  confidences and RapidOCR's line scores are not on one scale, so for the disagreeing-readings rule a RapidOCR line
+  scored 0.90 or more counts as certain. A confident RapidOCR reading that says something else at the same place
+  ("BARK" where Tesseract read "BARN") forces a look; a less confident one competes with its score as read.
 
-The sample set's times grew with the escalation because eleven of its fifteen labels carry a planted defect:
-a label that really is wrong always has something unresolved, so it always pays for the extra passes. That is
-the design (the time goes where the doubt is), but it is also why the budget matters on a slow machine. The
-timings in this table were taken while other OCR jobs shared the machine (the (a) samples measured 0.67 s
-median on a quiet day); the verdict counts do not depend on that.
-
-**Stress test** (the 15 sample labels per condition): STRESS_SUMMARY
+Other measurements behind the defaults: RapidOCR reading the colour image (`RAPID_INPUT=color`) instead of
+Tesseract's preprocessed grayscale came back 59/104 against 60/104 on the real labels (measured before the merges)
+and costs a second resize, so grayscale stays. With four ONNX Runtime threads a read took 1.2 s per label (one
+thread 2.6 s, the runtime's default 1.4 s); four concurrent reads of one shared engine took 2.7 s together and
+returned exactly the sequential results.
 
 ## Assumptions
 
@@ -808,13 +826,17 @@ median on a quiet day); the verdict counts do not depend on that.
   survives when the second read of the line repeats it or the line was only read in a turned view.
 - Tesseract struggles with decorative, script or outlined brand typography and with text on busy backgrounds. The
   guided matching tolerates a fair amount of noise, but a brand set in a script face may come back NOT FOUND.
-  The RapidOCR escalation closes some of these (6 of 19 false alarms on the real labels), not all: a
+  The RapidOCR escalation closes some of these (6 of 18 false alarms on the 20 real labels, 45 of 175 on the
+  calibration set), not all: a
   handwritten keg collar, a brand on a tight curve and the smallest sideways print still fail, and RapidOCR
   itself sometimes runs words together (`GLENMORAR`), which the matcher reads as a near miss.
 - The time budget trades accuracy for time on a slow machine: when the first read and the turned passes have
   used most of the 5 seconds, the escalation is skipped and the label keeps its first-pass verdict (named in
   the reader line). On a shared vCPU that is expected to be the common case for hard labels; the measured
   gains above assume the escalation ran.
+- The budget is checked before each optional pass, against that pass's average cost; a pass that runs slower
+  than its average still finishes. With four batch labels at a time on this machine the slowest label took
+  5.4 s against the 5 s budget. The RapidOCR read itself is bounded separately by `RAPID_TIMEOUT_S` (10 s).
 - A RapidOCR read cannot be interrupted: one that runs past `RAPID_TIMEOUT_S` is abandoned (the label goes on
   without it) but finishes on its thread, holding one of the `RAPID_WORKERS` slots until it does.
 - An OpenCV 5.0.0 `resize` of an unpadded 1799-pixel-wide label crashed the process once on macOS/arm64 while
