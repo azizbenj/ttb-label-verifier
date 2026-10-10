@@ -2,14 +2,21 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
-# Local OCR engine + English model (~30 MB). No network access is needed at runtime.
+# Local OCR engine + English model (~30 MB). No network access is needed at runtime (RapidOCR's
+# models come with its Python wheel, below).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# RapidOCR last and without dependency resolution: its metadata names the GUI build of OpenCV, which
+# would need libGL; requirements.txt already holds everything it needs with the headless build. Its
+# wheel is pure Python plus the three ONNX models (about 16 MB); onnxruntime and opencv-python-headless
+# add roughly 190 MB to the image. No apt package is needed for them.
+RUN pip install -r requirements.txt \
+    && pip install --no-deps rapidocr-onnxruntime==1.4.4 \
+    && python -c "import rapidocr_onnxruntime, cv2, onnxruntime"
 
 # Runtime files only: the sample labels feed the "Try a sample" menu and the sample batch.
 COPY app ./app
