@@ -17,7 +17,8 @@ jobs:
       - name: Install Tesseract
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        # RapidOCR without its dependency on the GUI build of OpenCV, as the Dockerfile installs it
+        run: pip install -r requirements-dev.txt && pip install --no-deps rapidocr-onnxruntime==1.4.4
       - name: Run tests (including OCR end-to-end)
         run: pytest -q
         env:

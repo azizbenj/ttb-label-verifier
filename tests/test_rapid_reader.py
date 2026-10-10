@@ -185,6 +185,7 @@ def test_a_confident_rapid_reading_that_disagrees_forces_a_look(monkeypatch):
     assert brand.verdict == Verdict.NEAR_MATCH and "BARK BREW" in brand.note, brand
 
 
+@requires_rapid
 def test_timeout_is_a_reader_error(monkeypatch):
     import time
 
@@ -270,6 +271,7 @@ def _isolated(monkeypatch):
     R._discard_pool(R._procs) if R._procs is not None else None
 
 
+@requires_rapid
 def test_a_crashing_worker_is_a_reader_error_and_the_pool_recovers(monkeypatch):
     from tests import _rapid_crash
     _isolated(monkeypatch)
@@ -280,6 +282,7 @@ def test_a_crashing_worker_is_a_reader_error_and_the_pool_recovers(monkeypatch):
     assert R.run_isolated(arr, timeout=30, fn=_rapid_crash.echo)[0][1] == "shape 32x64"
 
 
+@requires_rapid
 def test_a_slow_worker_times_out_without_blocking_the_caller(monkeypatch):
     from tests import _rapid_crash
     _isolated(monkeypatch)
