@@ -190,7 +190,7 @@ class RapidOCRReader:
         lines, words, mean_conf = lines_from_result(res)
         ocr = OCRResult(text="\n".join(lines), lines=lines, words=words, ink=ink, mean_conf=mean_conf,
                         engine=engine_label(), ms=(perf_counter() - t0) * 1000,
-                        views=[View(rot=0, inverted=False, ink=ink, size=img.size)],
+                        views=[View(rot=0, inverted=False, ink=ink, size=img.size, engine=ENGINE_KEY)],
                         source=(img, image, skew, scaled_size), skew=skew)
         return LabelReading(ocr=ocr)
 
@@ -260,7 +260,8 @@ def add_rapid_view(ocr: OCRResult, input_mode: str = RAPID_INPUT) -> bool:
         log.warning("RapidOCR escalation skipped: %s", e)
         return False
     lines2, words2, _ = lines_from_result(res, min_conf=RAPID_MIN_LINE_CONF)
-    added = append_view(ocr, lines2, words2, View(rot=0, inverted=False, ink=ocr.views[0].ink, size=img.size))
+    added = append_view(ocr, lines2, words2, View(rot=0, inverted=False, ink=ocr.views[0].ink, size=img.size,
+                                                  engine=ENGINE_KEY))
     ocr.ms += (perf_counter() - t0) * 1000
     ocr.engine += " + rapidocr pass"
     return added

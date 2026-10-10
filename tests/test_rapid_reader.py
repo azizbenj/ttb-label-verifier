@@ -217,3 +217,21 @@ def test_healthz_reports_rapidocr(monkeypatch):
     body = client.get("/healthz").json()
     assert body["rapidocr"] is None and body["rapid_escalation"] is False
     assert "RapidOCR" not in main.reader_info()
+
+
+def test_run_together_rapid_lines_do_not_replace_tesseract_warning_lines():
+    """RapidOCR often drops the spaces in small print. Its view is searched as a frame of its own, so a
+    run-together reading of the same place never replaces Tesseract's word-for-word one."""
+    from app.config import MANDATED_WARNING
+    from app.models import Status
+    from app.warning import check_warning
+    text = MANDATED_WARNING.split()
+    tess_lines = [" ".join(text[i:i + 9]) for i in range(0, len(text), 9)]
+    ocr = _tesseract_like(tess_lines)
+    rapid_lines = [line.replace(" ", "") if k % 2 else line for k, line in enumerate(tess_lines)]
+    res = [[_quad(100, 100 + 100 * k, 600, 40), line, 0.97] for k, line in enumerate(rapid_lines)]
+    lines2, words2, _ = R.lines_from_result(res)
+    R.append_view(ocr, lines2, words2, View(rot=0, inverted=False, ink=ocr.views[0].ink, size=ocr.views[0].size,
+                                           engine=R.ENGINE_KEY))
+    w = check_warning(ocr.lines, ocr.words, ocr.ink, views=ocr.views)
+    assert w.present and w.wording == Status.PASS, (w.wording_note, w.found_text)

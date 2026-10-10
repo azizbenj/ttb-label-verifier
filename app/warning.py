@@ -688,12 +688,16 @@ def check_warning(lines: list[str], words: list[OCRWord] | None = None, ink: np.
                   *, bold_hint: bool | None = None, views=None, th: Thresholds = THRESHOLDS) -> WarningResult:
     # Lines are grouped by frame: the views that share a coordinate system (the upright read and the
     # contrast read of the same image) are searched together, so a heading read in one and a body read
-    # in the other still make one statement; each turned view is a frame of its own.
+    # in the other still make one statement; each turned view is a frame of its own. A second engine's
+    # read (RapidOCR) is a frame of its own too: it often runs words together ("ALCOHOLICBEVERAGES"),
+    # and mixed into Tesseract's frame its line could be taken instead of Tesseract's reading of the same
+    # place (measured: the warning got worse on 6 of 20 real labels); alone, it wins only when its own
+    # statement reads closer to the required text.
     frame_of_view: dict[int, int] = {}
     if views:
         keys: dict[tuple, int] = {}
         for v_idx, v in enumerate(views):
-            frame_of_view[v_idx] = keys.setdefault((v.rot, tuple(v.size)), len(keys))
+            frame_of_view[v_idx] = keys.setdefault((v.rot, tuple(v.size), getattr(v, "engine", "")), len(keys))
     line_views: list[int] = [0] * len(lines)
     line_tops: list[float] = [float(i) for i in range(len(lines))]
     by_line: dict[int, list[OCRWord]] = {}

@@ -50,6 +50,7 @@ class View:
     inverted: bool
     ink: np.ndarray               # True = ink, in this view's coordinates
     size: tuple[int, int]         # (width, height) of this view
+    engine: str = ""              # "rapid" for a RapidOCR read: searched as a frame of its own by the warning check
 
 
 def upright_box(word: "OCRWord", views: list[View]) -> tuple[int, int, int, int]:
