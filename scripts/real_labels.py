@@ -137,6 +137,7 @@ def main() -> None:
     tally = {"right": 0, "conservative": 0, "false_alarm": 0, "accepted": 0}
     by_kind: dict[str, dict] = {}
     warn = {"PASS": 0, "REVIEW": 0, "FAIL": 0}
+    overall = {"PASS": 0, "REVIEW": 0, "FAIL": 0}
     times = []
     dump = []
     print(f"{'record':16} {'kind':8} {'overall':7} {'time':>6}  fields that did not come back as expected")
@@ -149,11 +150,10 @@ def main() -> None:
         kt["labels"] += 1
         kt["warn_pass"] += r.warning.overall.value == "PASS"
         problems = []
+        dump += dump_rows(row, r, "clean", expect)
         for f in r.fields:
             want = expect.get(f.key, "skip" if not row[f.key] else "match")
             got = f.verdict.value
-            dump.append({"ttbid": row["ttbid"], "kind": row["kind"], "field": f.key, "want": want, "verdict": got,
-                         "expected": f.expected, "found": f.found, "note": f.note})
             if want == "skip":
                 continue
             if (want == "match" and got == "MATCH") or (want == "review" and got == "NEAR MATCH") or \
@@ -170,12 +170,7 @@ def main() -> None:
             else:
                 tally["false_alarm"] += 1; kt["false_alarm"] += 1
                 problems.append(f"{f.key}: {got} ({f.found!r})")
-        dump.append({"ttbid": row["ttbid"], "kind": row["kind"], "field": "warning", "want": "pass",
-                     "verdict": r.warning.overall.value, "expected": "", "found": r.warning.found_text,
-                     "note": " | ".join(n for n in (r.warning.wording_note, r.warning.heading_caps_note,
-                                                    r.warning.heading_bold_note) if n)})
-        dump.append({"ttbid": row["ttbid"], "kind": row["kind"], "field": "overall", "want": "",
-                     "verdict": r.overall.value, "expected": "", "found": "", "note": f"{r.timings.total_ms:.0f} ms"})
+        overall[r.overall.value] += 1
         w = r.warning
         wtxt = f"warning {w.overall.value}" + ("" if w.overall.value == "PASS" else
                                                 f" (present={w.present} wording={w.wording.value} caps={w.heading_caps.value} bold={w.heading_bold.value})")
@@ -188,6 +183,7 @@ def main() -> None:
           f"{tally['false_alarm']} false alarms (MISMATCH or NOT FOUND for text that is on the label), "
           f"{tally['accepted']} accepted without the look the ground truth expects")
     print(f"government warning: {warn['PASS']} pass, {warn['REVIEW']} review, {warn['FAIL']} fail (all {len(rows)} labels carry the warning)")
+    print(f"overall on the correct labels: {overall['PASS']} PASS, {overall['REVIEW']} REVIEW, {overall['FAIL']} FAIL")
     print(f"timing: median {statistics.median(times) / 1000:.2f} s, max {max(times) / 1000:.2f} s")
     if errors:
         print(f"{len(errors)} label(s) could not be run: {', '.join(errors)}")
@@ -196,12 +192,9 @@ def main() -> None:
             fields = t["right"] + t["conservative"] + t["false_alarm"] + t["accepted"]
             print(f"  {k:8} {t['labels']:3} labels · fields {t['right']}/{fields} as expected, {t['conservative']} review, "
                   f"{t['false_alarm']} false alarms, {t['accepted']} accepted · warning pass {t['warn_pass']}/{t['labels']}")
-    if a.json:
-        Path(a.json).write_text(json.dumps(dump, indent=1))
-        print(f"wrote {len(dump)} rows to {a.json}")
-
     if a.defects:
-        missed = caught = 0
+        missed = caught = passed = 0
+        planted_overall = {"PASS": 0, "REVIEW": 0, "FAIL": 0}
         def planted(row):
             out = []
             for key, val in (("alcohol_content", wrong_abv(row["alcohol_content"])), ("net_contents", wrong_volume(row["net_contents"]))):
@@ -215,14 +208,50 @@ def main() -> None:
         with ThreadPoolExecutor(a.j) as pool:
             planted_results = list(pool.map(planted, rows))
         for row, outs in zip(rows, planted_results):
+            expect = dict(e.split("=") for e in row["expect"].split(";") if e)
             for key, val, r in outs:
+                dump.extend(dump_rows(row, r, f"planted_{key}", expect, planted=key))
+                planted_overall[r.overall.value] += 1
                 v = next(f for f in r.fields if f.key == key).verdict.value
                 if v == "MATCH":
                     missed += 1
                     print(f"  MISSED: {row['ttbid']} {key} filed as {val!r} came back MATCH")
                 else:
                     caught += 1
-        print(f"planted defects on real labels: {caught} caught, {missed} reported as MATCH")
+                if r.overall.value == "PASS":   # the outcome a compliance check must never produce
+                    passed += 1
+                    print(f"  PASSED: {row['ttbid']} with a wrong {key} ({val!r}) came back PASS")
+        print(f"planted defects on real labels: {caught} caught, {missed} reported as MATCH, {passed} labels PASS; "
+              f"overall {planted_overall['FAIL']} FAIL, {planted_overall['REVIEW']} REVIEW, {planted_overall['PASS']} PASS")
+    if a.json:
+        Path(a.json).write_text(json.dumps(dump, indent=1))
+        print(f"wrote {len(dump)} rows to {a.json}")
+    if a.defects and (missed or passed):
+        sys.exit(1)   # a planted defect taken for a MATCH, or a planted label that PASSed
+
+
+def dump_rows(row: dict, r, run: str, expect: dict, planted: str | None = None) -> list[dict]:
+    """One row per field, one for the warning and one for the overall verdict of one run of one label.
+    ``want`` is the ground truth: match / review / absent / skip, or "defect" for the field a planted run
+    filed wrong. ``signals`` are the measurements the clarity of a MISMATCH or NOT FOUND is decided from."""
+    base = {"ttbid": row["ttbid"], "kind": row["kind"], "run": run}
+    out = []
+    for f in r.fields:
+        want = "defect" if f.key == planted else expect.get(f.key, "skip" if not row[f.key] else "match")
+        out.append({**base, "field": f.key, "want": want, "verdict": f.verdict.value, "expected": f.expected,
+                    "found": f.found, "note": f.note, "clear": getattr(f, "clear", None),
+                    "signals": getattr(f, "signals", None)})
+    w = r.warning
+    out.append({**base, "field": "warning", "want": "pass", "verdict": w.overall.value, "expected": "",
+                "found": w.found_text, "present": w.present, "wording": w.wording.value,
+                "caps": w.heading_caps.value, "bold": w.heading_bold.value,
+                "clear": getattr(w, "clear", None),
+                "note": " | ".join(n for n in (w.wording_note, w.heading_caps_note, w.heading_bold_note) if n)})
+    out.append({**base, "field": "overall", "want": "", "verdict": r.overall.value, "expected": "", "found": "",
+                "note": f"{r.timings.total_ms:.0f} ms", "ms": r.timings.total_ms, "summary": r.summary,
+                "read_confidence": r.read_confidence, "signals": getattr(r, "signals", None),
+                "reader": r.reader})
+    return out
 
 
 if __name__ == "__main__":
