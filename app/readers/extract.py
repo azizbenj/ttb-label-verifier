@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import statistics
 
+from ..config import RAPID_TRUST_CONF
 from ..matching import compare_alcohol, compare_country, compare_volume, locate_and_compare, not_found
 from ..models import Application, FieldResult, Verdict
 from ..normalize import normalize_loose, normalize_strict
 from .base import OCRResult, OCRWord, upright_box
+
+
+def conflict_confidence(w: OCRWord) -> float:
+    """The confidence a word carries into the disagreeing-readings rule (``conflicting_reading``).
+
+    Tesseract's word confidences and RapidOCR's line scores are not on one scale, so a RapidOCR
+    reading at or above RAPID_TRUST_CONF counts as certain: it is never dismissed as the less sure
+    reading, and a Tesseract reading of the same place never overrides it. Below that it competes
+    with its score as read. The word's own ``conf`` is left alone for everything else."""
+    return 100.0 if w.engine == "rapid" and w.conf >= RAPID_TRUST_CONF else w.conf
 
 
 def line_heights(ocr: OCRResult) -> dict[int, float]:
@@ -50,7 +61,7 @@ def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
     boxes = line_boxes(ocr)
     confs: dict[int, list[tuple[str, float]]] = {}
     for w in ocr.words:
-        confs.setdefault(w.line_index, []).append((w.text, w.conf))
+        confs.setdefault(w.line_index, []).append((w.text, conflict_confidence(w)))
     brand_line = prominent_line_index(ocr, heights)
     return [
         locate_and_compare("brand_name", app.brand_name, lines, preferred_line=brand_line, line_heights=heights,

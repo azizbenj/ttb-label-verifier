@@ -152,13 +152,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("-j", type=int, default=4)
+    ap.add_argument("--reader", default="tesseract", choices=["tesseract", "rapid", "rapid+tesseract"],
+                    help="the primary reader (RapidOCR escalation of tesseract follows RAPID_ESCALATION)")
     a = ap.parse_args()
     specs = gen.sample_specs()
     conditions = [("Baseline (DejaVu)", None, None, None, None)]
     conditions += [(f"Typeface: {n}", str(r), str(b), None, None) for n, (r, b) in FAMILIES.items() if r.exists()]
     conditions += [(f"Display: {n}", None, None, str(p), None) for n, p in DISPLAY.items() if p.exists()]
     conditions += [(f"Image: {n}", None, None, None, fn) for n, fn in DEGRADE.items()]
-    reader = TesseractReader()
+    if a.reader.startswith("rapid"):
+        from app.readers.rapid import RapidOCRReader
+        reader = RapidOCRReader(escalate_with_tesseract=a.reader == "rapid+tesseract")
+    else:
+        reader = TesseractReader()
     print(f"{'condition':38} {'ok':>6} {'missed defects':>15} {'clean flagged':>14}  median")
     for label, reg, bold, disp, degrade in conditions:
         jobs = []

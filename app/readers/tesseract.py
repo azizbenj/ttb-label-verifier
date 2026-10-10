@@ -12,9 +12,9 @@ import pytesseract
 from PIL import Image, ImageFilter, ImageOps
 from pytesseract import Output
 
-from ..config import (DESKEW_MAX_DEG, DESKEW_MIN_DEG, TESSERACT_CMD, TESSERACT_EXTRA_TIMEOUT_S, TESSERACT_MAX_PIXELS,
-                      TESSERACT_MAX_SIDE, TESSERACT_MAX_WIDTH, TESSERACT_MIN_WIDTH, TESSERACT_PSM, TESSERACT_PSM_EXTRA,
-                      TESSERACT_TIMEOUT_S)
+from ..config import (DESKEW_MAX_DEG, DESKEW_MIN_DEG, RAPID_ESCALATION, TESSERACT_CMD, TESSERACT_EXTRA_TIMEOUT_S,
+                      TESSERACT_MAX_PIXELS, TESSERACT_MAX_SIDE, TESSERACT_MAX_WIDTH, TESSERACT_MIN_WIDTH, TESSERACT_PSM,
+                      TESSERACT_PSM_EXTRA, TESSERACT_TIMEOUT_S)
 from ..images import flatten
 from ..normalize import normalize_loose
 from .base import LabelReading, OCRResult, OCRWord, ReaderError, View
@@ -226,6 +226,16 @@ class TesseractReader:
     def read(self, image: Image.Image) -> LabelReading:
         t0 = perf_counter()
         img, ink, skew, scaled_size = preprocess_with_skew(image)
+        lines, words, mean_conf = self.read_preprocessed(img)
+        mode = f"psm {self.psm}" + (f"+{self.extra_psm}" if self.extra_psm is not None else "")
+        ocr = OCRResult(text="\n".join(lines), lines=lines, words=words, ink=ink, mean_conf=mean_conf,
+                        engine=f"tesseract {tesseract_version() or '?'} ({mode})", ms=(perf_counter() - t0) * 1000,
+                        views=[View(rot=0, inverted=False, ink=ink, size=img.size)], source=(img, image, skew, scaled_size),
+                        skew=skew)
+        return LabelReading(ocr=ocr)
+
+    def read_preprocessed(self, img: Image.Image) -> tuple[list[str], list[OCRWord], float | None]:
+        """The two merged passes over an image ``preprocess_with_skew`` already prepared."""
         second = None
         if self.extra_psm is not None and self.extra_psm != self.psm:
             second = _PASSES.submit(self._pass, img, self.extra_psm)
@@ -247,12 +257,16 @@ class TesseractReader:
                 if w.line_index in moved:
                     w.line_index = moved[w.line_index]
                     words.append(w)
-        mode = f"psm {self.psm}" + (f"+{self.extra_psm}" if self.extra_psm is not None else "")
-        ocr = OCRResult(text="\n".join(lines), lines=lines, words=words, ink=ink, mean_conf=mean_conf,
-                        engine=f"tesseract {tesseract_version() or '?'} ({mode})", ms=(perf_counter() - t0) * 1000,
-                        views=[View(rot=0, inverted=False, ink=ink, size=img.size)], source=(img, image, skew, scaled_size),
-                        skew=skew)
-        return LabelReading(ocr=ocr)
+        return lines, words, mean_conf
+
+    def escalate(self, reading: LabelReading) -> bool:
+        """The second engine: when the turned and contrast passes still leave something missing, the
+        pipeline asks for one RapidOCR read of the upright image (app/readers/rapid.py). Off with
+        RAPID_ESCALATION=0, and skipped silently when the package is not installed."""
+        if not RAPID_ESCALATION:
+            return False
+        from .rapid import add_rapid_view
+        return add_rapid_view(reading.ocr)
 
     # Lines from the extra passes must look like text: reading horizontal print sideways produces
     # low-confidence fragments, and those must not be matched against the application.

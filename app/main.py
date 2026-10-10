@@ -22,13 +22,14 @@ from PIL import Image
 from . import batch as batchmod
 from .evidence import crop_for, bold_meter_percent, evidence_for, pin_labels
 from .config import (CLAUDE_MODEL, CLOUD_READER_AVAILABLE, FIELD_BY_KEY, FIELDS, MANDATED_WARNING, MAX_BATCH_UPLOAD_BYTES,
-                     MAX_IMAGE_BYTES, OCR_ENGINE, THRESHOLDS)
+                     MAX_IMAGE_BYTES, OCR_ENGINE, RAPID_ESCALATION, THRESHOLDS)
 from .decisions import prompt_map
 from .images import MAX_LABEL_PARTS, ImageError, flatten, open_image, stitch
 from .models import Application, Status, VerificationResult, Verdict
 from .normalize import parse_alcohol, parse_net_contents
 from .pipeline import verify
 from .readers.base import LabelReader, ReaderError
+from .readers.rapid import rapid_version
 from .readers.tesseract import TesseractReader, parse_psm, tesseract_version
 
 log = logging.getLogger("labelcheck")
@@ -146,6 +147,13 @@ def get_reader(name: str | None, psm: str | None = None) -> LabelReader:
             from .readers.claude_vision import ClaudeVisionReader
             _readers["claude"] = ClaudeVisionReader()
         return _readers["claude"]
+    if name == "rapid":
+        if rapid_version() is None:
+            raise UserError("The RapidOCR reader is not installed on this server. Please choose local OCR (Tesseract).")
+        if "rapid" not in _readers:
+            from .readers.rapid import RapidOCRReader
+            _readers["rapid"] = RapidOCRReader()
+        return _readers["rapid"]
     if "tesseract" not in _readers:
         _readers["tesseract"] = TesseractReader()
     return _readers["tesseract"]
@@ -153,6 +161,8 @@ def get_reader(name: str | None, psm: str | None = None) -> LabelReader:
 
 def reader_info() -> str:
     parts = [f"Local OCR · Tesseract {tesseract_version() or 'not installed'}"]
+    if rapid_version():
+        parts.append(f"RapidOCR {rapid_version()}" + (" (escalation on)" if RAPID_ESCALATION else ""))
     if CLOUD_READER_AVAILABLE:
         parts.append(f"Cloud reader · {CLAUDE_MODEL}")
     return " · ".join(parts)
@@ -387,9 +397,10 @@ def index(request: Request):
 @app.get("/healthz")
 def healthz():
     """503 when the default reader cannot run, so a health check does not route traffic to a broken container."""
-    v = tesseract_version()
-    ok = CLOUD_READER_AVAILABLE if OCR_ENGINE == "claude" else v is not None
-    return JSONResponse({"status": "ok" if ok else "degraded", "tesseract": v, "cloud_reader": CLOUD_READER_AVAILABLE,
+    v, rv = tesseract_version(), rapid_version()
+    ok = {"claude": CLOUD_READER_AVAILABLE, "rapid": rv is not None}.get(OCR_ENGINE, v is not None)
+    return JSONResponse({"status": "ok" if ok else "degraded", "tesseract": v, "rapidocr": rv,
+                         "rapid_escalation": RAPID_ESCALATION and rv is not None, "cloud_reader": CLOUD_READER_AVAILABLE,
                          "default_reader": OCR_ENGINE, "batch_jobs": len(batchmod.JOBS),
                          "deployment": os.getenv("RAILWAY_DEPLOYMENT_ID")}, status_code=200 if ok else 503)
 

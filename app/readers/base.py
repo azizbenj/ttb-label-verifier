@@ -30,6 +30,7 @@ class OCRWord:
     conf: float
     line_index: int  # index into OCRResult.lines
     view: int = 0    # index into OCRResult.views: the coordinates are those of that view's image
+    engine: str = ""  # which engine read it ("" = Tesseract, "rapid" = RapidOCR): their confidences differ in meaning
 
     @property
     def right(self) -> int:
@@ -75,6 +76,7 @@ class OCRResult:
     mean_conf: float | None = None
     views: list[View] = field(default_factory=list)   # views[0] is the upright image
     extended: bool = False          # the extra rotated / inverted passes have run
+    escalated: bool = False         # the second engine (RapidOCR) has read the label
     source: object = None           # the preprocessed upright image, kept so extra passes need not redo it
     skew: float = 0.0               # degrees the image was turned to straighten it (boxes refer to the straightened image)
 

@@ -6,6 +6,7 @@
     python scripts/bench.py --set batch -j 4      # local, four labels at a time (accuracy runs; timings inflate)
     python scripts/bench.py --url https://host    # remote /api/verify (samples by name, batch images uploaded)
     python scripts/bench.py --psm 11              # try another Tesseract page-segmentation mode
+    python scripts/bench.py --reader rapid        # RapidOCR as the primary reader (or rapid+tesseract)
     python scripts/bench.py --fail-under 1.0      # exit 1 below this accuracy or on any missed defect (CI)
 
 A "missed defect" is a label the generator planted a problem in (expected REVIEW or FAIL) that came back
@@ -58,13 +59,22 @@ def run_remote(url: str, rows, image_dir, psm=None):
     return out
 
 
-def run_local(rows, image_dir, psm, workers: int = 1):
+def make_reader(name: str, psm=None):
+    """tesseract (the default; RapidOCR escalation follows RAPID_ESCALATION), rapid (RapidOCR alone) or
+    rapid+tesseract (RapidOCR with Tesseract as its escalation)."""
+    from app.readers.tesseract import TesseractReader, parse_psm
+    if name.startswith("rapid"):
+        from app.readers.rapid import RapidOCRReader
+        return RapidOCRReader(escalate_with_tesseract=name == "rapid+tesseract")
+    first, extra = parse_psm(psm)
+    return TesseractReader(psm=first, extra_psm=extra)
+
+
+def run_local(rows, image_dir, psm, workers: int = 1, reader_name: str = "tesseract"):
     from PIL import Image
     from app.models import Application
     from app.pipeline import verify
-    from app.readers.tesseract import TesseractReader, parse_psm
-    first, extra = parse_psm(psm)
-    reader = TesseractReader(psm=first, extra_psm=extra)
+    reader = make_reader(reader_name, psm)
 
     def one(r):
         app = Application(**{k: r[k] for k in FIELDS})
@@ -83,9 +93,11 @@ def main():
     ap.add_argument("--fail-under", type=float, default=None,
                     help="exit 1 if accuracy is below this fraction or any planted defect came back PASS")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--reader", default="tesseract", choices=["tesseract", "rapid", "rapid+tesseract"],
+                    help="local runs: the primary reader (RapidOCR escalation of tesseract follows RAPID_ESCALATION)")
     a = ap.parse_args()
     image_dir, rows = rows_for(a.set)
-    results = run_remote(a.url, rows, image_dir, a.psm) if a.url else run_local(rows, image_dir, a.psm, a.workers)
+    results = run_remote(a.url, rows, image_dir, a.psm) if a.url else run_local(rows, image_dir, a.psm, a.workers, a.reader)
     ok, missed, errors, times = 0, 0, 0, []
     for r, res in zip(rows, results):
         if "error" in res:

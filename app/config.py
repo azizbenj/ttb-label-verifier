@@ -96,6 +96,31 @@ TESSERACT_TIMEOUT_S = 30                                # per pass; a pathologic
 TESSERACT_EXTRA_TIMEOUT_S = 8                           # the optional turned/contrast passes: skipped if slower
 DESKEW_MAX_DEG = 6.0                                    # straighten scans tilted by up to this much
 DESKEW_MIN_DEG = 0.8                                    # smaller tilts are left alone: Tesseract copes, resampling costs
+# --- Per-label time budget ---------------------------------------------------------------------
+# The optional passes (turned and contrast views, then the RapidOCR escalation) run only while the
+# time already spent on the label plus the pass's expected cost (a running average per process,
+# seeded below) fits inside this budget; a pass that does not fit is skipped and the result's reader
+# string says so. On a shared vCPU every pass costs two to three times what it costs on a laptop,
+# and a hard label already reached 4.6 s there. 0 disables the budget.
+LABEL_TIME_BUDGET_S = float(os.getenv("LABEL_TIME_BUDGET_S", "5"))
+EXPECTED_PASS_COST_S = {"extend": 1.2, "escalate": 1.5}   # seeds until the process has measured its own
+
+# --- RapidOCR, the second local reader (PP-OCRv4 on ONNX Runtime; app/readers/rapid.py) ---------
+# Escalation: when Tesseract's passes leave a field missing or the warning short of PASS, read the
+# label once more with RapidOCR and let the matching see its lines. Off: RAPID_ESCALATION=0.
+RAPID_ESCALATION = os.getenv("RAPID_ESCALATION", "1").strip().lower() not in ("0", "false", "no", "off")
+RAPID_INPUT = os.getenv("RAPID_INPUT", "gray")        # "gray": Tesseract's preprocessed image; "color": the scaled original
+RAPID_TIMEOUT_S = 10                                    # a read past this is abandoned (the escalation is then skipped)
+RAPID_MIN_LINE_CONF = 60                                # escalation lines below this confidence (0-100) are not appended
+# Confidences of the two engines are not comparable (Tesseract: 80-96 for good words; RapidOCR: a
+# 0-1 line score, usually 0.9-1.0). When two readings of one place disagree, the matcher keeps the
+# disagreement only if the disagreeing reading was at least as confident as the agreeing one. A
+# RapidOCR line at or above this score is treated as certain (100) for that comparison, so it wins
+# against any Tesseract reading of the same place; below it, its score competes as read.
+RAPID_TRUST_CONF = 90
+RAPID_THREADS = int(os.getenv("RAPID_THREADS", "4"))   # ONNX Runtime threads per read (0 = the runtime's default)
+RAPID_WORKERS = int(os.getenv("RAPID_WORKERS", "4"))   # reads in flight at once (one engine, shared)
+
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
 CLAUDE_TIMEOUT_S = float(os.getenv("CLAUDE_TIMEOUT_S", "30"))  # per attempt; the SDK default is 10 minutes
 CLAUDE_MAX_RETRIES = 1

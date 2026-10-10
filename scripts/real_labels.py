@@ -72,6 +72,8 @@ def main() -> None:
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--defects", action="store_true")
     ap.add_argument("-j", type=int, default=4)
+    ap.add_argument("--reader", default="tesseract", choices=["tesseract", "rapid", "rapid+tesseract"],
+                    help="the primary reader (RapidOCR escalation of tesseract follows RAPID_ESCALATION)")
     a = ap.parse_args()
     if a.stitch:
         stitch()
@@ -80,7 +82,11 @@ def main() -> None:
     rows = [r for r in rows if (REAL / f"{r['ttbid']}.jpg").exists()]
     if not rows:
         sys.exit("No images in data/real/. Run fetch_registry_labels.py and --stitch first.")
-    reader = TesseractReader()
+    if a.reader.startswith("rapid"):
+        from app.readers.rapid import RapidOCRReader
+        reader = RapidOCRReader(escalate_with_tesseract=a.reader == "rapid+tesseract")
+    else:
+        reader = TesseractReader()
 
     def run(row, override=None):
         values = {k: row[k] for k in FIELDS}
