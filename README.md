@@ -288,8 +288,55 @@ country name is a MATCH; a close spelling (an OCR slip, or Austria vs Australia)
 country, including one that merely contains the expected name ("Equatorial Guinea" for "Guinea"), is a MISMATCH
 that shows what the label says. Without an origin statement, only the country name on a line of its own matches.
 
-Overall label status: **FAIL** if any field is MISMATCH/NOT FOUND or the warning fails; **REVIEW** if any field is
-NEAR MATCH or a warning check needs a look; otherwise **PASS**.
+### Evidence strength: a FAIL means something was read clearly and is wrong
+
+On real artwork OCR misreads display typefaces, light text over photographs, sideways and tiny print, and every
+such misread used to fail the whole label. A field's verdict still says what was read (MISMATCH, NOT FOUND); what
+decides the overall status is whether that evidence is **clear** (`app/pipeline.py`, `judge_clarity` and
+`judge_warning`; the measurements come from `app/readers/extract.py`):
+
+- **A figure that was read and differs** (alcohol content, net contents MISMATCH) is always clear. This was
+  measured, not assumed: on the real labels the planted wrong figures were read at word confidences anywhere
+  from 0 to 100, like the 7 genuinely misread ones, so no confidence threshold separates a misread number from a
+  wrong one (the best one tried would have sent 3 planted wrong figures to REVIEW for each misread it caught).
+- **A text field that was read and differs** (brand, class/type, bottler, country) is clear when every word of
+  the text it was read from has OCR confidence 60 or more, 80 or more on average, was read upright (not only in
+  a view turned 90°), and the text is a plausible reading: at least 80% letters and digits and at least three of
+  them ("Pee 7, \ WHISKEY" or "ly" is not a reading of anything). RapidOCR words count with their own score.
+- **Something not found** (NOT FOUND, or a brand where nothing on the label resembled it) is clear only on a
+  label that was read well as a whole: 90% or more of its upright words of three or more letters read with
+  confidence 70 or more, and at most 10% of its marks read below 50. Absence is the claim OCR is least able to
+  make: on the real labels a figure reported NOT FOUND was printed 19 times out of 22.
+- **The government warning** keeps its four checks exactly as `app/warning.py` computes them. "No warning found"
+  is clear only on a well-read label on which no more than one of the statement's rarer words ("Surgeon",
+  "pregnancy", "machinery", ...) was read anywhere; otherwise the warning may be printed sideways or too small to
+  read and the label asks for a look. A wording or capitals failure is clear when the words inside the
+  statement's box were read with mean confidence 90 or more.
+- An application value that cannot be read as a figure, or a required value left blank, is the application's
+  problem and always clear.
+
+Overall label status: **FAIL** if at least one problem is clear (a clear MISMATCH or NOT FOUND, or a warning
+check that failed on clear evidence); **REVIEW** if any field is NEAR MATCH, any problem is unclear, or a
+warning check needs a look; otherwise **PASS**. A reader that reports no word confidences (the cloud reader)
+judges nothing, so its problems fail the label as before. When two or more of the required checks (the four
+required fields and the warning) are unclear, the result says "Much of this label could not be read clearly.
+If possible, ask for a sharper image or the artwork file." and the batch row's next step is "Ask for a clearer
+image"; the grey "We couldn't read this label" card is unchanged for images where nothing was read. The banner
+lists clear problems as "N problems" and unclear ones under "Could not be read clearly", each linked to its
+row, which says why (low confidence, sideways, implausible text, a poorly read label).
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `clear_min_conf` / `clear_mean_conf` | 60 / 80 | A text MISMATCH is clear when its least sure word and its mean reach these (synthetic wrong brand and country: 86 / 92 or more; the stress renderings' Futura country 67 / 86 and Herculanum brand 80 / 80, which 70 / 85 sent to REVIEW) |
+| `clear_plausible` / `clear_min_chars` | 0.8 / 3 | ... and the found text is at least this share letters and digits, with at least this many |
+| `clear_label_share` / `clear_label_low_share` | 0.9 / 0.1 | A NOT FOUND is clear only when at least this share of the label's words read with confidence 70+ and at most this share of its marks read below 50 (every synthetic label: 0.933+ / 0.053 or less; 124 of the 187 real labels fail one or the other) |
+| `clear_warning_words` | 2 | "No warning found" is unclear when this many of the statement's rarer words were read anywhere (synthetic labels without a warning: 0) |
+| `clear_warning_conf` | 90 | A wording or capitals failure is clear when the statement's words read with this mean confidence (synthetic warning defects: 94.9+) |
+| `poor_image_unclear` | 2 | This many unclear required checks ask for a better image (11 of 187 correct real labels) |
+
+The decision prompts are unchanged: an unclear MISMATCH still asks "Does the label say ...?" with "Yes = the
+label is fine" on the first button and no suggested answer. Every unclear text MISMATCH on the real labels was a
+misread, but the real sets have no planted wrong text to measure the other side with, so the prompt does not lean.
 
 ## Government warning check
 
@@ -521,6 +568,7 @@ pytest -q
 - `test_nojs.py`: the batch flow as a browser without JavaScript runs it: post, redirect, self-reloading progress page, row links, whole-page errors
 - `test_claude_reader.py`: the cloud reader's mapping, error handling, refusal fallbacks and client limits, with the SDK mocked
 - `test_rapid_reader.py`: RapidOCR on the Old Tom sample (lines, word boxes inside the image, confidences, the engine string; skipped when the package is missing), the line-to-word split and input padding, the escalation appending a view with a fake engine, the cross-engine confidence rule, time-outs, `get_reader("rapid")` and `/healthz`
+- `test_pipeline_status.py`: the evidence-strength rules with fake readers of controlled word confidence: clear and unclear text mismatches, figures that fail however unsure, NOT FOUND and a missing warning on well and poorly read labels, wording failures on sure and unsure statements, mixed problems, the request for a better image, the batch next step, readers without confidences, and the banner copy without JavaScript
 - `test_budget.py`: the per-label time budget with a fake clock: passes that fit run, passes that do not are skipped and named in the reader string, and the process learns what its passes cost
 
 OCR-dependent tests skip automatically when the Tesseract binary is absent. `.github/workflows/ci.yml` runs the whole
@@ -839,9 +887,25 @@ returned exactly the sequential results.
 
 - Photos taken at an angle, with glare, shadows or poor lighting are out of scope; expect NOT FOUND results and a
   warning-statement failure on such images. Tilt up to 6° is corrected; perspective correction would be next.
-- On real approved labels the tool asks for a look on every label (see "Measured results"): brand names in display
-  or curved typefaces, light text over photographs and handwriting produce false alarms; a single-digit misread
-  survives when the second read of the line repeats it or the line was only read in a turned view.
+- On real approved labels the tool asks for a look on almost every label (see "Measured results"): brand names in
+  display or curved typefaces, light text over photographs and handwriting produce false alarms; a single-digit
+  misread survives when the second read of the line repeats it or the line was only read in a turned view. Since
+  the evidence-strength rule, most of these are REVIEW rather than FAIL, but about 3 correct labels in 10 still
+  FAIL, for reasons the rule cannot see: a matcher that picked a partial or wrong span of clearly read text (the
+  bottler line cut short, "PRIVATE RESERVE" for "Jack's PRIVATE RESERVE"), a misread figure (always clear, by
+  measurement), and a warning statement read with high confidence that still fails as wording.
+- The evidence-strength rule has a cost, paid knowingly: a NOT FOUND on a label that was not read well is REVIEW,
+  never FAIL, even when the field really is missing. On the real labels that moved 16 of the 370 planted wrong
+  figures from FAIL to REVIEW (the label's own figure was never read, so the planted one could not be compared),
+  and the 3 labels whose net contents really is absent are REVIEW. They are still flagged, with "NOT FOUND" on
+  the field, but they are not in the FAIL pile.
+- Text clarity is calibrated on two kinds of evidence only: the real labels' false alarms (none of which is a
+  wrong text, since the real sets plant only wrong figures) and the synthetic labels' planted wrong brand and
+  country, which are read at 86+ confidence. A real wrong brand set in a display face that OCR reads with low
+  confidence would come back REVIEW, not FAIL.
+- Confidence means different things for the two engines: Tesseract's word confidences and RapidOCR's line scores
+  (split across the words) are used on one scale here. RapidOCR scores a cut or run-together reading ("Amb BER",
+  "ACKANEER") as high as a clean one, so a RapidOCR misread is more often "clear" than a Tesseract one.
 - Tesseract struggles with decorative, script or outlined brand typography and with text on busy backgrounds. The
   guided matching tolerates a fair amount of noise, but a brand set in a script face may come back NOT FOUND.
   The RapidOCR escalation closes some of these (6 of 18 false alarms on the 20 real labels, 45 of 175 on the
