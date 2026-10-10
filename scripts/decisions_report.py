@@ -5,9 +5,9 @@
     python scripts/decisions_report.py decisions.jsonl --csv calibration.csv
 
 The log is the JSON-lines file the server appends to when DECISION_LOG is set (app/decision_log.py). The
-last decision per job and application counts and an undone decision (``clear``) drops out. Per question
-key the report prints how many labels raised that question, how many times the review queue asked it
-first (so the answer is about it), the pass / fail / skip answers, and the pass rate: pass / (pass + fail),
+last answer per job, application and question counts and an undone answer (``clear``) drops out. Per
+question key the report prints how many labels raised that question, how many answers were about it,
+the pass / fail / skip answers, and the pass rate: pass / (pass + fail),
 the share of that rule's flags the agents found to be false alarms. Then the ten most frequent notes
 behind pass answers (the rules that cost agents the most time) and behind fail answers (the rules that
 catch real problems).
@@ -57,11 +57,12 @@ def read_log(path) -> list[dict]:
 
 
 def latest_decisions(records: list[dict]) -> list[dict]:
-    """The decision that stands for each label: the last one per job and application. A label whose last
-    record is an undo (``clear``) drops out. Ordered by when the standing decision was made."""
+    """The answer that stands for each question: the last one per job, application and question (``key``;
+    blank in logs from before answers were kept per question, when one answer stood for the label). A
+    question whose last record is an undo (``clear``) drops out. Ordered by when the standing answer was made."""
     standing: dict[tuple, dict] = {}
     for rec in records:
-        key = (rec.get("job"), rec.get("application_id"))
+        key = (rec.get("job"), rec.get("application_id"), rec.get("key") or "")
         standing.pop(key, None)
         if rec.get("decision") != "clear":
             standing[key] = rec
@@ -69,7 +70,7 @@ def latest_decisions(records: list[dict]) -> list[dict]:
 
 
 def asked_prompt(rec: dict) -> dict | None:
-    """The question the review queue asked first (marked in the log), else the first one raised."""
+    """The question the answer is about (marked in the log), else the first one raised."""
     prompts = rec.get("prompts") or []
     for p in prompts:
         if p.get("asked"):
@@ -94,9 +95,14 @@ def summarise(decided: list[dict]) -> list[dict]:
     skip answers to it, and pass_rate = pass / (pass + fail), None without an answer. Field questions first
     in the application's order, then the warning checks, then anything else."""
     rows: dict[str, Counter] = {}
+    seen: set[tuple] = set()   # a label answered question by question appears once per answer: count it once
     for rec in decided:
+        label = (rec.get("job"), rec.get("application_id"))
         for p in rec.get("prompts") or []:
-            rows.setdefault(p.get("key") or "?", Counter())["raised"] += 1
+            c = rows.setdefault(p.get("key") or "?", Counter())
+            if label not in seen:
+                c["raised"] += 1
+        seen.add(label)
         p = asked_prompt(rec)
         c = rows.setdefault((p.get("key") or "?") if p else NO_PROMPT, Counter())
         c["asked"] += 1
@@ -127,22 +133,31 @@ def top_notes(decided: list[dict], decision: str, n: int = 10) -> list[tuple[str
 
 
 def calibration_rows(decided: list[dict]) -> list[dict]:
-    """One scripts/real_labels.csv row per label answered pass or fail."""
-    rows = []
+    """One scripts/real_labels.csv row per label decided pass or fail. A label is answered question by
+    question; its decision is the one logged with its latest answer (``label_decision``; logs from before
+    answers were kept per question carry only ``decision``, which stood for the label)."""
+    labels: dict[tuple, list[dict]] = {}
     for rec in decided:
-        d = rec.get("decision")
+        labels.setdefault((rec.get("job"), rec.get("application_id")), []).append(rec)
+    rows = []
+    for recs in labels.values():
+        last = max(recs, key=lambda r: r.get("ts") or "")
+        d = last.get("label_decision", last.get("decision"))
         if d not in ("pass", "fail"):
             continue
-        values = {f.get("key"): f.get("expected") or "" for f in rec.get("fields") or []}
-        p = asked_prompt(rec)
-        expect = ""
-        if d == "pass" and p and p.get("key") in FIELD_KEYS and p.get("verdict") == "NEAR MATCH":
-            expect = f"{p['key']}=review"      # the agent confirmed it: a legitimate NEAR MATCH
-        row = {"ttbid": rec.get("application_id") or "",
+        values = {f.get("key"): f.get("expected") or "" for f in last.get("fields") or []}
+        expects, questions = [], []
+        for rec in recs:
+            p = asked_prompt(rec)
+            if rec.get("decision") == "pass" and p and p.get("key") in FIELD_KEYS and p.get("verdict") == "NEAR MATCH":
+                expects.append(f"{p['key']}=review")      # the agent confirmed it: a legitimate NEAR MATCH
+            if p and p.get("question"):
+                questions.append(f"{rec.get('decision')}: {p['question']}")
+        row = {"ttbid": last.get("application_id") or "",
                "kind": "import" if values.get("country_of_origin") else ""}
         row.update({k: values.get(k, "") for k in FIELD_KEYS})
-        row["expect"] = expect
-        row["notes"] = f"{d}: {p['question']}" if p and p.get("question") else d
+        row["expect"] = ";".join(dict.fromkeys(expects))
+        row["notes"] = " | ".join(questions) if questions else d
         rows.append(row)
     return rows
 
@@ -155,16 +170,15 @@ def write_csv(rows: list[dict], path) -> None:
 
 
 def print_report(path, records: list[dict], decided: list[dict], out=sys.stdout) -> None:
-    print(f"{path}: {len(records)} records, {len(decided)} labels with a standing decision "
-          "(the last answer per label counts; an undone decision drops out)", file=out)
+    print(f"{path}: {len(records)} records, {len(decided)} answers that stand "
+          "(the last answer per question counts; an undone answer drops out)", file=out)
     print(file=out)
     print(f"{'question':24} {'raised':>6} {'asked':>6} {'pass':>5} {'fail':>5} {'skip':>5} {'pass rate':>9}", file=out)
     for r in summarise(decided):
         rate = f"{r['pass_rate'] * 100:.0f}%" if r["pass_rate"] is not None else "-"
         print(f"{r['key']:24} {r['raised']:6} {r['asked']:6} {r['pass']:5} {r['fail']:5} {r['skip']:5} {rate:>9}",
               file=out)
-    print("\nraised: labels that raised the question; asked: the review queue asked it first, so the answer is "
-          "about it;\npass rate: pass / (pass + fail), the share of this rule's flags the agents found to be false "
+    print("\nraised: labels that raised the question; asked: answers about this question;\npass rate: pass / (pass + fail), the share of this rule's flags the agents found to be false "
           "alarms.", file=out)
     for decision, title in (("pass", 'Notes behind "pass" answers (false alarms: the rules that cost agents the most time)'),
                             ("fail", 'Notes behind "fail" answers (the rules that catch real problems)')):

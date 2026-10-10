@@ -119,7 +119,7 @@
                 {% if ev.crop and image_url %}<div class="crop" style="{{ ev.crop.box_style }}"><img src="{{ image_url }}" alt="Crop of the label around the {{ f.label|lower }}" style="{{ ev.crop.img_style }}" loading="lazy"></div>{% endif %}
                 <div class="grid">{% for k, val, c in ev.rows %}<span>{{ k }}</span><span class="{{ c }}">{{ val }}</span>{% endfor %}</div>
                 {% if ev.text %}<div class="text">{{ ev.text }}</div>{% endif %}
-                {% if prompts.get(f.key) %}{{ decide(prompts[f.key], job_id, item_index, decision) }}{% endif %}
+                {% if prompts.get(f.key) %}{{ decide(prompts[f.key], job_id, item_index, (answers or {}).get(f.key, '')) }}{% endif %}
               </div>
             </td>
           </tr>
@@ -139,6 +139,7 @@
         </div>
         {% if not w.present %}
           <p class="why bad">{{ w.wording_note }}</p>
+          {% if prompts.get('warning_present') %}{{ decide(prompts['warning_present'], job_id, item_index, (answers or {}).get('warning_present', '')) }}{% endif %}
         {% else %}
         <div class="chks">
           <div class="chk"><span class="chip pass">{{ icon('check') }}PASS</span><span class="name">Present</span><div><div class="t">The statement was found on the label.</div></div></div>
@@ -156,10 +157,10 @@
               </table>
               <div class="stats"><span>similarity <b>{{ w.wording_score }} / 100</b></span><span>review from {{ thresholds.warning_near }}, fail below</span></div>
               {% endif %}
-              {% if prompts.get('warning_wording') %}{{ decide(prompts['warning_wording'], job_id, item_index, decision) }}{% endif %}
+              {% if prompts.get('warning_wording') %}{{ decide(prompts['warning_wording'], job_id, item_index, (answers or {}).get('warning_wording', '')) }}{% endif %}
             </div>
           </div>
-          <div class="chk {{ 'rv' if w.heading_caps.value == 'REVIEW' else ('bad' if w.heading_caps.value == 'FAIL' else '') }}">{{ chip(w.heading_caps) }}<span class="name">Heading in capitals</span><div class="body"><div class="t">{{ w.heading_caps_note }}</div>{% if prompts.get('warning_caps') %}{{ decide(prompts['warning_caps'], job_id, item_index, decision) }}{% endif %}</div></div>
+          <div class="chk {{ 'rv' if w.heading_caps.value == 'REVIEW' else ('bad' if w.heading_caps.value == 'FAIL' else '') }}">{{ chip(w.heading_caps) }}<span class="name">Heading in capitals</span><div class="body"><div class="t">{{ w.heading_caps_note }}</div>{% if prompts.get('warning_caps') %}{{ decide(prompts['warning_caps'], job_id, item_index, (answers or {}).get('warning_caps', '')) }}{% endif %}</div></div>
           <div class="chk {{ 'rv' if w.heading_bold.value == 'REVIEW' else ('bad' if w.heading_bold.value == 'FAIL' else '') }}">{{ chip(w.heading_bold) }}<span class="name">Heading bold</span>
             <div class="body">
               <div><div class="t">{{ w.heading_bold_note }}</div><div class="s">Estimated from stroke width in the image (bold passes from {{ thresholds.bold_ratio }}×; regular text measures about 1.03–1.14×). A heuristic, so a doubtful result asks for a look instead of failing the label.</div></div>
@@ -168,7 +169,7 @@
               <div class="meter-wrap"><div class="meter" aria-hidden="true" style="--tick: {{ bold_meter_percent(thresholds.bold_ratio, thresholds.bold_ratio) }}%"><span class="tick" style="left: {{ bold_meter_percent(thresholds.bold_ratio, thresholds.bold_ratio) }}%"></span><span class="markr {{ 'review' if w.heading_bold.value != 'PASS' else '' }}" style="left: {{ pct }}%"></span></div>
               <div class="meter-scale"><span>0.8× regular</span><span>{{ thresholds.bold_ratio }}× threshold</span><span>{{ '%.2f'|format(w.bold_ratio) }}× measured</span><span>2.5×</span></div></div>
               {% endif %}
-              {% if prompts.get('warning_bold') %}{{ decide(prompts['warning_bold'], job_id, item_index, decision) }}{% endif %}
+              {% if prompts.get('warning_bold') %}{{ decide(prompts['warning_bold'], job_id, item_index, (answers or {}).get('warning_bold', '')) }}{% endif %}
             </div>
           </div>
         </div>

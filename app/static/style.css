@@ -579,6 +579,7 @@ table.cols-fix td { padding: 7px 8px; border-bottom: 1px solid var(--line); font
 .qd.pass { background: var(--pass-fill); border-color: var(--pass-fill); color: #fff; }
 .qd.fail { background: var(--fail-fill); border-color: var(--fail-fill); color: #fff; }
 .qd.skip { background: var(--none-tint); border-color: var(--none-line); color: var(--none); }
+.qd.partial { background: linear-gradient(90deg, var(--pass-tint) 50%, var(--review-tint) 50%); border-style: dashed; }
 .review-card { padding: 0; overflow: hidden; }
 .review-card .banner .text h2 { font-size: 21px; }
 .review-card .label-pane { flex-basis: 460px; }
@@ -588,6 +589,14 @@ table.cols-fix td { padding: 7px 8px; border-bottom: 1px solid var(--line); font
 .ask { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--review-line); border-radius: 10px; padding: 14px 16px; background: var(--row-review); }
 .ask .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .ask .head strong { font-size: 17px; } .ask .head .chip { margin-left: auto; }
 .ask .crop.wide { max-width: 100%; }
+.qlist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.qlist a { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 13px; text-decoration: none; }
+.qlist a .num { width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; background: var(--review-tint); color: var(--review); font-family: var(--mono); font-size: 11px; font-weight: 700; }
+.qlist a .state { color: var(--ink-3); font-size: 12px; }
+.qlist a.cur { border-color: var(--action); box-shadow: 0 0 0 2px var(--action-tint); }
+.qlist a.pass .num { background: var(--pass-fill); color: #fff; }
+.qlist a.fail .num { background: var(--fail-fill); color: #fff; }
+.qlist a.skip .num { background: var(--none-tint); color: var(--none); }
 .ask .why { font-size: 14px; color: var(--ink-2); }
 .ask .fine { font-size: 13px; color: var(--ink-3); }
 .verdicts details.rest summary { cursor: pointer; font-weight: 600; font-size: 15px; color: var(--action); }

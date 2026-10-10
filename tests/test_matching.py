@@ -377,3 +377,26 @@ def test_rules_for_likely_misreads_never_excuse_a_real_difference():
     # A one-letter difference in the brand is a question for the agent, never a match.
     assert compare_text("brand_name", "BARN BREW", "BARK BREW").verdict == Verdict.NEAR_MATCH
     assert compare_text("brand_name", "CON PAZ", "CON FAZ").verdict == Verdict.NEAR_MATCH
+
+
+# --- the application's value is never offered as the likely truth --------------------------------
+
+def test_a_misread_one_digit_from_several_standard_sizes_is_not_called_the_applications():
+    # "760" is one digit from 700, 710, 720 and 750 mL alike: a wrong application value of 700 mL must not
+    # be presented as "probably a reading error" of a label that prints 750 mL.
+    r = compare_volume("700 mL", "760ML")
+    assert r.verdict == Verdict.NEAR_MATCH
+    assert "Probably" not in r.note and "710 mL, 720 mL or 750 mL" in r.note and "any of them" in r.note
+    r = compare_volume("1.75 L", "1760 mL")      # 1750 mL is the only standard size one digit away
+    assert r.verdict == Verdict.NEAR_MATCH and "Probably a reading error" in r.note
+
+
+def test_the_applications_proof_is_compared_with_the_labels():
+    r = compare_alcohol("82 PROOF • 40% ALC/VOL", "80 PROOF • 40% ALC/VOL")
+    assert r.verdict == Verdict.MISMATCH and "Label says 80 proof, application says 82 proof" in r.note
+    r = compare_alcohol("92 Proof | 45% ALC/VOL", "90 Proof | 45% ALC/VOL")
+    assert r.verdict == Verdict.MISMATCH
+    r = compare_alcohol("40% Alc./Vol. (82 Proof)", "40% ALC/VOL")     # no proof printed: the application contradicts itself
+    assert r.verdict == Verdict.NEAR_MATCH and "does not agree with its own percentage" in r.note
+    assert compare_alcohol("40% Alc./Vol. (80 Proof)", "40% ALC/VOL").verdict == Verdict.MATCH
+    assert compare_alcohol("51% Alc./Vol. (102 Proof)", "PROOF 102 ALC/VOL 51%").verdict == Verdict.MATCH

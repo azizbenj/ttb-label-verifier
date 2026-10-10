@@ -78,8 +78,13 @@ def test_single_result_shows_the_prompts_and_prints_the_decision_block(monkeypat
 def test_decisions_are_kept_with_the_batch_and_never_change_a_verdict(monkeypatch):
     job_id, t = _batch(monkeypatch)
     assert "Review the 3" in t and 'data-act="export"' in t
+    # without a question key the answer covers every question the label raises
     r = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass"}, headers=PARTIAL)
-    assert r.status_code == 200 and r.json() == {"index": 0, "decision": "pass", "decided": 1, "queue": 3, "remaining": 2}
+    assert r.status_code == 200
+    j = r.json()
+    assert {k: j[k] for k in ("index", "decision", "open", "decided", "queue", "remaining")} == {
+        "index": 0, "decision": "pass", "open": [], "decided": 1, "queue": 3, "remaining": 2}
+    assert j["answers"] == {"brand_name": "pass", "warning_wording": "pass", "warning_bold": "pass"}
     r = client.post(f"/batch/{job_id}/decision", data={"index": 1, "value": "maybe"}, headers=PARTIAL)
     assert r.status_code == 400
     t = client.get(f"/batch/{job_id}", headers=PARTIAL).text
@@ -130,8 +135,8 @@ def test_export_scopes_includes_and_file_name(monkeypatch):
     r = client.get(f"/batch/{job_id}/export.csv?ids=A2&include=decisions,ocr")
     rows = list(csv.reader(io.StringIO(r.text.lstrip("﻿"))))
     assert len(rows) == 2 and rows[0] == ["application_id", "image", "overall", "needs", "summary", "decision",
-                                           "label_text", "reader", "error"]
-    assert "GOVERNMENT WARNING" in rows[1][6]
+                                           "answers", "label_text", "reader", "error"]
+    assert "GOVERNMENT WARNING" in rows[1][7]
     assert "_selected_" in r.headers["content-disposition"]
     r = client.get(f"/batch/{job_id}/export.csv?status=PASS")
     assert r.text.count("\n") == 1 and "_pass_" in r.headers["content-disposition"]
@@ -182,3 +187,116 @@ def test_proof_contradiction_prompt_and_evidence():
     wrong = compare_alcohol("40%", "45% Alc./Vol. (80 Proof)")
     assert "proof and percent agree" not in evidence_for(wrong, r).text
     assert "proof and percent agree" in evidence_for(compare_alcohol("40%", "45% Alc./Vol. (90 Proof)"), r).text
+
+
+# --- one answer settles one question, never the whole label -----------------------------------------
+
+class FailReader(ReviewReader):
+    """Reads the alcohol content as 40% against an application of 45%: a MISMATCH, so the label fails."""
+
+    name = "fail"
+
+    def read(self, image):
+        lines = ["OLD TOM DISTILLERY", "Kentucky Straight Bourbon Whiskey", "40% Alc./Vol.", "750 mL",
+                 "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic",
+                 "beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic",
+                 "beverages impairs your ability to drive a car or operate machinery, and may cause health problems."]
+        return LabelReading(ocr=OCRResult(text="\n".join(lines), lines=lines, engine="fail"))
+
+
+def test_one_answer_leaves_the_other_questions_open(monkeypatch):
+    job_id, _ = _batch(monkeypatch)
+    r = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass", "key": "brand_name"},
+                    headers=PARTIAL)
+    j = r.json()
+    assert j["decision"] == "partial" and j["open"] == ["warning_wording", "warning_bold"] and j["decided"] == 0
+    item = main.batchmod.JOBS[job_id].items[0]
+    assert item.decision == "partial" and item.answers == {"brand_name": "pass"}
+    client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass", "key": "warning_wording"}, headers=PARTIAL)
+    j = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "fail", "key": "warning_bold"},
+                    headers=PARTIAL).json()
+    assert j["decision"] == "fail" and j["open"] == [] and j["decided"] == 1          # any "no" fails the label
+    j = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass", "key": "warning_bold"},
+                    headers=PARTIAL).json()
+    assert j["decision"] == "pass"                                                     # every "yes" clears it
+    j = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "clear", "key": "brand_name"},
+                    headers=PARTIAL).json()
+    assert j["decision"] == "partial" and j["open"] == ["brand_name"]
+    r = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass", "key": "country_of_origin"},
+                    headers=PARTIAL)
+    assert r.status_code == 400                                                        # not a question on this label
+    row = next(x for x in csv.DictReader(io.StringIO(client.get(f"/batch/{job_id}/export.csv").text.lstrip("\ufeff")))
+               if x["application_id"] == "A1")
+    assert row["decision"] == "partial"
+    assert row["answers"] == "brand_name: open; warning_wording: yes; warning_bold: yes"
+
+
+def test_review_queue_asks_every_question_before_moving_on(monkeypatch):
+    job_id, _ = _batch(monkeypatch)
+    page = client.get(f"/batch/{job_id}/review").text
+    assert "Question 1 of 3" in page and "Is this the same brand name?" in page
+    assert "Everything else was checked and matches" not in page        # two other questions are open
+    assert 'name="key" value="brand_name"' in page
+    # a plain form post stays on the label while it has open questions
+    r = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass", "key": "brand_name"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("/review?n=1")
+    page = client.get(f"/batch/{job_id}/review?n=1").text
+    assert "Question 2 of 3" in page and 'Does the label say &#34;should&#34;?' in page and "0 decided" in page
+    client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass", "key": "warning_wording"})
+    r = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "skip", "key": "warning_bold"},
+                    follow_redirects=False)
+    assert r.headers["location"].endswith("/review?n=2")                          # all answered: next label
+    page = client.get(f"/batch/{job_id}/review?n=1&q=brand_name").text
+    assert "Question 1 of 3" in page and "Decided by you" in page
+
+
+def test_fails_can_be_checked_and_cleared_as_misreads(monkeypatch):
+    monkeypatch.setitem(main._readers, "tesseract", FailReader())
+    rows = "old_tom_clean.png,F1,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol.,750 mL"
+    csv_bytes = ("image,application_id,brand_name,class_type,alcohol_content,net_contents\n" + rows + "\n").encode()
+    r = client.post("/batch", files=[("csv_file", ("apps.csv", csv_bytes, "text/csv")),
+                                     ("files", ("old_tom_clean.png", (SAMPLES / "old_tom_clean.png").read_bytes(), "image/png"))],
+                    headers=PARTIAL)
+    job_id = re.search(r'data-job="([a-f0-9]+)"', r.text).group(1)
+    deadline = time.monotonic() + 60
+    while 'data-status="done"' not in (t := client.get(f"/batch/{job_id}", headers=PARTIAL).text):
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    assert f'href="/batch/{job_id}/review?pile=fail"' in t and "Check the 1 fail" in t
+    assert "send-back" not in t and "Ready to approve (0)" in t
+    assert "Check the alcohol content" in t                    # never "Nothing: send back"
+    page = client.get(f"/batch/{job_id}/review?pile=fail").text
+    assert "Fails to check" in page and "1 of 1 that failed" in page
+    assert 'Does the label say &#34;45% Alc./Vol.&#34;?' in page
+    assert "data-neutral" in page                               # the application value is not the suggested answer
+    j = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass", "key": "alcohol_content",
+                                                       "pile": "fail"}, headers=PARTIAL).json()
+    assert j["queue"] == 1 and j["decision"] == ("partial" if j["open"] else "pass")
+    for key in j["open"]:                                       # the label's other questions (the heading's weight)
+        j = client.post(f"/batch/{job_id}/decision", data={"index": 0, "value": "pass", "key": key, "pile": "fail"},
+                        headers=PARTIAL).json()
+    assert j["decision"] == "pass"
+    out = client.get(f"/batch/{job_id}/export.csv?status=PASS,CLEARED").text.lstrip("\ufeff")
+    rows = list(csv.DictReader(io.StringIO(out)))
+    assert [(x["application_id"], x["overall"], x["decision"]) for x in rows] == [("F1", "FAIL", "pass")]
+    assert "Ready to approve (1)" in client.get(f"/batch/{job_id}", headers=PARTIAL).text
+
+
+def test_failures_ask_a_neutral_question():
+    r = verify(Application(**APP), Image.new("RGB", (600, 800), "white"), FailReader())
+    p = {q.key: q for q in prompts_for(r)}
+    assert p["alcohol_content"].verdict == "MISMATCH" and p["alcohol_content"].lean is False
+    assert p["alcohol_content"].question == 'Does the label say "45% Alc./Vol."?'
+    assert p["alcohol_content"].yes == 'Yes, it says "45% Alc./Vol.": reading error'
+
+
+def test_a_missing_warning_asks_whether_it_is_printed():
+    class NoWarning(ReviewReader):
+        def read(self, image):
+            lines = ["OLD TOM DISTILLERY", "Kentucky Straight Bourbon Whiskey", "45% Alc./Vol.", "750 mL"]
+            return LabelReading(ocr=OCRResult(text="\n".join(lines), lines=lines, engine="nowarn"))
+    r = verify(Application(**APP), Image.new("RGB", (600, 800), "white"), NoWarning())
+    p = {q.key: q for q in prompts_for(r)}
+    assert p["warning_present"].question == "Is the government warning printed on the label?"
+    assert p["warning_present"].lean is False

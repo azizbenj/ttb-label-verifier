@@ -3,16 +3,17 @@
 {% block title %}Review queue · Label Check{% endblock %}
 {% block content %}
 {% set n = queue|length %}
-<div class="queue-bar card" data-review{% if index is not none %} data-job="{{ job.id }}" data-index="{{ index }}"{% endif %}>
+{% set pq = '&pile=fail' if pile == 'fail' else '' %}
+<div class="queue-bar card" data-review data-pile="{{ pile }}" data-pos="{{ pos }}"{% if index is not none %} data-job="{{ job.id }}" data-index="{{ index }}"{% endif %}>
   <a class="btn icon back" href="/batch/{{ job.id }}" aria-label="Back to the results table" data-act="back">{{ icon('arrow-left', 18) }}</a>
   <div class="grow">
-    <h2>Review queue · {{ 'Sample batch' if job.source == 'sample batch' else job.source }}</h2>
-    <p>{% if n %}{{ pos }} of {{ n }} that need a look · {{ job.decided_count }} decided{% else %}Nothing in this batch needs a look{% endif %} · <span class="kbd">Esc</span> back to the table</p>
+    <h2>{{ 'Fails to check' if pile == 'fail' else 'Review queue' }} · {{ 'Sample batch' if job.source == 'sample batch' else job.source }}</h2>
+    <p>{% if n %}{{ pos }} of {{ n }} {{ 'that failed' if pile == 'fail' else 'that need a look' }} · {{ job.decided_count }} decided{% else %}{{ 'Nothing in this batch failed' if pile == 'fail' else 'Nothing in this batch needs a look' }}{% endif %} · <span class="kbd">Esc</span> back to the table</p>
   </div>
   {% if n %}
   <nav class="queue" aria-label="Queue">
     {% for i in queue %}{% set it = job.items[i] %}{% set k = loop.index %}
-    <a class="qd{{ ' cur' if k == pos }}{{ ' ' ~ it.decision if it.decision }}" href="/batch/{{ job.id }}/review?n={{ k }}" aria-label="{{ it.application_id }}, {{ 'decided ' ~ it.decision if it.decision else 'to decide' }}"{% if k == pos %} aria-current="true"{% endif %}>{{ k }}</a>
+    <a class="qd{{ ' cur' if k == pos }}{{ ' ' ~ it.decision if it.decision }}" href="/batch/{{ job.id }}/review?n={{ k }}{{ pq }}" aria-label="{{ it.application_id }}, {{ ('decided ' ~ it.decision) if it.decision in ('pass', 'fail', 'skip') else ('some questions answered' if it.decision == 'partial' else 'to decide') }}"{% if k == pos %} aria-current="true"{% endif %}>{{ k }}</a>
     {% endfor %}
   </nav>
   {% endif %}
@@ -20,13 +21,15 @@
 
 {% if item is none or item.result is none %}
 <section class="card done-card" role="status" tabindex="-1">
-  <div class="text"><h2>Nothing needs a look</h2><p>Every label in this batch is a clear pass or fail. <a href="/batch/{{ job.id }}">Back to the results table</a>.</p></div>
+  {% if pile == 'fail' %}<div class="text"><h2>Nothing failed</h2><p>No label in this batch has a problem to check. <a href="/batch/{{ job.id }}">Back to the results table</a>.</p></div>
+  {% else %}<div class="text"><h2>Nothing needs a look</h2><p>Every label in this batch is a clear pass or fail. <a href="/batch/{{ job.id }}">Back to the results table</a>.</p></div>{% endif %}
 </section>
 {% else %}
 {% set r = result %}
+{% set bcls = r.overall|chip %}
 <section class="card review-card" role="status" tabindex="-1" aria-label="{{ item.application_id }}, {{ item.brand }}">
-  <div class="banner review">
-    <span class="badge review">{{ icon('bang', 24) }}</span>
+  <div class="banner {{ bcls }}">
+    <span class="badge {{ bcls }}">{{ icon(r.overall|glyph, 24) }}</span>
     <div class="text"><h2>{{ item.application_id }} · {{ item.brand }}</h2><p>{{ r.summary }}</p></div>
     {{ chip(r.overall, 'big') }}
   </div>
@@ -39,12 +42,20 @@
         {% if prompt and prompt.box %}<div class="hl focus review" style="left:{{ prompt.box[0] }}%;top:{{ prompt.box[1] }}%;width:{{ prompt.box[2] }}%;height:{{ prompt.box[3] }}%"><span class="n">?</span></div>{% endif %}
       </div>
       {% else %}<div class="label-frame noimg">The label image was not kept for this row.</div>{% endif %}
-      <p class="hint">The outlined region is the one thing to look at on this label. Everything else was checked and matches.</p>
+      {% if questions|length == 1 %}<p class="hint">The outlined region is the one thing to look at on this label. Everything else was checked and matches.</p>
+      {% elif questions %}<p class="hint">This label raises {{ questions|length }} questions. The outlined region is the one question {{ qpos }} is about; each answer moves you to the next question.</p>{% endif %}
     </div>
     <div class="verdicts">
       {% if prompt %}
       <div class="ask">
-        <div class="head"><strong>{{ prompt.what }}</strong><span class="chip review">{{ icon('bang') }}{{ prompt.verdict }}</span></div>
+        {% if questions|length > 1 %}
+        <ol class="qlist" aria-label="Questions on this label">
+          {% for p in questions %}{% set a = item.answers.get(p.key, '') %}
+          <li><a class="{{ 'cur' if p.key == prompt.key }}{{ ' ' ~ a if a }}" href="/batch/{{ job.id }}/review?n={{ pos }}{{ pq }}&q={{ p.key }}"{% if p.key == prompt.key %} aria-current="true"{% endif %}><span class="num">{{ loop.index }}</span>{{ p.what }}<span class="state">{{ {'pass': 'yes', 'fail': 'no', 'skip': 'skipped'}.get(a, 'open') }}</span></a></li>
+          {% endfor %}
+        </ol>
+        {% endif %}
+        <div class="head"><strong>{% if questions|length > 1 %}Question {{ qpos }} of {{ questions|length }} · {% endif %}{{ prompt.what }}</strong>{% set pv = prompt.verdict %}<span class="chip {{ 'fail' if pv in ('MISMATCH', 'NOT FOUND', 'FAIL') else 'review' }}">{{ icon('cross' if pv in ('MISMATCH', 'NOT FOUND', 'FAIL') else 'bang') }}{{ pv }}</span></div>
         {% set crop = crop_for(prompt.box, r.image_aspect, 560) %}
         {% if crop and image_url %}<div class="crop wide" style="{{ crop.box_style }}"><img src="{{ image_url }}" alt="Crop of the label around the region to check" style="{{ crop.img_style }}"></div>{% endif %}
         <table class="diff">
@@ -55,16 +66,16 @@
           </tr></tbody>
         </table>
         <div class="why">{{ prompt.why }}</div>
-        {{ decide(prompt, job.id, index, item.decision) }}
-        <span class="fine">A decision moves you to the next item. Decisions are kept with the batch and go into the export as a "decision" column; nothing is sent anywhere.</span>
+        {{ decide(prompt, job.id, index, item.answers.get(prompt.key, ''), pile=pile) }}
+        <span class="fine">Each answer moves you to the next question, then to the next label once every question on this one has an answer. Answers are kept with the batch and go into the export ("decision" and "answers" columns); nothing is sent anywhere.</span>
       </div>
       {% endif %}
       <details class="rest"><summary>All {{ r.fields|selectattr('verdict.value', 'ne', 'SKIPPED')|list|length }} fields and the other warning checks</summary>
         <div class="rest-body">{% include "partials/result.html" %}</div>
       </details>
       <div class="pager">
-        {% if pos > 1 %}<a class="btn secondary small" href="/batch/{{ job.id }}/review?n={{ pos - 1 }}" data-act="prev">Previous <span class="kbd">K</span></a>{% else %}<span class="btn secondary small" aria-disabled="true">Previous <span class="kbd">K</span></span>{% endif %}
-        {% if pos < n %}<a class="btn secondary small" href="/batch/{{ job.id }}/review?n={{ pos + 1 }}" data-act="next">Next <span class="kbd">J</span></a>{% else %}<span class="btn secondary small" aria-disabled="true">Next <span class="kbd">J</span></span>{% endif %}
+        {% if pos > 1 %}<a class="btn secondary small" href="/batch/{{ job.id }}/review?n={{ pos - 1 }}{{ pq }}" data-act="prev">Previous <span class="kbd">K</span></a>{% else %}<span class="btn secondary small" aria-disabled="true">Previous <span class="kbd">K</span></span>{% endif %}
+        {% if pos < n %}<a class="btn secondary small" href="/batch/{{ job.id }}/review?n={{ pos + 1 }}{{ pq }}" data-act="next">Next <span class="kbd">J</span></a>{% else %}<span class="btn secondary small" aria-disabled="true">Next <span class="kbd">J</span></span>{% endif %}
         <span class="timing-line">Checked in <span class="mono">{{ r.timings.total_ms|seconds }}</span> · reading {{ r.timings.read_ms|seconds }} · comparing {{ r.timings.match_ms|seconds }}</span>
       </div>
     </div>

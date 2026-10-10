@@ -324,20 +324,27 @@
     answers.hidden = !!value; if (fine) fine.hidden = !!value; done.hidden = !value;
     if (value) done.querySelector("[data-answer-text]").textContent = value === "skip" ? "skipped for now" : texts[value];
   }
+  // Each answer settles one question (the block's data-decide key); the server says what the label's
+  // decision now is and which questions are still open.
   async function decide(block, value, wrap) {
     const job = wrap && wrap.dataset.job;
+    let saved = null;
     if (job) {
       try {
         const body = new FormData(); body.append("index", wrap.dataset.index); body.append("value", value);
+        body.append("key", block.dataset.decide || "");
+        const pile = document.querySelector("[data-review]")?.dataset.pile; if (pile) body.append("pile", pile);
         const resp = await fetch(`/batch/${job}/decision`, { method: "POST", body, headers: { "X-Partial": "1" } });
-        if (!resp.ok) { toast("That decision was not saved. Please try again."); return; }
+        if (!resp.ok) { toast("That decision was not saved. Please try again."); return null; }
+        saved = await resp.json();
         const row = document.querySelector(`tr.r[data-index="${wrap.dataset.index}"]`);
-        if (row) row.dataset.decision = value === "clear" ? "" : value;
+        if (row) row.dataset.decision = saved.decision;
         const d = document.querySelector("[data-d=decision]");
         if (d && row && row.classList.contains("cur")) d.textContent = row.dataset.decision || "—";
-      } catch (err) { toast("That decision was not saved. Please check the connection."); return; }
+      } catch (err) { toast("That decision was not saved. Please check the connection."); return null; }
     }
     showDecision(block, value === "clear" ? "" : value);
+    return saved || {};
   }
   function wireDecisions(scope) {
     const wrap = scope.closest("[data-job]") || scope.querySelector("[data-job]");
@@ -346,9 +353,16 @@
       const block = b.closest(".decide");
       const value = b.dataset.answer;
       const review = document.querySelector("[data-review]");
-      decide(block, value, wrap || review).then(() => {
-        // In the queue a decision moves you on (Review-Queue board).
-        if (review && value !== "clear") { const next = $("[data-act=next]"); if (next) location.href = next.href; }
+      decide(block, value, wrap || review).then((saved) => {
+        // In the queue an answer moves you on (Review-Queue board): to this label's next open question,
+        // then to the next label once every question on this one has an answer.
+        if (!review || !saved || value === "clear") return;
+        if (saved.open && saved.open.length) {
+          const pile = review.dataset.pile === "fail" ? "&pile=fail" : "";
+          location.href = `/batch/${review.dataset.job}/review?n=${review.dataset.pos}${pile}&q=${encodeURIComponent(saved.open[0])}`;
+          return;
+        }
+        const next = $("[data-act=next]"); if (next) location.href = next.href; else location.reload();
       });
     }));
   }
@@ -645,7 +659,7 @@
         dlg.close();
         toast(fmt === "reports" ? `Opened ${count} as printable reports` : `Exported ${count} as ${$("[data-export-name]", dlg).textContent.split("·")[0].trim()}`);
       });
-      $$("[data-quick]", dlg).forEach((a) => a.addEventListener("click", () => { dlg.close(); toast(`Exported the labels marked ${a.dataset.quick}`); }));
+      $$("[data-quick]", dlg).forEach((a) => a.addEventListener("click", () => { dlg.close(); toast(`Exported ${a.dataset.quick}`); }));
     }
     $$("[data-act=export]", batchSlot).forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); openExport(); }));
     const exportSel = $("[data-act=export-selected]", batchSlot);

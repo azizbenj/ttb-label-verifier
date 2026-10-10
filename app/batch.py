@@ -22,6 +22,7 @@ from time import perf_counter
 from .config import (BATCH_JOBS_KEPT, BATCH_JOB_TTL_S, BATCH_WORKERS, FIELDS, IMAGE_EXTENSIONS, MAX_BATCH_IMAGES,
                      MAX_BATCH_UPLOAD_BYTES, MAX_IMAGE_BYTES, MAX_ZIP_MEMBERS, MAX_ZIP_UNCOMPRESSED)
 from .decision_log import log_decision
+from .decisions import prompts_for
 from .images import MAX_LABEL_PARTS, ImageError, flatten, open_image, stitch
 from .models import Application, Status, Verdict, VerificationResult
 from .normalize import parse_alcohol, parse_net_contents
@@ -77,7 +78,35 @@ class BatchItem:
     preview: bytes | None = None       # downscaled JPEG for the detail panel, when the budget allows
     needs: str = ""                    # what the agent has to do with this label, in a few words
     focus_box: list[float] | None = None   # region to outline in the detail panel: the first problem or review
-    decision: str = ""                 # the agent's answer from the review queue: pass, fail, skip, or blank
+    # The agent's answer to each question the label raises (prompt key -> pass, fail or skip). One answer
+    # settles one question, never the label: see ``decision``.
+    answers: dict[str, str] = field(default_factory=dict)
+
+    def question_keys(self) -> list[str]:
+        return [p.key for p in prompts_for(self.result)] if self.result else []
+
+    def open_questions(self) -> list[str]:
+        return [k for k in self.question_keys() if k not in self.answers]
+
+    @property
+    def decision(self) -> str:
+        """The label's decision, from the answers: ``fail`` when any question was answered no, ``pass`` when
+        every one was answered yes, ``skip`` when all are answered and some were skipped, ``partial`` while
+        questions are still open, blank before the first answer."""
+        if not self.answers:
+            return ""
+        keys = self.question_keys() or list(self.answers)
+        values = [self.answers.get(k, "") for k in keys]
+        if "fail" in values:
+            return "fail"
+        if "" in values:
+            return "partial"
+        return "pass" if all(v == "pass" for v in values) else "skip"
+
+    def answers_text(self) -> str:
+        """One question per entry, for the export: 'brand_name: yes; net_contents: open'."""
+        words = {"pass": "yes", "fail": "no", "skip": "skipped"}
+        return "; ".join(f"{k}: {words.get(self.answers.get(k, ''), 'open')}" for k in self.question_keys())
 
     @property
     def status(self) -> str:
@@ -102,8 +131,10 @@ def needs_phrase(result: VerificationResult) -> tuple[str, list[float] | None]:
     if result.overall == Status.PASS:
         return "Nothing", None
     if result.overall == Status.FAIL:
-        box = problems[0].box if problems and problems[0].box else w.box
-        return "Nothing: send back", box
+        # Check before sending anything back: on real artwork a FAIL is often a misread the agent can clear.
+        if problems:
+            return f"Check the {problems[0].label.lower()}", problems[0].box or w.box
+        return "Check the government warning", w.box
     if reviews:
         return f"Confirm the {reviews[0].label.lower()}", reviews[0].box
     if w.heading_bold == Status.REVIEW:
@@ -191,23 +222,39 @@ class BatchJob:
         xs = [it.result.timings.read_ms for it in self.items if it.result]
         return sum(xs) / len(xs) if xs else None
 
-    # --- the review queue: every label that needs a look, in triage order ---------------------------
-    def review_queue(self) -> list[int]:
-        return [i for i, it in self.ordered_items() if it.status == Status.REVIEW.value]
+    # --- the review queues: the labels that need a look, or the fails to check, in triage order ------
+    def review_queue(self, pile: str = "review") -> list[int]:
+        status = Status.FAIL.value if pile == "fail" else Status.REVIEW.value
+        return [i for i, it in self.ordered_items() if it.status == status]
 
     @property
     def decided_count(self) -> int:
-        return sum(1 for it in self.items if it.decision)
+        """Labels whose every question has an answer (a label with questions still open is not decided)."""
+        return sum(1 for it in self.items if it.decision in ("pass", "fail", "skip"))
 
-    def decide(self, index: int, value: str) -> BatchItem:
-        """Record the agent's answer for one label. Never changes a verdict. With ``DECISION_LOG`` set, the
-        answer (and an undo) also goes to the decision log with what the tool concluded about the label."""
+    @property
+    def cleared_count(self) -> int:
+        """Labels flagged by the tool that the agent cleared: every question answered yes."""
+        return sum(1 for it in self.items if it.status != Status.PASS.value and it.decision == "pass")
+
+    def decide(self, index: int, value: str, key: str = "") -> BatchItem:
+        """Record the agent's answer to one of the label's questions (``key``); without a key the answer
+        applies to every question. ``clear`` undoes it. Never changes a verdict. With ``DECISION_LOG`` set,
+        the answer (and an undo) also goes to the decision log with what the tool concluded about the label."""
         if value not in DECISIONS:
             raise ValueError(f"decision must be one of {', '.join(DECISIONS)}")
         with self.lock:
             item = self.items[index]
-            item.decision = "" if value == "clear" else value
-        log_decision(self, item, index, value)
+            keys = item.question_keys()
+            if key and key not in keys:
+                raise ValueError(f"this label has no question '{key}'")
+            targets = [key] if key else (keys or [""])
+            for k in targets:
+                if value == "clear":
+                    item.answers.pop(k, None)
+                else:
+                    item.answers[k] = value
+        log_decision(self, item, index, value, key)
         return item
 
     @property
@@ -549,9 +596,13 @@ def _cell(value):
 
 
 def export_items(job: BatchJob, ids: set[str] | None = None, statuses: set[str] | None = None) -> list[BatchItem]:
-    """The rows an export covers: the whole job, ``ids`` (application ids), or ``statuses``."""
+    """The rows an export covers: the whole job, ``ids`` (application ids), or ``statuses``. The status
+    ``CLEARED`` adds the labels the agent cleared (every question answered yes), so "ready to approve"
+    is ``PASS,CLEARED``."""
+    def wanted(it: BatchItem) -> bool:
+        return it.status in statuses or ("CLEARED" in statuses and it.decision == "pass")
     return [it for it in job.items
-            if (ids is None or it.application_id in ids) and (statuses is None or it.status in statuses)]
+            if (ids is None or it.application_id in ids) and (statuses is None or wanted(it))]
 
 
 def export_name(job: BatchJob, ids: set[str] | None, statuses: set[str] | None, ext: str = "csv") -> str:
@@ -574,7 +625,7 @@ def export_csv(job: BatchJob, ids: set[str] | None = None, statuses: set[str] | 
         header += ["warning_present", "warning_wording", "warning_heading_caps", "warning_heading_bold", "warning_notes",
                    "warning_diff"]
     if "decisions" in inc:
-        header += ["decision"]
+        header += ["decision", "answers"]
     if "ocr" in inc:
         header += ["label_text"]
     if "timings" in inc:
@@ -599,7 +650,7 @@ def export_csv(job: BatchJob, ids: set[str] | None = None, statuses: set[str] | 
             else:
                 row += ["", "", "", "", "", ""]
         if "decisions" in inc:
-            row += [it.decision]
+            row += [it.decision, it.answers_text()]
         if "ocr" in inc:
             row += [r.ocr_text if r else ""]
         if "timings" in inc:

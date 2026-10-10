@@ -152,7 +152,7 @@ Code map:
 | `app/readers/` | `base.py` (interface), `tesseract.py` (local OCR), `rapid.py` (RapidOCR: second local reader and the escalation), `claude_vision.py` (cloud), `extract.py` (rules over OCR) |
 | `app/pipeline.py` | One label end to end with timings, the time budget for the optional passes, and the overall verdict |
 | `app/evidence.py` | What the result page shows as evidence: crops of the label, unit conversions, misread explanations |
-| `app/decisions.py` | The one question a label that needs a look asks the agent (review queue and single result) |
+| `app/decisions.py` | The questions a flagged label asks the agent, one per field or warning check (review queue and single result) |
 | `app/decision_log.py` | The decision log: one JSON line per review answer and undo when `DECISION_LOG` is set (never the image) |
 | `app/batch.py` | CSV parsing, image/zip intake, thread-pool jobs, CSV export |
 | `app/main.py` + `templates/` + `static/` | FastAPI routes, server-rendered UI (no build step, no CDN, no external assets); `review.html` is the review queue, `report.html` the printable reports |
@@ -270,8 +270,14 @@ Real labels taught a few more rules, each covered by tests:
   `alcohol by volume` or a proof figure (OCR slips such as `ALG/VGL` included; "alcoholic" in the warning and
   "volcanic" are not). A matching figure without such a word ("Blend: 13.5% Petit Verdot") is a NEAR MATCH,
   never a MATCH.
-- **A likely misread is not a mismatch.** A volume that is not a standard size and is one digit away from the
-  application's (`760 mL` for `750 mL`) is a NEAR MATCH explained as a probable reading error.
+- **A likely misread is not a mismatch, and the application's value is not assumed.** A volume that is not a
+  standard size and is one digit away from the application's is a NEAR MATCH. When the application's size is
+  the only standard size one digit away (`1760 mL` for `1.75 L`) it is explained as a probable reading error;
+  when other standard sizes are just as close (`760 mL` is one digit from 700, 710, 720 and 750 mL) the note
+  names them and says the label could say any of them, and the question to the agent has no suggested answer.
+- **The application's proof is checked too.** When the application states a proof with its percentage
+  (`40% Alc./Vol. (80 Proof)`), a label proof that differs is a MISMATCH even though the percentage agrees; with
+  no proof on the label, an application whose proof contradicts its own percentage is a NEAR MATCH.
 - **Letter-spaced brands** (`B A R N  B R E W`) are matched with the spaces closed up; a single-letter
   difference in the brand is a NEAR MATCH, and trademark signs (® ™ ©) are ignored.
 - **`U.S.` before a unit and words for numbers** (`ONE PINT`) are understood.
@@ -381,18 +387,29 @@ batch has a link of its own (`/batch/<id>`) that opens the page on the batch tab
 - **Triage first.** The results table lists REVIEW rows first, then FAIL, ERROR and PASS; filters (`1` `2` `3`
   `4` `0`), search, sort, `J`/`K` to move, `X` to select, `Enter` for the full comparison. A row whose image
   could not be read is an ERROR (grey), never a FAIL: nothing is wrong with the label.
-- **Review queue** (`R`, or "Review the N"): one label that needs a look at a time, with the one thing to look at
-  outlined on the label and a single question: "Is this the same brand name?", "Does the label say 'should'?",
-  "Is GOVERNMENT WARNING: printed in bold?". `Y` means the label is fine (a reading error on our side), `N` that
-  the label is wrong, `S` skips; a decision moves on to the next. Decisions never change a verdict; they are
-  kept with the batch and go into the export as a `decision` column. The same prompts appear under a NEAR MATCH
-  row or a warning check in the single result and in the full comparison, and print with the report. The
-  queue works without JavaScript: the answers are forms.
+- **Review queue** (`R`, or "Review the N"): one label that needs a look at a time, and every question it
+  raises in turn, each with its region outlined on the label: "Is this the same brand name?", "Does the label
+  say 'should'?", "Is GOVERNMENT WARNING: printed in bold?". Every field or warning check that is not a clean
+  match asks one, a MISMATCH or NOT FOUND included. `Y` means the label is fine (a reading error on our side),
+  `N` that the label is wrong, `S` skips; an answer moves on to the label's next open question, and to the next
+  label once every question on it has an answer. One answer settles one question, never the whole label: the
+  label's decision is **pass** only when every question was answered yes, **fail** when any was answered no,
+  **partial** while some are open. "Yes" is the suggested (green) button only when the evidence leans to it;
+  when the tool read something different from the application (a MISMATCH, a warning wording difference, a
+  misread one digit from several sizes) both answers look alike, so the application's value is never offered
+  as the likely truth.
+- **Fails to check** ("Check the N fails"): the same queue over the FAIL labels, so a misread ("1.75 L" read as
+  "1L") can be recorded before anything is sent back. Answers never change a verdict; they are kept with the
+  batch and go into the export as `decision` (the label's) and `answers` (one per question:
+  `brand_name: yes; net_contents: open`) columns. The same prompts appear under each flagged row or warning
+  check in the single result and in the full comparison, and print with the report. Both queues work without
+  JavaScript: the answers are forms.
 - **Export dialog**: which labels (all, shown now with the current filter and search, or the selected rows),
   what to include (per-field verdicts and reasons, the warning checks and diff, decisions, all text read,
   timings), and the format: CSV (UTF-8 with a BOM so Excel keeps accents) or printable reports, one page per
-  label for the case file with a reviewer decision block. Quick exports: passes only, fails only. The file is
-  named after the batch, the scope and the date.
+  label for the case file with a reviewer decision block. Quick exports: ready to approve (the passes plus the
+  labels the agent cleared, `status=PASS,CLEARED`) and fails only. The file is named after the batch, the scope
+  and the date.
 - **Print**: "Print report" on any result prints a Letter page: the application, the verdict, the label with
   its numbered regions, the table, the warning checks, and a reviewer decision block (approve / return /
   second look, signature, notes).
@@ -401,22 +418,23 @@ batch has a link of its own (`/batch/<id>`) that opens the page on the batch tab
 
 Set `DECISION_LOG=/path/decisions.jsonl` and every answer from the review queue (and every undo) is appended
 to that file as one JSON object per line, with what the tool had concluded about the label: the job, the
-batch's source name, the application id and image name, the decision (`pass`: the label is fine and our flag
-was a false alarm, `fail`: the label is wrong, `skip`, `clear`: undone), the overall verdict, every question
-the label raised (key, what, verdict, question, the two readings) with the one the queue asked first marked,
+batch's source name, the application id and image name, the answer (`pass`: the label is fine and our flag
+was a false alarm, `fail`: the label is wrong, `skip`, `clear`: undone), the question it answers (`key`), the
+label's decision after it (`label_decision`), the overall verdict, every question the label raised (key, what,
+verdict, question, the two readings) with the answered one marked,
 each field's verdict / expected / found / note, the four warning statuses and the wording score, the read
 confidence, the words read, the reader and the timings. Never the image, its preview or the text read from
 it. Writes are append-only behind a lock (the server's workers share it; keep one process per log file), and
 a write that fails (a missing directory, a full disk) is a warning in the server log, never an error for the
 agent. Off when the variable is unset.
 
-`python scripts/decisions_report.py decisions.jsonl` keeps the last decision per job and application (an
-undone one drops out) and prints, per question (`brand_name`, `net_contents`, `warning_wording`,
-`warning_bold`...), how many labels raised it, how many times the queue asked it first, the pass / fail / skip
+`python scripts/decisions_report.py decisions.jsonl` keeps the last answer per job, application and question
+(an undone one drops out) and prints, per question (`brand_name`, `net_contents`, `warning_wording`,
+`warning_bold`...), how many labels raised it, how many answers were about it, the pass / fail / skip
 answers and the pass rate: pass ÷ (pass + fail), the share of that rule's flags the agents found to be false
 alarms. A rule with a high pass rate costs agents time for nothing; one with a low pass rate catches real
 problems. Then the ten most frequent notes behind `pass` answers and the ten behind `fail`. `--csv
-calibration.csv` writes one row per label answered pass or fail in the layout of `scripts/real_labels.csv`
+calibration.csv` writes one row per label decided pass or fail in the layout of `scripts/real_labels.csv`
 (the application id as `ttbid`, the application values, `<field>=review` in `expect` when the agent confirmed
 a NEAR MATCH, nothing after a `fail`, the decision and the question in `notes`), ready for
 `scripts/real_labels.py` once the images are in `data/real/`. The script needs only the standard library, so

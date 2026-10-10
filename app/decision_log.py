@@ -3,7 +3,7 @@
 ``DECISION_LOG`` names the file (off when unset). A decision (``pass``: the label is fine and our flag
 was a false alarm; ``fail``: the label is wrong; ``skip``) and its undo (``clear``) are appended with
 what the tool had concluded about the label: the verdict, every question it raised and which one the
-queue asked first, each field's verdict and note, the warning checks, the reader and the timings. Never
+answer is about, each field's verdict and note, the warning checks, the reader and the timings. Never
 the image, its preview or the text read from it. ``scripts/decisions_report.py`` turns the log into
 pass rates per rule and a calibration CSV. Standard library only.
 """
@@ -26,7 +26,7 @@ log = logging.getLogger("labelcheck")
 _LOCK = threading.Lock()   # several workers and requests append to the one file
 
 
-def decision_record(job: BatchJob, item: BatchItem, index: int, value: str) -> dict:
+def decision_record(job: BatchJob, item: BatchItem, index: int, value: str, key: str = "") -> dict:
     """One log line as a dict: what was decided and what the tool had concluded about the label."""
     r = item.result
     prompts = prompts_for(r) if r else []
@@ -39,10 +39,12 @@ def decision_record(job: BatchJob, item: BatchItem, index: int, value: str) -> d
         "application_id": item.application_id,
         "image": item.image_name,
         "decision": value,                      # pass, fail, skip, or clear (the decision was undone)
+        "key": key,                             # the question answered; blank when the answer covered them all
+        "label_decision": item.decision,        # the label's decision after this answer (see BatchItem.decision)
         "overall": item.status,                 # PASS, REVIEW, FAIL, or ERROR (nothing was compared)
-        "asked": prompts[0].key if prompts else None,   # the question the review queue asked first
+        "asked": key or (prompts[0].key if prompts else None),   # the question this answer is about
         "prompts": [{"key": p.key, "what": p.what, "verdict": p.verdict, "question": p.question,
-                     "left": list(p.left), "right": list(p.right), "asked": i == 0}
+                     "left": list(p.left), "right": list(p.right), "asked": p.key == key if key else i == 0}
                     for i, p in enumerate(prompts)],
         "fields": [{"key": f.key, "verdict": f.verdict.value, "expected": f.expected, "found": f.found,
                     "note": f.note} for f in r.fields] if r else [],
@@ -56,14 +58,14 @@ def decision_record(job: BatchJob, item: BatchItem, index: int, value: str) -> d
     }
 
 
-def log_decision(job: BatchJob, item: BatchItem, index: int, value: str) -> bool:
+def log_decision(job: BatchJob, item: BatchItem, index: int, value: str, key: str = "") -> bool:
     """Append the decision to ``DECISION_LOG``; True when a line was written. A failure to write is a
     warning in the server log, never an error for the request: the decision is still kept with the batch."""
     path = config.DECISION_LOG
     if not path:
         return False
     try:
-        line = json.dumps(decision_record(job, item, index, value), ensure_ascii=False, separators=(",", ":"))
+        line = json.dumps(decision_record(job, item, index, value, key), ensure_ascii=False, separators=(",", ":"))
         with _LOCK, open(path, "a", encoding="utf-8", errors="replace") as f:
             f.write(line + "\n")
         return True

@@ -54,6 +54,7 @@
   </div>
   <div class="acts">
     {% if c.REVIEW %}<a class="btn" href="/batch/{{ job.id }}/review" data-act="review">Review the {{ c.REVIEW }} <span class="kbd w">R</span></a>{% endif %}
+    {% if c.FAIL %}<a class="btn secondary" href="/batch/{{ job.id }}/review?pile=fail" data-act="review-fails">Check the {{ c.FAIL }} fail{{ 's' if c.FAIL != 1 }}</a>{% endif %}
     <a class="btn secondary" href="/batch/{{ job.id }}/export.csv" data-act="export">{{ icon('download', 18) }}Export…</a>
     <a class="btn secondary" href="/" data-act="newbatch">New batch</a>
   </div>
@@ -154,7 +155,7 @@
     <fieldset class="opts"><legend>Include</legend>
       <label class="ck"><input type="checkbox" name="include" value="fields" checked> Per-field verdicts and the one-line reasons</label>
       <label class="ck"><input type="checkbox" name="include" value="warning" checked> Government warning checks (present, wording, capitals, bold) and the diff</label>
-      <label class="ck"><input type="checkbox" name="include" value="decisions" checked> Your decisions from the review queue <span class="muted-3">(column "decision": pass, fail, skip, or blank)</span></label>
+      <label class="ck"><input type="checkbox" name="include" value="decisions" checked> Your answers from the review queue <span class="muted-3">("decision": pass when every question was answered yes, fail when any was answered no, partial while some are open; "answers": one per question)</span></label>
       <label class="ck"><input type="checkbox" name="include" value="ocr"> All text read from each label</label>
       <label class="ck"><input type="checkbox" name="include" value="timings" checked> Timings</label>
     </fieldset>
@@ -165,7 +166,7 @@
       </div>
     </fieldset>
     <div class="foot"><span class="mono small muted" data-export-name>label-check_{{ job.slug }}_all_{{ job.created_at.astimezone().strftime('%Y-%m-%d') }}.csv · {{ job.total }} rows</span><button class="btn secondary" type="button" data-act="close">Cancel <span class="kbd">Esc</span></button><button class="btn" type="submit" data-act="download">Download CSV</button></div>
-    <div class="quick"><span>Quick exports:</span><a class="btn quiet small" href="/batch/{{ job.id }}/export.csv?status=PASS" data-quick="PASS">Passes only ({{ c.PASS }}), for approval</a><span class="dot">·</span><a class="btn quiet small" href="/batch/{{ job.id }}/export.csv?status=FAIL" data-quick="FAIL">Fails only ({{ c.FAIL }}), with reasons, for the send-back letters</a></div>
+    <div class="quick"><span>Quick exports:</span><a class="btn quiet small" href="/batch/{{ job.id }}/export.csv?status=PASS,CLEARED" data-quick="the passes and the labels you cleared">Ready to approve ({{ c.PASS + job.cleared_count }}): passes and labels you cleared</a><span class="dot">·</span><a class="btn quiet small" href="/batch/{{ job.id }}/export.csv?status=FAIL" data-quick="the fails">Fails only ({{ c.FAIL }}), with reasons and your answers</a></div>
   </form>
 </dialog>
 {% endif %}

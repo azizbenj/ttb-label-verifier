@@ -34,7 +34,8 @@ APP = {"brand_name": "OLD TOM DISTILLERY", "class_type": "Kentucky Straight Bour
 WARNING = ["GOVERNMENT WARNING: (1) According to the Surgeon General, women must not drink alcoholic",
            "beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic",
            "beverages impairs your ability to drive a car or operate machinery, and may cause health problems."]
-LOG_KEYS = {"ts", "job", "source", "index", "application_id", "image", "decision", "overall", "asked", "prompts",
+LOG_KEYS = {"ts", "job", "source", "index", "application_id", "image", "decision", "key", "label_decision", "overall",
+            "asked", "prompts",
             "fields", "warning", "read_confidence", "words_read", "reader", "timings"}
 
 
@@ -247,7 +248,7 @@ def test_report_script_prints_the_table_and_writes_the_csv(log_path, tmp_path):
                        capture_output=True, text=True, check=False, cwd=tmp_path)
     assert r.returncode == 0, r.stderr
     assert "not a JSON record" in r.stderr
-    assert "9 records, 6 labels with a standing decision" in r.stdout
+    assert "9 records, 6 answers that stand" in r.stdout
     assert re.search(r"brand_name\s+3\s+3\s+2\s+0\s+1\s+100%", r.stdout)
     assert re.search(r"warning_wording\s+6\s+3\s+1\s+2\s+0\s+33%", r.stdout)
     assert re.search(r"warning_bold\s+6\s+0\s+0\s+0\s+0\s+-", r.stdout)

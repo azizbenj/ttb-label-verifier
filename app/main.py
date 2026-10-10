@@ -354,7 +354,7 @@ def result_context(result: VerificationResult, application: Application | None, 
             "reader_info": reader_info(), "cloud": CLOUD_READER_AVAILABLE, "default_reader": OCR_ENGINE,
             "thresholds": THRESHOLDS, "warning_text": MANDATED_WARNING, "prompts": prompt_map(result),
             "job_id": job.id if job else "", "item_index": index if index is not None else "",
-            "decision": item.decision if item else ""}
+            "decision": item.decision if item else "", "answers": dict(item.answers) if item else {}}
 
 
 def result_response(request: Request, result: VerificationResult, application: Application | None,
@@ -557,45 +557,60 @@ def batch_status(request: Request, job_id: str):
 
 @app.post("/batch/{job_id}/decision")
 async def batch_decide(request: Request, job_id: str, index: int = Form(...), value: str = Form(...),
-                       next: str = Form("")):
-    """Keep the agent's answer (pass, fail, skip; clear undoes it) with the batch. Never changes a verdict.
-    The page's script gets JSON; a plain form post is sent on to ``next`` (the next item in the queue)."""
+                       key: str = Form(""), pile: str = Form("review"), next: str = Form("")):
+    """Keep the agent's answer to one of a label's questions (``key``: pass, fail, skip; clear undoes it)
+    with the batch. Never changes a verdict. The page's script gets JSON; a plain form post goes back to
+    the same label while it still has open questions, then on to the next one in the queue."""
     job = batchmod.JOBS.get(job_id)
     if job is None:
         return JSONResponse({"error": _BATCH_GONE}, status_code=404)
     if not (0 <= index < len(job.items)) or value not in batchmod.DECISIONS:
         return JSONResponse({"error": "That decision is not possible."}, status_code=400)
-    item = job.decide(index, value)
+    try:
+        item = job.decide(index, value, key)
+    except ValueError:
+        return JSONResponse({"error": "That question is not on this label."}, status_code=400)
+    pile = "fail" if pile == "fail" else "review"
+    queue = job.review_queue(pile)
     if request.headers.get("x-partial") == "1" or "application/json" in request.headers.get("accept", ""):
-        queue = job.review_queue()
-        return {"index": index, "decision": item.decision, "decided": job.decided_count, "queue": len(queue),
-                "remaining": sum(1 for i in queue if not job.items[i].decision)}
-    # A plain form post: on to the next label in the queue (or back where the form said).
+        return {"index": index, "key": key, "decision": item.decision, "answers": item.answers,
+                "open": item.open_questions(), "decided": job.decided_count, "queue": len(queue),
+                "remaining": sum(1 for i in queue if job.items[i].decision in ("", "partial"))}
+    # A plain form post: the same label while questions are open, then the next label in the queue.
     if next.startswith(f"/batch/{job.id}/") and "n=" in next:
         target = next
     else:
-        queue = job.review_queue()
         pos = queue.index(index) + 1 if index in queue else 0
-        target = f"/batch/{job.id}/review?n={min(pos + 1, len(queue)) if value != 'clear' else max(pos, 1)}"
+        stay = value == "clear" or item.open_questions()
+        n = max(pos, 1) if stay else min(pos + 1, len(queue))
+        target = f"/batch/{job.id}/review?n={n}" + ("&pile=fail" if pile == "fail" else "")
     return RedirectResponse(target, status_code=303)
 
 
 @app.get("/batch/{job_id}/review", response_class=HTMLResponse)
-def batch_review(request: Request, job_id: str, n: int = 1):
-    """The review queue (Review-Queue board): one label that needs a look at a time, its one question,
-    yes / no / skip, then the next. Works without JavaScript: the answers are forms."""
+def batch_review(request: Request, job_id: str, n: int = 1, pile: str = "review", q: str = ""):
+    """The review queue (Review-Queue board): one label at a time and each of its questions in turn,
+    yes / no / skip, then the next label once every question has an answer. ``pile=fail`` walks the
+    fails instead, so a misread can be cleared before anything is sent back. Works without JavaScript:
+    the answers are forms."""
     job = batchmod.JOBS.get(job_id)
     if job is None:
         return error_response(request, _BATCH_GONE, 404)
-    queue = job.review_queue()
+    pile = "fail" if pile == "fail" else "review"
+    queue = job.review_queue(pile)
     pos = min(max(n, 1), max(len(queue), 1))
     index = queue[pos - 1] if queue else None
     item = job.items[index] if index is not None else None
-    ctx = {"job": job, "queue": queue, "pos": pos, "index": index, "item": item, "fields": FIELDS}
+    ctx = {"job": job, "queue": queue, "pos": pos, "index": index, "item": item, "fields": FIELDS, "pile": pile}
     if item is not None and item.result is not None:
         image_url = f"/batch/{job.id}/image/{index}" if item.preview else None
         ctx |= result_context(item.result, item.application, image_url, compact=True, job=job, index=index)
-        ctx["prompt"] = next(iter(ctx["prompts"].values()), None)
+        questions = list(ctx["prompts"].values())
+        # the question asked (?q=), else the first one still open, else the first
+        prompt = (ctx["prompts"].get(q) or next((p for p in questions if p.key not in item.answers), None)
+                  or (questions[0] if questions else None))
+        ctx |= {"prompt": prompt, "questions": questions,
+                "qpos": questions.index(prompt) + 1 if prompt else 0}
     return templates.TemplateResponse(request, "review.html", ctx)
 
 
@@ -667,5 +682,5 @@ def batch_json(job_id: str):
     return {"id": job.id, "done": job.done, "total": job.total, "finished": job.is_done, "counts": job.counts(),
             "elapsed_ms": round(job.elapsed_ms, 1), "issues": job.issues,
             "items": [{"row": it.row, "application_id": it.application_id, "image": it.image_name,
-                       "status": it.status, "error": it.error, "decision": it.decision,
+                       "status": it.status, "error": it.error, "decision": it.decision, "answers": it.answers,
                        "result": it.result.model_dump(mode="json") if it.result else None} for it in job.items]}

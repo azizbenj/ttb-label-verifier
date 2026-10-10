@@ -311,6 +311,7 @@ def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_fo
 NOTE_ALSO_READS = "but it also reads"
 NOTE_LOST_POINT = "the decimal point was not read clearly"
 NOTE_PROBABLE_MISREAD = "Probably a reading error"
+NOTE_AMBIGUOUS_MISREAD = "so the label could say"   # a misread one digit from several standard sizes
 NOTE_PROOF_DISAGREES = "does not agree with its percentage"
 NOTE_APPLICATION_UNREADABLE = "The application value could not be read"
 NOTE_CONFIRMED = "A closer read of that line"
@@ -329,7 +330,8 @@ def wants_second_read(f: FieldResult) -> str | None:
     if f.verdict in (Verdict.NOT_FOUND, Verdict.MISMATCH):
         return kind
     if f.verdict == Verdict.NEAR_MATCH and any(n in f.note for n in
-                                               (NOTE_ALSO_READS, NOTE_LOST_POINT, NOTE_PROBABLE_MISREAD, NOTE_PROOF_DISAGREES)):
+                                               (NOTE_ALSO_READS, NOTE_LOST_POINT, NOTE_PROBABLE_MISREAD, NOTE_AMBIGUOUS_MISREAD,
+                                                NOTE_PROOF_DISAGREES)):
         return kind
     return None
 
@@ -450,6 +452,22 @@ def compare_alcohol(expected: str, label_text: str, *, statement: bool = False,
                            note=f"{exp.abv:g}% ABV is on the label, {NOTE_ALSO_READS} "
                                 f"{', '.join(f'{v:g}%' for v in others)}. This may be a reading error or a second "
                                 "statement. Please confirm.")
+    if matching and exp.proof is not None and not exp.abv_from_proof:
+        # The application states a proof too ("40% Alc./Vol. (82 Proof)"): a percentage that agrees must not
+        # hide a proof that does not. Against the label's own proof figure when it prints one, else against
+        # the application's percentage (proof = 2 x ABV).
+        label_proofs = sorted({c.proof for c in cands if c.proof is not None})
+        if label_proofs and all(abs(p - exp.proof) > th.proof_tolerance for p in label_proofs):
+            return FieldResult(key=key, label=_spec(key).label, expected=expected,
+                               found="; ".join(dict.fromkeys(c.text for c in cands)), verdict=Verdict.MISMATCH, score=0,
+                               note=f"Label says {label_proofs[0]:g} proof, application says {exp.proof:g} proof "
+                                    f"({exp.abv:g}% ABV is on both).")
+        if not label_proofs and abs(exp.proof - 2 * exp.abv) > th.proof_tolerance:
+            return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text,
+                               verdict=Verdict.NEAR_MATCH, score=80,
+                               note=f"{exp.abv:g}% ABV on both, but the application's {exp.proof:g} proof does not "
+                                    f"agree with its own percentage (proof = 2 × ABV, so {2 * exp.abv:g}). The label "
+                                    "prints no proof. Please check the application.")
     if matching:
         # A label contradicting itself is never a silent match, even when its percentage agrees.
         verdict, score = (Verdict.NEAR_MATCH, 90) if inconsistent else (Verdict.MATCH, 100)
@@ -539,10 +557,20 @@ def compare_volume(expected: str, label_text: str, *, rereads: list[tuple[str, l
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.NEAR_MATCH,
                            score=90, note=f"Reads like {expected} but {NOTE_LOST_POINT}.{checked} Please confirm.")
     if round(exp.ml) in _STANDARD_ML and round(got.ml) not in _STANDARD_ML and _one_digit_apart(round(got.ml), round(exp.ml)):
-        # "760 mL" is not a size anyone fills; "750 mL" is, and it is one digit away: most likely a misread.
+        # "1760 mL" is not a size anyone fills; "1750 mL" is, and the only standard size one digit away:
+        # most likely a misread. "760 mL" is one digit from 700, 710, 720 and 750 mL alike, so it says
+        # nothing about which one is printed, and the application's value must not be offered as the answer.
+        near = sorted(v for v in _STANDARD_ML if _one_digit_apart(round(got.ml), v) and v != round(exp.ml))
+        if near:
+            sizes = ", ".join(f"{v:g} mL" for v in near[:-1]) + (" or " if len(near) > 1 else "") + f"{near[-1]:g} mL"
+            note = (f"Reads {got.describe()}, which is not a standard size. It is one digit from the application's "
+                    f"{exp.describe()}, but also from {sizes}, {NOTE_AMBIGUOUS_MISREAD} {'either' if len(near) == 1 else 'any of them'}.{checked} "
+                    "Check the label.")
+        else:
+            note = (f"Reads {got.describe()}, which is not a standard size; the application's {exp.describe()} is the "
+                    f"only standard size one digit away. {NOTE_PROBABLE_MISREAD}.{checked} Please confirm.")
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.NEAR_MATCH,
-                           score=85, note=f"Reads {got.describe()}, which is not a standard size; the application's "
-                                          f"{exp.describe()} is one digit away. {NOTE_PROBABLE_MISREAD}.{checked} Please confirm.")
+                           score=85, note=note)
     return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.MISMATCH,
                        score=0, note=f"Label says {got.describe()}, application says {exp.describe()}.{checked}")
 

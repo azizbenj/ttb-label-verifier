@@ -1,14 +1,17 @@
-"""The one question a label that needs a look asks the agent (Review-Queue and Copy boards).
+"""The questions a label that needs a look asks the agent (Review-Queue and Copy boards).
 
 A prompt names what to look at, shows the two readings side by side, asks a yes/no question and
 labels the answers. "Yes" always means the label is fine (a reading error on our side), "No" that the
-label is wrong. Decisions never change a verdict; they travel with the batch into the export."""
+label is wrong. Every field or warning check that is not a clean match asks one, a MISMATCH included,
+so an agent can record a misread instead of sending a good label back. Answers never change a verdict;
+they travel with the batch into the export."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from .config import FIELD_BY_KEY, THRESHOLDS
+from .matching import NOTE_AMBIGUOUS_MISREAD
 from .models import Status, VerificationResult, Verdict
 
 
@@ -26,6 +29,9 @@ class Prompt:
     left: tuple[str, str, str] = ("", "", "")     # (before, highlighted, after)
     right: tuple[str, str, str] = ("", "", "")
     box: list[float] | None = None
+    # Whether "Yes" is the answer the evidence leans to, shown as the suggested button. False when the tool
+    # read something different, so the application's value is never presented as the likely truth.
+    lean: bool = True
 
 
 def _quote(s: str) -> str:
@@ -33,14 +39,25 @@ def _quote(s: str) -> str:
 
 
 def prompts_for(result: VerificationResult) -> list[Prompt]:
-    """Every question this result raises, the most pressing first (the review queue asks the first)."""
+    """Every question this result raises, in the order of the result table; the review queue asks each."""
     out: list[Prompt] = []
     for f in result.fields:
+        label = FIELD_BY_KEY[f.key].label if f.key in FIELD_BY_KEY else f.label
+        exp, found = f.expected or "", f.found or ""
+        if f.verdict == Verdict.MISMATCH:
+            out.append(Prompt(f.key, label, "MISMATCH", f"Does the label say {_quote(exp)}?",
+                              f"Yes, it says {_quote(exp)}: reading error", "No, the label differs", f.note or "",
+                              left=("", exp, ""), right=("", found, ""), box=f.box, lean=False))
+            continue
+        if f.verdict == Verdict.NOT_FOUND:
+            out.append(Prompt(f.key, label, "NOT FOUND", f"Is {_quote(exp)} printed on the label?",
+                              "Yes, it is printed: reading error", "No, it is missing", f.note or "",
+                              left=("", exp, ""), right=("", found or "(nothing read)", ""), box=f.box, lean=False))
+            continue
         if f.verdict != Verdict.NEAR_MATCH:
             continue
-        label = FIELD_BY_KEY[f.key].label if f.key in FIELD_BY_KEY else f.label
         note = (f.note or "").lower()
-        exp, found = f.expected or "", f.found or ""
+        lean = True
         if f.key == "brand_name" and ("capitalization" in note or "punctuation" in note):
             q, yes, no = "Is this the same brand name?", "Yes, same brand", "No, different"
         elif "another reading of the same place" in note:
@@ -53,6 +70,9 @@ def prompts_for(result: VerificationResult) -> list[Prompt]:
                           "No, the statement is missing or different")
         elif f.key == "net_contents" and "decimal" in note:
             q, yes, no = f"Does the label say {exp}?", f"Yes, {exp}", "No, something else"
+        elif f.key == "net_contents" and NOTE_AMBIGUOUS_MISREAD in note:
+            # a misread that is one digit from more than one standard size: the evidence leans nowhere
+            q, yes, no, lean = f"Does the label say {exp}?", f"Yes, it says {exp}", "No, it says something else", False
         elif f.key == "net_contents" and ("reading error" in note or "also reads" in note):
             q, yes, no = f"Does the label say {exp}?", f"Yes, {exp}: reading error", "No, the label differs"
         elif f.key == "alcohol_content":
@@ -60,8 +80,14 @@ def prompts_for(result: VerificationResult) -> list[Prompt]:
         else:
             q, yes, no = f"Is this the same {label.lower()}?", "Yes, the same", "No, different"
         out.append(Prompt(f.key, label, "NEAR MATCH", q, yes, no, f.note or "",
-                          left=("", exp, ""), right=("", found, ""), box=f.box))
+                          left=("", exp, ""), right=("", found, ""), box=f.box, lean=lean))
     w = result.warning
+    if not w.present:
+        out.append(Prompt("warning_present", "Government warning", "NOT FOUND",
+                          "Is the government warning printed on the label?", "Yes, it is printed: reading error",
+                          "No, it is missing", w.wording_note or "", "Required", "On the label",
+                          ("", "GOVERNMENT WARNING: (1) According to the Surgeon General…", ""),
+                          ("", "(nothing read)", ""), w.box, lean=False))
     if w.present and w.wording in (Status.REVIEW, Status.FAIL) and w.diff:
         d = w.diff[0]
         n = len(w.diff)
@@ -82,13 +108,13 @@ def prompts_for(result: VerificationResult) -> list[Prompt]:
         out.append(Prompt("warning_wording", "Government warning · wording", f"{n} DIFFERENCE{'S' if n != 1 else ''}",
                           q, yes, no, why, "Required text says", "Label says",
                           (d.expected_before or "", exp, d.expected_after or ""),
-                          (d.found_before or "", found, d.found_after or ""), w.box))
-    elif w.present and w.wording == Status.REVIEW:   # text beside the statement was left out
+                          (d.found_before or "", found, d.found_after or ""), w.box, lean=False))
+    elif w.present and w.wording in (Status.REVIEW, Status.FAIL):   # no word diff (text beside it was left out)
         out.append(Prompt("warning_wording", "Government warning · wording", "NEEDS A LOOK",
                           "Is the statement printed complete and correct?", "Yes, it is correct", "No, it is wrong",
                           w.wording_note or "", "Required", "On the label", ("", "the statement word for word", ""),
-                          ("", w.found_text or "", ""), w.box))
-    if w.present and w.heading_bold == Status.REVIEW:
+                          ("", w.found_text or "", ""), w.box, lean=False))
+    if w.present and w.heading_bold in (Status.REVIEW, Status.FAIL):
         measured = (f"Heading strokes {w.bold_ratio:.2f}× thicker (regular text measures 1.03–1.14×)"
                     if w.bold_ratio is not None else "The heading's weight could not be measured")
         out.append(Prompt("warning_bold", "Government warning · heading bold", "COULD NOT TELL",
@@ -96,13 +122,15 @@ def prompts_for(result: VerificationResult) -> list[Prompt]:
                           "A heuristic from stroke width; it only asks for a look, it never fails a label on its own.",
                           "Required", "Measured on the label",
                           ("Heading strokes at least ", f"{THRESHOLDS.bold_ratio:.2f}×", " thicker than the text"),
-                          ("", measured, ""), w.box))
-    if w.present and w.heading_caps == Status.REVIEW:
-        out.append(Prompt("warning_caps", "Government warning · heading", "NEEDS A LOOK",
-                          'Is the heading printed as "GOVERNMENT WARNING:" in capitals?', "Yes, in capitals",
-                          "No, it is not", w.heading_caps_note or "", "Required", "As read",
+                          ("", measured, ""), w.box, lean=w.heading_bold == Status.REVIEW))
+    if w.present and w.heading_caps in (Status.REVIEW, Status.FAIL):
+        failed = w.heading_caps == Status.FAIL
+        out.append(Prompt("warning_caps", "Government warning · heading", "FAIL" if failed else "NEEDS A LOOK",
+                          'Is the heading printed as "GOVERNMENT WARNING:" in capitals?',
+                          "Yes, in capitals: reading error" if failed else "Yes, in capitals", "No, it is not",
+                          w.heading_caps_note or "", "Required", "As read",
                           ("", "GOVERNMENT WARNING:", ""), ("", w.found_text.split("\n")[0] if w.found_text else "", ""),
-                          w.box))
+                          w.box, lean=not failed))
     return out
 
 
