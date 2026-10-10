@@ -22,12 +22,15 @@ Prerequisites: Python 3.12 and the Tesseract binary (`brew install tesseract`, `
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
+pip install --no-deps rapidocr-onnxruntime==1.4.4   # the second local reader; see "OCR choice" for why --no-deps
 uvicorn app.main:app --reload --port 8000
 # open http://localhost:8000
 pytest -q
 ```
 
-If Tesseract is not on your PATH, point the app at it with `TESSERACT_CMD=/path/to/tesseract`.
+If Tesseract is not on your PATH, point the app at it with `TESSERACT_CMD=/path/to/tesseract`. Without the
+`rapidocr-onnxruntime` package the app still runs; the RapidOCR escalation is then silently unavailable
+(`/healthz` reports `"rapidocr": null`).
 
 ## Run with Docker
 
@@ -36,8 +39,12 @@ docker build -t label-check .
 docker run --rm -p 8000:8000 label-check
 ```
 
-The image is `python:3.12-slim` plus the Debian `tesseract-ocr` package (about 30 MB). It makes no
-network calls at runtime, so it can run inside the agency network.
+The image is `python:3.12-slim` plus the Debian `tesseract-ocr` package (about 30 MB) and the RapidOCR
+reader (ONNX Runtime, headless OpenCV and three bundled models, about 200 MB more; no apt package is
+needed for them). It makes no network calls at runtime, so it can run inside the agency network. Docker
+was not running on the machine this was written on, so the image has not been rebuilt since RapidOCR was
+added: the wheels exist for Linux x86_64 / Python 3.12 and the Dockerfile imports them as a build check,
+but do build it once before relying on it.
 
 ## Deploy (Railway)
 
@@ -55,7 +62,11 @@ platform's health check at it. Optional environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OCR_ENGINE` | `tesseract` | Default reader (`tesseract` or `claude`) |
+| `OCR_ENGINE` | `tesseract` | Default reader (`tesseract`, `rapid` or `claude`) |
+| `RAPID_ESCALATION` | `1` | Read a label once more with RapidOCR when Tesseract's passes leave a field missing or the warning short of PASS (`0` turns it off; with `OCR_ENGINE=rapid` the same switch lets Tesseract escalate RapidOCR) |
+| `RAPID_INPUT` | `gray` | What RapidOCR reads: Tesseract's preprocessed grayscale, or `color` (the scaled, straightened original) |
+| `RAPID_THREADS` / `RAPID_WORKERS` | `4` / `4` | ONNX Runtime threads per read; reads in flight at once |
+| `LABEL_TIME_BUDGET_S` | `5` | Per-label time budget: the turned/contrast passes and the RapidOCR escalation run only while the time spent plus their expected cost fits (`0` = no budget) |
 | `ANTHROPIC_API_KEY` | unset | When set, the UI shows a "Reader" toggle and the cloud reader can be selected per request |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Model used by the cloud reader |
 | `CLAUDE_TIMEOUT_S` | `30` | Per-attempt timeout of a cloud read (one retry) |
@@ -68,8 +79,8 @@ platform's health check at it. Optional environment variables:
 ```
 label image ──> LabelReader ──> text + word boxes ──> locate each application value ──> verdict per field
                  (Tesseract,                           on the label (fuzzy search)
-                  or Claude)                       └─> government warning checks ──────> PASS / REVIEW / FAIL
-application ─────────────────────────────────────────┘
+                  then RapidOCR                    └─> government warning checks ──────> PASS / REVIEW / FAIL
+application ───── if needed, or Claude) ─────────────┘
 ```
 
 1. **Read.** The image is flattened (EXIF rotation applied, transparent backgrounds put on white, 16-bit scans
@@ -86,6 +97,20 @@ application ──────────────────────�
    cans and wine labels) and as a color-aware local-contrast image (light or colored text on colored panels).
    Only lines that look like real text are kept from these passes, and a pass that fails or takes longer than
    8 s is skipped rather than failing the label.
+   If that still leaves a field missing or different, or the warning short of a pass, the upright image is read
+   once more with a second engine, **RapidOCR** (PP-OCRv4 text detection and recognition on ONNX Runtime, on the
+   CPU, models bundled): it reads display and curved typefaces, light text over photographs and small print that
+   Tesseract cannot. Its lines are appended as a further view of the label, with each line's box split across
+   its words in proportion to their length, so the same matching, evidence pins and bold heuristic apply. This
+   escalation costs about one more second on a laptop and runs only on labels that need it; clean labels never
+   pay for it.
+   **Time budget.** The turned/contrast passes and the RapidOCR escalation are optional, and each runs only
+   while the time already spent on the label plus the pass's expected cost (a running average kept per
+   process, seeded with 1.2 s and 1.5 s) fits inside `LABEL_TIME_BUDGET_S` (5 s). A pass that would not fit
+   is skipped, the verdict as it stands is kept, and the result's reader line says so ("RapidOCR escalation
+   skipped for time"). On a shared vCPU every pass costs two to three times what it costs here, so there the
+   budget will skip the escalation on the hardest labels rather than overrun; raise the budget or set it to
+   0 if accuracy matters more than the 5 seconds.
    Several images for one application (front, back, neck) are stacked into one before reading, because the
    warning is usually on the back.
 2. **Find each field.** We know what we are looking for, so instead of parsing an arbitrary label we search for the
@@ -110,8 +135,8 @@ Code map:
 | `app/normalize.py` | Unicode/case/punctuation normalization, ABV-phrase unification, proof→ABV, volume→mL, OCR digit repair |
 | `app/matching.py` | Guided fuzzy location of a value on the label, verdict rules, numeric comparison, country of origin |
 | `app/warning.py` | Warning statement location, wording diff, heading caps, stroke-width bold heuristic |
-| `app/readers/` | `base.py` (interface), `tesseract.py` (local OCR), `claude_vision.py` (cloud), `extract.py` (rules over OCR) |
-| `app/pipeline.py` | One label end to end with timings and the overall verdict |
+| `app/readers/` | `base.py` (interface), `tesseract.py` (local OCR), `rapid.py` (RapidOCR: second local reader and the escalation), `claude_vision.py` (cloud), `extract.py` (rules over OCR) |
+| `app/pipeline.py` | One label end to end with timings, the time budget for the optional passes, and the overall verdict |
 | `app/evidence.py` | What the result page shows as evidence: crops of the label, unit conversions, misread explanations |
 | `app/decisions.py` | The one question a label that needs a look asks the agent (review queue and single result) |
 | `app/batch.py` | CSV parsing, image/zip intake, thread-pool jobs, CSV export |
@@ -125,24 +150,39 @@ Code map:
 
 ## OCR choice and trade-offs
 
-The local default is **Tesseract 5**. The reader sits behind a small interface (`app/readers/base.py`), and a
-**Claude Vision** reader can be enabled with an environment variable for demos.
+The local default is **Tesseract 5**, with **RapidOCR** as a second local engine that reads a label only
+when Tesseract's passes leave something unresolved. The readers sit behind a small interface
+(`app/readers/base.py`); RapidOCR can also be the primary reader (`OCR_ENGINE=rapid`), and a **Claude
+Vision** reader can be enabled with an environment variable for demos.
 
-| | Tesseract 5 (default) | PaddleOCR | Claude Vision (opt-in) |
+| | Tesseract 5 (default) | RapidOCR (escalation, shipped) | Claude Vision (opt-in) |
 |---|---|---|---|
-| Runs inside a locked-down network | Yes, no downloads at runtime | Yes, but models must be baked into the image (it downloads them on first run) | No, needs outbound HTTPS |
-| Speed per label on CPU | ~0.5-1.5 s on a 1200×1600 label | ~1.5-4 s | ~3-8 s (network + model) |
-| Deployment weight | +30 MB apt package | +1 GB (PaddlePaddle + models) | SDK only |
+| What it is | LSTM OCR, Debian package | PaddleOCR's PP-OCRv4 detection + recognition models run on ONNX Runtime, CPU only; the `rapidocr-onnxruntime` wheel carries the models | Vision model over HTTPS |
+| Runs inside a locked-down network | Yes, no downloads at runtime | Yes, no downloads at runtime | No, needs outbound HTTPS |
+| Speed per label on this laptop | ~0.5-1.5 s (two passes) | ~0.7-1.3 s per read, 0.2 s to start; measured in "Measured results" | ~3-8 s (network + model) |
+| Deployment weight | +30 MB apt package | +200 MB of wheels (onnxruntime 72 MB, headless OpenCV 119 MB, models 15 MB, measured installed on this Mac); no apt package | SDK only |
 | Clean rendered labels (artwork, scans) | Very good | Very good | Excellent |
-| Decorative/script fonts, curved text | Weak | Better | Best |
+| Decorative/script fonts, curved text, light text on photos | Weak | Good | Best |
 | Photos at an angle, glare | Poor (out of scope) | Fair | Good |
-| Word boxes (needed for the bold heuristic) | Yes | Line boxes only | Not needed: the model judges boldness itself |
+| Word boxes (needed for the bold heuristic and the pins) | Yes | Line boxes; split across the words by character count | Not needed: the model judges boldness itself |
+| Spaces between words | Kept | Sometimes dropped (`GLENMORAR`, `IndiaPaleAle`), which is why it is not the primary reader | Kept |
 | Data leaves the agency | No | No | Yes |
 
-Why Tesseract: the 5-second budget and the "cloud APIs may be blocked" constraint dominate. Tesseract is the
-only option that is both fast on a small container and trivially deployable in an air-gapped network, and the
-application-guided matching compensates for most of its OCR noise. The main cost is weak reading of highly
-stylized brand typography; that is where the cloud reader shines, and why it is one flag away.
+Why Tesseract first: the 5-second budget and the "cloud APIs may be blocked" constraint dominate. Tesseract is
+fast on a small container, trivially deployable in an air-gapped network, and the application-guided matching
+compensates for most of its OCR noise. Its weakness is stylized brand typography and text over photographs:
+that is where RapidOCR pays, so it runs as the escalation, on the labels that need it, inside the time budget.
+As a primary reader RapidOCR measured worse (see "Measured results"): it drops the space between words often
+enough to fail the warning's word-for-word check, and the line boxes it returns make the bold heuristic
+approximate. The cloud reader remains one flag away for demos.
+
+Packaging note: the `rapidocr-onnxruntime` wheel declares a dependency on `opencv-python`, the GUI build of
+OpenCV, whose Linux wheel needs `libGL` and pulls about 150 MB of Mesa from apt. The headless build is the same
+`cv2` module without the window bindings, so `requirements.txt` pins `opencv-python-headless` together with
+the rest of RapidOCR's dependencies and RapidOCR itself is installed with `pip install --no-deps` (Quick start
+and the Dockerfile). One engine instance is shared by every thread (ONNX Runtime sessions are safe to run
+concurrently; four concurrent reads returned exactly the sequential results), each read is bounded by
+`RAPID_TIMEOUT_S` (10 s) and a read that fails or runs out of time is skipped, never fatal to the label.
 
 Page-segmentation mode: the generated labels were benchmarked with PSM 3, 4, 6, 11 and merged pairs; see
 "Measured results". `TESSERACT_PSM=4+11` is the default; a single mode (`TESSERACT_PSM=4`) halves the read time.
@@ -172,6 +212,7 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `whole_phrase_fields` | brand, class/type | A MATCH inside a longer phrase on its line ("Rum" in "SPICED RUM", no punctuation between) → **NEAR MATCH** showing the whole line |
 | `brand_small_print_ratio` | 0.5 | A brand found only in text under half the height of the label's largest line → **NEAR MATCH** |
 | `conflict_floor` | 70 | Another reading of the same place on the label (a second OCR pass or view) at least this similar to the value but saying something else turns a MATCH on the brand, class/type or bottler into a **NEAR MATCH** quoting both readings |
+| `RAPID_TRUST_CONF` | 90 | Tesseract's word confidences and RapidOCR's line scores are not on one scale. For the disagreeing-readings rule only, a RapidOCR line scored at or above this (0-100) counts as certain: a disagreement it reads is never dismissed as the less sure reading, and a Tesseract reading of the same place never overrides a value it agrees with. Below it, its score competes as read |
 | `abv_tolerance` | 0.05 pp | Alcohol content compared as numbers; any larger difference is a **MISMATCH** |
 | `proof_tolerance` | 0.5 proof | A label whose proof disagrees with its own percentage by more than this ("45% (80 Proof)") → **NEAR MATCH** |
 | `volume_tolerance_ml` | 0.5 mL | Net contents compared in millilitres (so `12 FL OZ` = `355 mL`). Between a US figure and a metric one 0.5% is allowed (`750 mL / 25.4 FL OZ`); within one system the figures must agree (`753 mL` is not `750 mL`). Same digits and unit but no decimal point on the label (`15 L` read for `1.5 L`) → NEAR MATCH, never a silent match |
@@ -377,6 +418,8 @@ pytest -q
 - `test_decisions.py`: review prompts (Yes always means the label is fine), decisions kept with a batch, the review queue (with and without JavaScript), export scopes and column groups, printable reports, the shared batch link
 - `test_nojs.py`: the batch flow as a browser without JavaScript runs it: post, redirect, self-reloading progress page, row links, whole-page errors
 - `test_claude_reader.py`: the cloud reader's mapping, error handling, refusal fallbacks and client limits, with the SDK mocked
+- `test_rapid_reader.py`: RapidOCR on the Old Tom sample (lines, word boxes inside the image, confidences, the engine string; skipped when the package is missing), the line-to-word split and input padding, the escalation appending a view with a fake engine, the cross-engine confidence rule, time-outs, `get_reader("rapid")` and `/healthz`
+- `test_budget.py`: the per-label time budget with a fake clock: passes that fit run, passes that do not are skipped and named in the reader string, and the process learns what its passes cost
 
 OCR-dependent tests skip automatically when the Tesseract binary is absent. `.github/workflows/ci.yml` runs the whole
 suite on Ubuntu with Tesseract installed, then benchmarks both sets and fails the build if a sample misses its
@@ -512,6 +555,70 @@ THROW CELLARS"). Copperplate has no lowercase letters: it draws them as small ca
 does read in capitals and the planted difference disappears. Every other miss is either a clean label flagged for
 a look or a defect caught with a different severity (FAIL where REVIEW was expected, or the reverse).
 
+### RapidOCR: the second engine, measured four ways (October 2026, local)
+
+Same machine, Tesseract 5.5.3, rapidocr-onnxruntime 1.4.4 on onnxruntime 1.31.0. The four arrangements:
+
+- **(a)** Tesseract alone (`RAPID_ESCALATION=0`), the previous build's behaviour;
+- **(b)** Tesseract, then RapidOCR as the escalation (shipped default; `LABEL_TIME_BUDGET_S=5`, and `0` for the
+  unbudgeted ceiling);
+- **(c)** RapidOCR as the primary reader, alone (`--reader rapid`, `RAPID_ESCALATION=0`);
+- **(d)** RapidOCR primary with Tesseract's two passes as its escalation (`--reader rapid+tesseract`).
+
+```bash
+RAPID_ESCALATION=0 python scripts/bench.py                              # (a); drop the variable for (b)
+python scripts/bench.py --set batch -j 4 [--reader rapid|rapid+tesseract]
+python scripts/real_labels.py --defects -j 1 [--reader ...]             # -j 1: one label at a time, so the
+python scripts/stress_test.py [--reader ...]                            # times are per-label latencies
+```
+
+**Real approved labels** (20 labels, 104 filled fields, one label at a time):
+
+| | (a) Tesseract | (b) + RapidOCR escalation, no budget | (b) with the 5 s budget | (c) RapidOCR alone | (d) RapidOCR + Tesseract |
+|---|---|---|---|---|---|
+| Fields with the expected verdict | 56/104 | **60/104** | 60/104 | 43/104 | 59/104 |
+| Flagged for review (NEAR MATCH where MATCH was expected) | 27 | 29 | 29 | 22 | 24 |
+| False alarms (MISMATCH / NOT FOUND for text on the label) | 19 | **13** | 13 | 37 | 19 |
+| Accepted without the expected look | 2 | 2 | 2 | 2 | 2 |
+| Warning pass / review / fail | 5 / 11 / 4 | 5 / 11 / 4 | 5 / 11 / 4 | 0 / 2 / 18 | 3 / 7 / 10 |
+| Planted wrong ABV / volume reported as MATCH | 0 / 40 | 0 / 40 | 0 / 40 | 0 / 40 | 0 / 40 |
+| Time per label, median / max | 1.45 s / 2.97 s | 2.97 s / 5.13 s | 2.97 s / 5.13 s | 1.91 s / 3.24 s | 2.66 s / 3.86 s |
+
+The escalation turns six false alarms into the expected verdict (brand names in a distressed display face, white
+text over a painting, small white print on dark green, the condensed script name) at a cost of about 1.5 s on
+the labels that need it; here every real label fits the 5 s budget one at a time, so the budgeted and unbudgeted
+columns are the same. The same real labels read with `RAPID_INPUT=color` instead of the grayscale came back
+59/104 with 13 false alarms, so grayscale stays. With the cross-engine trust rule switched off (RapidOCR scores
+competing as read) the result is in the paragraph below the tables.
+
+RapidOCR alone (c) is clearly worse on this set: it reads the display typefaces but often runs words together
+(`GLENMORAR`, `IndiaPaleAle`, `WOMENSHOULDNOTDRINKALCOHOLICBEVERAGESDURINGPREGNANCY`) and on small print it
+drops whole lines (on a clean black-on-white tequila label it lost the `GOVERNMENT WARNING: (1) According to the
+Surgeon General` line entirely), which fails the warning check on 18 of 20 labels and turns clean fields into
+near misses; Tesseract as its escalation (d) repairs most of the fields but not the warnings. These are measured,
+not tuned: a despaced comparison would likely close part of the gap, but (b) already has the best numbers on
+every count that matters, so the default stays Tesseract first. In the escalation (b) the run-together lines do
+no harm: the disagreeing-readings rule compares readings with their spaces removed, and the warning keeps
+Tesseract's view.
+
+**Synthetic sets** (every planted defect caught in every arrangement; the batch set measured four labels at a
+time, so its times are inflated):
+
+| Set | (a) | (b), 5 s budget | (b), no budget | (c) | (d) |
+|---|---|---|---|---|---|
+| Samples (15), expected verdict | 15/15 | 15/15 | 15/15 | 11/15 | 13/15 |
+| Samples, median / max | 1.26 s / 1.48 s | 2.89 s / 4.50 s | 3.06 s / 6.91 s | 2.81 s / 5.87 s | 3.61 s / 4.45 s |
+| Batch (250), expected verdict | BATCH_A | BATCH_B | BATCH_B0 | BATCH_C | BATCH_D |
+| Batch, median / p95 | BATCH_A_T | BATCH_B_T | BATCH_B0_T | BATCH_C_T | BATCH_D_T |
+
+The sample set's times grew with the escalation because eleven of its fifteen labels carry a planted defect:
+a label that really is wrong always has something unresolved, so it always pays for the extra passes. That is
+the design (the time goes where the doubt is), but it is also why the budget matters on a slow machine. The
+timings in this table were taken while other OCR jobs shared the machine (the (a) samples measured 0.67 s
+median on a quiet day); the verdict counts do not depend on that.
+
+**Stress test** (the 15 sample labels per condition): STRESS_SUMMARY
+
 ## Assumptions
 
 - Labels arrive as flat artwork files or straight-on scans, the way they are attached to applications. Scans
@@ -531,8 +638,19 @@ a look or a defect caught with a different severity (FAIL where REVIEW was expec
 - On real approved labels the tool asks for a look on every label (see "Measured results"): brand names in display
   or curved typefaces, light text over photographs, handwriting and single-digit misreads produce false alarms.
 - Tesseract struggles with decorative, script or outlined brand typography and with text on busy backgrounds. The
-  guided matching tolerates a fair amount of noise, but a brand set in a script face may come back NOT FOUND
-  (the cloud reader handles these).
+  guided matching tolerates a fair amount of noise, but a brand set in a script face may come back NOT FOUND.
+  The RapidOCR escalation closes some of these (6 of 19 false alarms on the real labels), not all: a
+  handwritten keg collar, a brand on a tight curve and the smallest sideways print still fail, and RapidOCR
+  itself sometimes runs words together (`GLENMORAR`), which the matcher reads as a near miss.
+- The time budget trades accuracy for time on a slow machine: when the first read and the turned passes have
+  used most of the 5 seconds, the escalation is skipped and the label keeps its first-pass verdict (named in
+  the reader line). On a shared vCPU that is expected to be the common case for hard labels; the measured
+  gains above assume the escalation ran.
+- A RapidOCR read cannot be interrupted: one that runs past `RAPID_TIMEOUT_S` is abandoned (the label goes on
+  without it) but finishes on its thread, holding one of the `RAPID_WORKERS` slots until it does.
+- An OpenCV 5.0.0 `resize` of an unpadded 1799-pixel-wide label crashed the process once on macOS/arm64 while
+  this was measured; handing RapidOCR a fresh array padded to the detector's 32-pixel grid did not crash in
+  140 reads, but it is a mitigation, not a root-cause fix.
 - The bold heuristic is calibrated on synthetic labels and assumes the statement body is in regular weight. A
   real-world calibration set would be needed before trusting it unattended, which is why it only asks for review.
 - Batch jobs are kept in memory and disappear on restart; for production they would go to a queue and a database.
