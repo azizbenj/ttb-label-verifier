@@ -8,7 +8,7 @@ from ..config import RAPID_TRUST_CONF
 from ..matching import compare_alcohol, compare_country, compare_volume, locate_and_compare, not_found
 from ..models import Application, FieldResult, Verdict
 from ..normalize import normalize_loose, normalize_strict
-from .base import OCRResult, OCRWord, upright_box
+from .base import OCRResult, OCRWord, text_height, upright_box
 
 
 def conflict_confidence(w: OCRWord) -> float:
@@ -22,11 +22,12 @@ def conflict_confidence(w: OCRWord) -> float:
 
 
 def line_heights(ocr: OCRResult) -> dict[int, float]:
-    """Median height of the real words (2+ characters, with letters) on each OCR line."""
-    by_line: dict[int, list[int]] = {}
+    """Median height of the real words (2+ characters, with letters) on each OCR line, as printed on
+    the page (a line read again from an enlarged crop is scaled back)."""
+    by_line: dict[int, list[float]] = {}
     for w in ocr.words:
         if len(w.text) >= 2 and any(ch.isalpha() for ch in w.text) and 0 <= w.line_index < len(ocr.lines):
-            by_line.setdefault(w.line_index, []).append(w.height)
+            by_line.setdefault(w.line_index, []).append(text_height(w, ocr.views))
     return {i: float(statistics.median(hs)) for i, hs in by_line.items()}
 
 
@@ -55,23 +56,47 @@ def prominent_line(ocr: OCRResult) -> str | None:
     return ocr.lines[idx] if idx is not None else None
 
 
+def figure_text(ocr: OCRResult, kind: str) -> tuple[str, list[tuple[str, list[str]]]]:
+    """What the matcher of one figure ("alcohol" or "volume") sees: the label text without the second
+    reads made for the other figure, and for each line read again for this figure, the line as the
+    page pass read it with every closer read of it. A second read made for the net contents never
+    reaches the alcohol content, so a clean MATCH on one figure is never changed by a crop of the other."""
+    other = {r.new_line for r in ocr.rereads if r.new_line is not None and kind not in r.kinds}
+    text = "\n".join(l for i, l in enumerate(ocr.lines) if i not in other)
+    by_line: dict[int, list[str]] = {}
+    for r in ocr.rereads:
+        if kind in r.kinds:
+            by_line.setdefault(r.line, []).append(r.text)
+    return text, [(ocr.lines[i], texts) for i, texts in by_line.items()]
+
+
 def extract_and_compare(app: Application, ocr: OCRResult) -> list[FieldResult]:
-    lines, text = ocr.lines, ocr.text
-    heights = line_heights(ocr)
-    boxes = line_boxes(ocr)
+    lines = ocr.lines
+    # The second reads of figure lines are readings of a number, not of the text around it: they are
+    # kept out of the boxes the text fields compare readings of the same place with, and out of the
+    # line heights that pick the brand line and judge small print (a crop of a garbled line can come
+    # back as a few tall letters).
+    reread_lines = {r.new_line for r in ocr.rereads if r.new_line is not None}
+    heights = {i: h for i, h in line_heights(ocr).items() if i not in reread_lines}
+    boxes = {i: b for i, b in line_boxes(ocr).items() if i not in reread_lines}
+    # The text fields and the country search the page's own lines only (blanked, so indices still hold):
+    # a crop of "WHITE WINE + PRODUCT OF FRANCE + ALC. 12.5%" must not add an origin statement or a brand.
+    text_lines = ["" if i in reread_lines else line for i, line in enumerate(lines)]
     confs: dict[int, list[tuple[str, float]]] = {}
     for w in ocr.words:
         confs.setdefault(w.line_index, []).append((w.text, conflict_confidence(w)))
     brand_line = prominent_line_index(ocr, heights)
+    alcohol_text, alcohol_rereads = figure_text(ocr, "alcohol")
+    volume_text, volume_rereads = figure_text(ocr, "volume")
     return [
-        locate_and_compare("brand_name", app.brand_name, lines, preferred_line=brand_line, line_heights=heights,
+        locate_and_compare("brand_name", app.brand_name, text_lines, preferred_line=brand_line, line_heights=heights,
                            line_boxes=boxes, line_words=confs,
                            fallback_found=lines[brand_line] if brand_line is not None else None),
-        locate_and_compare("class_type", app.class_type, lines, line_boxes=boxes, line_words=confs),
-        compare_alcohol(app.alcohol_content, text),
-        compare_volume(app.net_contents, text),
-        locate_and_compare("bottler_name_address", app.bottler_name_address, lines, line_boxes=boxes, line_words=confs),
-        compare_country(app.country_of_origin, lines),
+        locate_and_compare("class_type", app.class_type, text_lines, line_boxes=boxes, line_words=confs),
+        compare_alcohol(app.alcohol_content, alcohol_text, rereads=alcohol_rereads),
+        compare_volume(app.net_contents, volume_text, rereads=volume_rereads),
+        locate_and_compare("bottler_name_address", app.bottler_name_address, text_lines, line_boxes=boxes, line_words=confs),
+        compare_country(app.country_of_origin, text_lines),
     ]
 
 

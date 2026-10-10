@@ -268,6 +268,13 @@ class TesseractReader:
         from .rapid import add_rapid_view
         return add_rapid_view(reading.ocr)
 
+    def reread_numbers(self, reading: LabelReading, kinds: set[str]) -> bool:
+        """Read the lines that carry an alcohol content or a net contents again from their own crops
+        (app/readers/numbers.py). Returns True when anything was read. Costs one single-line pass per
+        crop, at most a handful of crops, side by side in the pool."""
+        from .numbers import reread_numbers   # here, not at the top: numbers.py imports this module
+        return reread_numbers(reading, kinds, self._pass, _PASSES.submit)
+
     # Lines from the extra passes must look like text: reading horizontal print sideways produces
     # low-confidence fragments, and those must not be matched against the application.
     MIN_EXTRA_LINE_CONF = 55

@@ -212,8 +212,12 @@ def test_locate_prefers_prominent_line_over_case_exact_mention():
 
 
 def test_mangled_litre_volume_asks_for_confirmation():
-    r = compare_volume("1.5 L", "ALC. 15% BY VOL. LSL")
-    assert r.verdict == Verdict.NEAR_MATCH and r.found == "15 L"
+    r = compare_volume("1.5 L", "ALC. 15% BY VOL. L5L")
+    assert r.verdict == Verdict.NEAR_MATCH and r.found == "15L"
+    # Letters alone are not a figure on the page; the second read of the crop supplies it.
+    assert compare_volume("1.5 L", "ALC. 15% BY VOL. LSL").verdict == Verdict.NOT_FOUND
+    r = compare_volume("1.5 L", "ALC. 15% BY VOL. LSL\n1.5L", rereads=[("ALC. 15% BY VOL. LSL", ["1.5L"])])
+    assert r.verdict == Verdict.MATCH and "closer look" in r.note
 
 
 # --- the application value must be the whole phrase on the label --------------------------------

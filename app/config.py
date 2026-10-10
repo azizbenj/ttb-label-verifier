@@ -75,6 +75,18 @@ class Thresholds:
     # (A mean-confidence floor alone is not used: a real beer can averages 41% and still matches 4 of 5 fields.)
     unreadable_min_words: int = 8
     unreadable_word_conf: int = 70
+    # Second read of the figures (app/readers/numbers.py). When the alcohol content or the net contents is
+    # missing, different or doubtful, up to this many lines carrying a figure are cut out of the page,
+    # scaled so the line is this many pixels tall and read again on their own. 25 px was measured over
+    # the batch set, the stress renderings and the real labels: Tesseract reads a figure best when the
+    # line is 20-25 px tall; at the 40-60 px the page pass works with, "1.5 L" comes back "L5L" and
+    # "750 mL" "790 mL" (enlarging the crop, as one might expect to help, makes it worse). A first
+    # reading is set aside as a misread only when every closer read of that line agrees with the
+    # application and the first reading's digits are within this many edits of it ("15" for "1.5",
+    # "790" for "750", "077" for "577"); a first reading further away stays a NEAR MATCH naming both.
+    number_reread_max_crops: int = 4
+    number_reread_text_px: int = 25
+    number_reread_max_edits: int = 1
     # Government warning layout (word boxes). Two OCR lines whose boxes overlap by this fraction of the
     # smaller one's height and width are two readings of one printed line: only one is taken.
     same_place_overlap: float = 0.5

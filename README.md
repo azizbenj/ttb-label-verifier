@@ -98,6 +98,19 @@ application ───── if needed, or Claude) ──────────
    cans and wine labels) and as a color-aware local-contrast image (light or colored text on colored panels).
    Only lines that look like real text are kept from these passes, and a pass that fails or takes longer than
    8 s is skipped rather than failing the label.
+   **The figures get a second look.** A wrong number is the one error a compliance check cannot afford, and a
+   whole-page pass reads a figure as one small thing among everything else: now and then it drops the decimal
+   point or a digit ("1.5 L" read as "LSL" or "15L", "57.7%" as "07.7%"). So when the alcohol content or the net
+   contents comes back missing, different or doubtful (two readings disagree, a decimal point was lost, a
+   probable misread, proof against percentage), the lines that carry a figure are cut out of the page, scaled so
+   the line is about 25 px tall and read again on their own in Tesseract's single-line mode, before the turned
+   and contrast passes (`app/readers/numbers.py`). The size was measured rather than assumed: over every figure
+   line of the batch set, the stress renderings and the real labels, Tesseract read the volume right on 338 of
+   353 crops at 20-25 px against 322 for the page pass itself, and enlarging the crop, which one might expect to
+   help, made it worse ("750 mL" became "790 mL" at 3×). Each second read is one more reading of that place on
+   the label, with word boxes mapped back onto the page so the evidence crop still points at it; at most four
+   crops of about 0.1 s each, each bounded by the same 8 s limit and skipped on failure. What a second read may
+   change is a matching rule, described below.
    If that still leaves a field missing or different, or the warning short of a pass, the upright image is read
    once more with a second engine, **RapidOCR** (PP-OCRv4 text detection and recognition on ONNX Runtime, on the
    CPU, models bundled): it reads display and curved typefaces, light text over photographs and small print that
@@ -200,8 +213,10 @@ Normalization applied before any text comparison (`app/normalize.py`):
 - Proof → ABV (`90 Proof` = 45%); `mL`/`ml`/`ML`/`milliliters`, `L`/`liter(s)`, `cl`, `fl oz`/`oz`, pints, quarts
   and gallons → millilitres, including compound statements (`1 PINT 6 FL. OZ.` = 22 fl oz); `1,000 mL` is a
   thousands separator, `1,5 L` a decimal comma
-- OCR digit repair inside numbers only: `75O mL` → `750 mL`, `l0` → `10`; volumes whose digits were all read as
-  look-alike letters (`LSL` for `1.5 L`) are repaired only when the label has no ordinary volume
+- OCR digit repair inside numbers only: `75O mL` → `750 mL`, `l0` → `10`; a volume with some digits read as
+  look-alike letters (`7S0 mL`, `L5L`) is repaired only when the label has no ordinary volume and never inside
+  an address (`CHICAGO IL 60607`); letters alone (`LSL`, `LL`, `IL`) are never made into a figure, since "LLC"
+  cut short would become 1 L (the second read of the line's crop reads the printed digits instead)
 
 Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 
@@ -228,6 +243,9 @@ Verdicts (`app/matching.py`), all thresholds in `app/config.py`:
 | `column_tolerance` / `column_min_lines` | 0.25 / 2 | A word whose box ends before the warning's left edge or starts after its right edge (allowing this fraction of the text height) is outside its column; the edge counts as a neighbouring column, and such words are set aside and quoted, only when they occur on at least this many of the statement's rows |
 | `duplicate_sentence` | 90 | Lines outside the warning that match one of its sentences at least this well (partial similarity) are that sentence printed again → NEEDS REVIEW, quoting them; a complete second statement is not reported |
 | `unreadable_min_words` / `unreadable_word_conf` | 8 / 70 | Fewer clear words than this, nothing read for any field (not even a disagreeing value) and no warning → "We couldn't read this label", no verdict |
+| `number_reread_max_crops` | 4 | At most this many figure lines are cut out and read again when the alcohol content or net contents is missing, different or doubtful (lines that carry a figure outright first, then lines that only look as if they might: `L751`) |
+| `number_reread_text_px` | 25 | Each crop is scaled so its line is this tall before the second read (measured: 20-25 px reads best; the page pass works at 40-60 px) |
+| `number_reread_max_edits` | 1 | A page reading is set aside as a misread only when every closer read of its line agrees with the application and the page reading's digits are within this many edits of it (`15` for `1.5`, `790` for `750`, `077` for `577`); further away, both readings are named in a NEAR MATCH |
 
 Real labels taught a few more rules, each covered by tests:
 
@@ -239,6 +257,15 @@ Real labels taught a few more rules, each covered by tests:
   MATCH found in one reading while another reading of the same place says something else ("BARK BREW" printed,
   one pass reading "BARN BREW") is a NEAR MATCH. Readings that differ only by OCR's usual letter confusions
   (`rn`/`m`, `0`/`O`, `5`/`S`...) or are cut short do not count as disagreeing.
+- **A closer read may correct a figure, never outvote the application.** The second read of a figure line
+  (step 1) is one more reading, so the rule above still holds: a closer read that disagrees with the application
+  makes a NEAR MATCH naming both, and a wrong number re-read as the same wrong number stays a MISMATCH ("A second
+  read of that line says the same"). The one exception: when every closer read of a line agrees with the
+  application and the page's reading of that line is within one edit of it (a dropped decimal point, one digit),
+  the page reading is set aside as the misread it almost certainly is and the field is a MATCH whose note says
+  what the page first read. A second read made for the net contents never reaches the alcohol content and the
+  other way round, so a clean MATCH on one figure is never changed by a crop of the other, and no second read
+  reaches the brand, class/type, bottler or country.
 - **A percentage is only an alcohol content when the label says so.** It must sit next to `Alc./Vol.`, `ABV`,
   `alcohol by volume` or a proof figure (OCR slips such as `ALG/VGL` included; "alcoholic" in the warning and
   "volcanic" are not). A matching figure without such a word ("Blend: 13.5% Petit Verdot") is a NEAR MATCH,
@@ -618,20 +645,78 @@ close (a blend percentage taken for the ABV, a misread that agrees with the appl
 heading word, an unreadable card hiding a mismatch, 753 mL against 750 mL) do not occur in them, which is why each
 fix has its own tests.
 
-**Stress test (`scripts/stress_test.py`, the 15 sample labels per condition, local).**
+**With the second read of the figures (October 2026, local, Tesseract 5.5.3).** Before is `main` at `c55fa57`
+(with the warning layout rules), after is the same code plus the second read and the look-alike repair rule,
+scored back to back on a quiet machine with the same scripts and images:
 
-| Condition | Expected verdict | Planted defect reported as PASS |
+```bash
+python scripts/bench.py --fail-under 1.0
+python scripts/bench.py --set batch -j 4 --fail-under 0.95
+python scripts/real_labels.py --defects
+python scripts/real_labels.py --csv scripts/calibration_labels.csv --defects
+python scripts/stress_test.py
+```
+
+| Set | Before | After |
+|---|---|---|
+| Samples (15) | 15/15, 0 planted defects passed, median 0.94 s | 15/15, 0, median 0.93 s |
+| Batch (250) | 243/250, 0 planted defects passed | **248/250**, 0 |
+| Real labels (20, 104 fields) | 56/104 as expected, 27 flagged, 19 false alarms; warning 8/9/3; 40/40 planted defects caught; median 2.65 s, max 5.0 s | **58/104**, 26 flagged, 18 false alarms; warning 8/9/3; 40/40 caught; median 2.2 s, max 4.3 s |
+| Calibration labels (166, 913 fields) | 518/913, 200 flagged, 175 false alarms; **2 of 330 planted defects reported as MATCH** | **523/913**, 195 flagged, 175 false alarms; **0 of 330** |
+| Stress test | table below, "before" | table below, "after"; no row worse |
+
+Batch: five of the seven misses were a litre volume read without its decimal point ("LSL", "L5L", "L75L"); the
+crop read "1.5L" / "1.75L" and the five labels (0033, 0042, 0107, 0168, 0188) now PASS, with "A closer read of
+that line confirms it: the page was first read as '15L'" or "The statement was read on a closer look at the
+line" in the note. The two left are a brand matched in title case (0047, not a figure) and label 0152, whose
+"1.75 L" the page read as "L751" at confidence 0 and the crop as "17514": no figure either way, so the net
+contents stays NOT FOUND (the label is a brand-capitalization case expected to come back REVIEW; it comes back
+FAIL, a stricter verdict, never a PASS).
+
+Real labels, every field that changed: 26162001000137 net contents NEAR MATCH to MATCH (the page read "730 ML",
+the crop "750 ML"); 11145001000540 net contents MISMATCH to NOT FOUND, as the ground truth expects (the label
+has no net contents; a "0L" read in a scrap of text is no longer a figure). The real set's other figure
+problems are not misreads a crop can fix: a statement read only in a turned view, "ONE PINT" never read, a
+handwritten keg collar, "PROOF 102" written proof-first.
+
+Calibration labels, every field that changed. Better: an alcohol content MISMATCH to MATCH ("91.5%" re-read as
+"51.5%"), and net contents NEAR MATCH or MISMATCH to MATCH on five labels ("90 mL", "900ml", "730ml", a stray
+"900 ml" and a stray "50ML" re-read as what is printed). Seven net contents MISMATCHes on a non-figure ("811 L",
+"88 L", "8 L", "0ML", "0 mL" and the two "1L" below) became NOT FOUND: still a false alarm, but no longer a wrong
+number shown as if it were read. **Worse, two:** 26239001000345 prints "50 ML" and the page read "SOML", every
+digit as a letter; 26260001000505 prints "3L" and the page read "SL" (which used to come back as "5 L", a NEAR
+MATCH on the wrong figure). Both are now NOT FOUND, because a figure made of letters alone is no longer made
+into a volume (next paragraph), and the crops of those lines did not read the digits either. That is the price
+of the fix below, and it is paid as a false alarm, never as a false MATCH.
+
+The two planted defects that used to pass: on 26248001000067 and 26252001000396 a filed "1 L" came back MATCH.
+Both labels print their real volume (750ml, 700ML) in type the page pass did not read, and both had an "LL" read
+somewhere else: an importer's "LLC" cut short ("IMPORTED BY: SANTI IMPORTS LL") on the first, a lone "LL" on the
+second. The old repair turned "LL" into "1 L" and matched it. A volume made by the look-alike repair must now keep at least one digit read as a digit, is never a
+two-character token, never sits between a capitalised word and a ZIP code ("CHICAGO IL 60607"), and a zero
+volume is never a candidate. Both fields are now NOT FOUND, and 330 of 330 planted defects are caught.
+
+Time: a crop costs about 0.1 s and runs only on labels whose figure was doubtful. A label whose figure used to
+be a MISMATCH or NOT FOUND and is settled by its crop no longer goes through the three turned and contrast passes
+(batch label 0042: 1.43 s to 0.76 s); the NEAR MATCH labels cost about the same as before (0.58-0.96 s). The
+other medians moved within run-to-run noise.
+
+**Stress test (`scripts/stress_test.py`, the 15 sample labels per condition, local).** "Before → after" is the
+second read of the figures (same runs as the table above); no row got worse.
+
+| Condition | Expected verdict (before → after) | Planted defect reported as PASS |
 |---|---|---|
 | DejaVu (baseline), Georgia, Times, Baskerville, Helvetica Neue, Optima, Gill Sans, Avenir Next Condensed | 15/15 each | 0 |
-| Futura / Rockwell | 14/15 / 13/15 | 0 |
-| Didot (hairline serifs) | 8/15 | 0 |
+| Futura / Rockwell | 14/15 → 15/15 / 13/15 → 15/15 | 0 |
+| Didot (hairline serifs) | 8/15 → 10/15 | 0 |
 | Brand in Papyrus, Trattatello or Impact | 15/15 each | 0 |
-| Brand in Chalkduster / Herculanum | 12/15 each | 0 |
-| Brand in Copperplate | 13/15 | 1, see below |
-| JPEG quality 35, half or a third of the resolution | 14/15 each | 0 |
+| Brand in Chalkduster / Herculanum | 12/15 → 13/15 / 12/15 | 0 |
+| Brand in Copperplate | 13/15 → 14/15 | 1, see below |
+| JPEG quality 35 | 14/15 → 15/15 | 0 |
+| Half or a third of the resolution | 14/15 each | 0 |
 | Tilted 1.5° / 4° (10/15 and 8/15 before straightening was added) | 15/15 / 14/15 | 0 |
 | Blur radius 1.2 | 15/15 | 0 |
-| Sensor noise (failed by time-out before the optional passes got their own limit) | 14/15 | 0 |
+| Sensor noise (failed by time-out before the optional passes got their own limit) | 14/15 → 15/15 | 0 |
 
 The one defect counted as missed is the brand-capitalization sample ("Stone's Throw Cellars" against "STONE'S
 THROW CELLARS"). Copperplate has no lowercase letters: it draws them as small capitals, so the rendered label really
@@ -719,7 +804,8 @@ median on a quiet day); the verdict counts do not depend on that.
 - Photos taken at an angle, with glare, shadows or poor lighting are out of scope; expect NOT FOUND results and a
   warning-statement failure on such images. Tilt up to 6° is corrected; perspective correction would be next.
 - On real approved labels the tool asks for a look on every label (see "Measured results"): brand names in display
-  or curved typefaces, light text over photographs, handwriting and single-digit misreads produce false alarms.
+  or curved typefaces, light text over photographs and handwriting produce false alarms; a single-digit misread
+  survives when the second read of the line repeats it or the line was only read in a turned view.
 - Tesseract struggles with decorative, script or outlined brand typography and with text on busy backgrounds. The
   guided matching tolerates a fair amount of noise, but a brand set in a script face may come back NOT FOUND.
   The RapidOCR escalation closes some of these (6 of 19 false alarms on the real labels), not all: a

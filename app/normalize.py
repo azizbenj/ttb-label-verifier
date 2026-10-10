@@ -88,16 +88,16 @@ def _repair_run(m: re.Match) -> str:
     return run.translate(_DIGIT_FIX) if any(ch.isdigit() for ch in run) else run
 
 
-# "1" read as "L" right before a decimal part or a volume unit: "L.75 L" -> "1.75 L", "LL" -> "1 L".
+# "1" read as "L" right before a decimal part or digits and a volume unit: "L.75 L" -> "1.75 L", "L75L" -> "175L".
+# Never a bare "LL" -> "1 L": a repair must rest on a digit that was read as a digit, or "LLC" cut short at
+# the end of an importer line becomes a litre and a filed "1 L" passes (seen on two real labels).
 _L_BEFORE_DECIMAL_RE = re.compile(r"(?<![A-Za-z0-9])L(?=[.,]\d)")
-_L_BEFORE_UNIT_RE = re.compile(r"(?<![A-Za-z0-9])L(?=\s?(?:L|l|ml|mL|ML|liters?|litres?|LITERS?|LITRES?)\b)")
 _L_BEFORE_DIGITS_UNIT_RE = re.compile(r"(?<![A-Za-z0-9])L(?=\d+(?:[.,]\d+)?\s?(?:L|l|ml|mL|ML|liters?|litres?|LITERS?|LITRES?)\b)")
 
 
 def fix_ocr_digits(token: str) -> str:
     """Repair common OCR confusions inside a token that is clearly a number ("75O" -> "750")."""
     token = _L_BEFORE_DECIMAL_RE.sub("1", token)
-    token = _L_BEFORE_UNIT_RE.sub("1", token)
     token = _L_BEFORE_DIGITS_UNIT_RE.sub("1", token)
     return _NUMERIC_RUN_RE.sub(_repair_run, token)
 
@@ -185,13 +185,13 @@ def parse_alcohol(text: str) -> AlcoholValue | None:
         elif not (len(proofs) == 1 and len(percents) == 1):
             proof_val = None
         # Show the whole statement ("45% Alc./Vol.", "ALC. 14.5% BY VOL.") rather than the bare number.
-        left = t[max(0, start - 14):start]
+        left = t[max(0, start - 14):start].rsplit("\n", 1)[-1]   # the statement does not cross a line break
         m_left = None
         for m in _ABV_RE.finditer(left):
             m_left = m
         if m_left and not left[m_left.end():].strip():
             start = max(0, start - 14) + m_left.start()
-        right = t[end:end + 25]
+        right = t[end:end + 25].split("\n", 1)[0]
         m_right = _ABV_RE.match(right.lstrip())
         if m_right:
             end += (len(right) - len(right.lstrip())) + m_right.end()
@@ -289,29 +289,31 @@ def _canon_unit_key(raw: str) -> str:
     return u
 
 
-# A volume whose digits were read as look-alike letters ("LSL" for "1.5 L", "7S0 mL"): only
-# considered when no ordinary volume is present, and only right in front of a volume unit.
+# A volume some of whose digits were read as look-alike letters ("7S0 mL", "L5L" for "1.5 L"): only
+# considered when no ordinary volume is present, and only right in front of a volume unit. The number
+# must keep at least one digit that was read as a digit: letters alone ("LSL", "LL", "IL", "OL") are
+# never turned into a figure, since "IL 60607", "LLC" cut short and "OL" in a scrap of text would
+# become 1 L and 0 L and let a filed "1 L" pass. A line like "LSL" is left to the second read of its
+# crop (app/readers/numbers.py), which reads the printed figure with its digits.
 _MANGLED_VOLUME_RE = re.compile(
     r"(?<![A-Za-z0-9])([0-9LlIOoSsB][0-9LlIOoSsB.,]{0,5})\s?(L|ml|mL|ML|liters?|litres?|LITERS?|LITRES?)\b", )
 _LOOKALIKE_DIGITS = str.maketrans({"L": "1", "l": "1", "I": "1", "O": "0", "o": "0", "S": "5", "s": "5", "B": "8"})
 
 
-_ADDRESS_CONTEXT_RE = re.compile(r",\s*$")
+# "..., IL 60607" or "CHICAGO IL 60607": a state code in an address, never a volume.
+_ADDRESS_CONTEXT_RE = re.compile(r"(?:,|\b[A-Z][A-Za-z]+)\s*$")
 _ZIP_AFTER_RE = re.compile(r"^\s*\d{5}\b")
 
 
 def _repair_mangled_volumes(t: str) -> str:
     def fix(m: re.Match) -> str:
         number, unit = m.group(1), m.group(2)
-        glued = m.group(0)[len(number):len(number) + 1] != " "
         if not any(ch.isalpha() for ch in number):
             return m.group(0)                       # an ordinary number: nothing to repair
-        if not any(ch.isdigit() for ch in number):
-            if not (glued and len(number) <= 3):
-                return m.group(0)                   # a real word ("BOLS L"), not a mangled number
-            # "..., IL 60607": a state code in an address, not a volume
-            if _ADDRESS_CONTEXT_RE.search(t[:m.start()]) or _ZIP_AFTER_RE.match(t[m.end():]):
-                return m.group(0)
+        if not any(ch.isdigit() for ch in number) or len(number) + len(unit) <= 2:
+            return m.group(0)                       # letters alone, or a two-letter token: not a figure
+        if _ADDRESS_CONTEXT_RE.search(t[:m.start()]) and _ZIP_AFTER_RE.match(t[m.end():]):
+            return m.group(0)
         return number.translate(_LOOKALIKE_DIGITS) + " " + unit
     return _MANGLED_VOLUME_RE.sub(fix, t)
 
@@ -331,6 +333,8 @@ def _volume_candidates(t: str) -> list[VolumeValue]:
         if key not in _UNIT_TO_ML:
             continue
         value = _volume_number(m.group(1))
+        if value <= 0:
+            continue                                # "0L" read in a scrap of text is not a net contents
         found.append((m, VolumeValue(ml=round(value * _UNIT_TO_ML[key], 2), unit=_CANON_UNIT[key],
                                      text=collapse_ws(m.group(0)), digits=re.sub(r"[.,]", "", m.group(1)))))
     # US compound statements: "1 PINT 6 FL. OZ." is 22 fl oz, not 6.
@@ -363,8 +367,9 @@ def parse_net_contents(text: str) -> VolumeValue | None:
 
     Accepts "750 mL", "750ml", "1.75 L", "1,000 mL", "12 FL. OZ.", "70 cl", "1 PINT 6 FL. OZ.". When
     several volumes appear (e.g. "12 FL OZ (355 mL)") the metric one wins because it is exact.
-    Digits read as look-alike letters are repaired only when no ordinary volume is present, so a
-    word such as "SOIL" is never turned into "501 L" in front of the real statement.
+    Digits read as look-alike letters are repaired only when no ordinary volume is present and at
+    least one digit was read as a digit, so a word such as "SOIL" is never turned into "501 L" in
+    front of the real statement and "IL" or "LL" never into "1 L".
     """
     if not text:
         return None
