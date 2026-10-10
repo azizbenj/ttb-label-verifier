@@ -708,8 +708,20 @@ def check_warning(lines: list[str], words: list[OCRWord] | None = None, ink: np.
         for i, ws in by_line.items():
             line_views[i] = frame_of_view.get(ws[0].view, ws[0].view)
             line_tops[i] = sum(w.top for w in ws) / len(ws)
-    span = locate_warning(lines, line_views=line_views, line_tops=line_tops if words else None,
-                          line_words=by_line or None, th=th)
+    # Tesseract's reading of the statement is judged when it found one; a RapidOCR read only when it did
+    # not. RapidOCR finds statements Tesseract misses, but it runs words together in small print
+    # ("GOVERNMENTWARNING:(1)ACCORDING"), which the word-for-word and capitals checks would count against
+    # the label: measured on the real labels, letting its reading compete turned a REVIEW into a FAIL.
+    rapid_frames = {frame_of_view[v_idx] for v_idx, v in enumerate(views or []) if getattr(v, "engine", "") == "rapid"}
+    rapid_lines = {i for i in by_line if line_views[i] in rapid_frames}
+    span = None
+    if rapid_lines and len(rapid_lines) < len(by_line):
+        span = locate_warning(["" if i in rapid_lines else l for i, l in enumerate(lines)], line_views=line_views,
+                              line_tops=line_tops if words else None,
+                              line_words={i: ws for i, ws in by_line.items() if i not in rapid_lines}, th=th)
+    if span is None:
+        span = locate_warning(lines, line_views=line_views, line_tops=line_tops if words else None,
+                              line_words=by_line or None, th=th)
     if span is None:
         return WarningResult(present=False, wording=Status.FAIL, wording_note="No government warning statement was found on the label.",
                              heading_caps=Status.FAIL, heading_caps_note="Not found.",

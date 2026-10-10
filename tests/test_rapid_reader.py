@@ -235,3 +235,27 @@ def test_run_together_rapid_lines_do_not_replace_tesseract_warning_lines():
                                            engine=R.ENGINE_KEY))
     w = check_warning(ocr.lines, ocr.words, ocr.ink, views=ocr.views)
     assert w.present and w.wording == Status.PASS, (w.wording_note, w.found_text)
+
+
+def test_rapid_warning_is_used_only_when_tesseract_found_none():
+    from app.config import MANDATED_WARNING
+    from app.warning import check_warning
+    text = MANDATED_WARNING.split()
+    chunks = [" ".join(text[i:i + 9]) for i in range(0, len(text), 9)]
+    # Tesseract read the statement with one slip; RapidOCR read it word for word but ran the heading together.
+    tess = [c.replace("pregnancy", "pregnaney") for c in chunks]
+    rapid = list(chunks)
+    rapid[0] = rapid[0].replace("GOVERNMENT WARNING:", "GOVERNMENTWARNING:")
+
+    def with_rapid(first_lines):
+        ocr = _tesseract_like(first_lines)
+        res = [[_quad(100, 100 + 100 * k, 600, 40), line, 0.97] for k, line in enumerate(rapid)]
+        lines2, words2, _ = R.lines_from_result(res)
+        R.append_view(ocr, lines2, words2, View(rot=0, inverted=False, ink=ocr.views[0].ink,
+                                               size=ocr.views[0].size, engine=R.ENGINE_KEY))
+        return check_warning(ocr.lines, ocr.words, ocr.ink, views=ocr.views)
+
+    w = with_rapid(tess)
+    assert "pregnaney" in w.found_text and "GOVERNMENT WARNING:" in w.found_text
+    w = with_rapid(["OLD TOM DISTILLERY", "750 mL"])     # Tesseract found no statement at all
+    assert w.present and "GOVERNMENTWARNING:" in w.found_text
