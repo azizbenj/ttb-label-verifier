@@ -187,6 +187,17 @@ def test_a_wording_failure_on_a_statement_read_with_low_confidence_asks_for_a_lo
     assert r.overall == Status.REVIEW
 
 
+def test_a_meaning_change_read_word_by_word_fails_even_on_a_less_sure_statement():
+    # The warning check fails a meaning change only when its own words were read confidently; the
+    # statement's average confidence does not soften that (the planted "can cause" on real labels).
+    sure_enough = (THRESHOLDS.meaning_conf + THRESHOLDS.clear_warning_conf) / 2
+    lines = OLD_TOM + WARNING_LINES[:2] + [WARNING_LINES[2].replace("may cause", "can cause")]
+    r = run(lines, conf={len(OLD_TOM) + i: sure_enough for i in range(3)})
+    w = r.warning
+    assert w.wording == Status.FAIL and "changes its meaning" in w.wording_note
+    assert w.clear is True and r.overall == Status.FAIL
+
+
 def test_one_clear_problem_fails_the_label_whatever_else_is_unclear():
     lines = ["RIVER BEND DISTILLERY"] + OLD_TOM[1:2] + ["40% Alc./Vol."] + OLD_TOM[3:] + WARNING_LINES
     r = run(lines, conf={0: UNSURE})

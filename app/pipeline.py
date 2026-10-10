@@ -15,7 +15,7 @@ from .matching import wants_second_read
 from .readers.extract import (attach_boxes, compare_from_fields, extract_and_compare, field_signals, label_signals,
                               warning_conf)
 from .readers.rapid import last_read_was_cold as rapid_last_read_was_cold
-from .warning import check_warning
+from .warning import check_warning, reported_meaning_changes
 
 
 class PassCost:
@@ -118,6 +118,11 @@ def judge_warning(w: WarningResult, label_sig: dict | None, th: Thresholds = THR
             return True, ""
         return False, ("No statement could be read, but much of this label was not read clearly: it may be printed "
                        "sideways or too small to read. Check the label.")
+    if reported_meaning_changes(w.wording_note):
+        # check_warning fails the wording on a meaning change only when the words that make it were read
+        # confidently, one by one: that is clear evidence, whatever the rest of the statement's confidence
+        # (measured on the planted edits of real warnings: 12048001000331's four edits fail at 84-87).
+        return True, ""
     conf = label_sig.get("warning_conf")
     if conf is not None and conf < th.clear_warning_conf:
         return False, (f"The statement was read with low confidence ({round(conf)}% on average), so these differences "
