@@ -99,6 +99,43 @@ class Thresholds:
     # A run of lines outside the statement whose text matches a sentence of it at least this well
     # (partial similarity) is that sentence printed a second time; a complete second statement is not reported.
     duplicate_sentence: int = 90
+    # Evidence strength (app/pipeline.py ``judge_clarity``): a FAIL means something was read clearly and is
+    # wrong. A MISMATCH or NOT FOUND whose evidence is unclear keeps its verdict but sends the label to REVIEW.
+    # Measured on scripts/real_labels.py --json dumps of the 20 + 166 real labels (each also run with a planted
+    # wrong alcohol content and net contents) and on the 265 synthetic labels; README "Evidence strength".
+    # No threshold here applies to a figure that was read and differs: on the real labels the planted wrong
+    # figures were read at word confidences from 0 to 100, like the 7 misread ones, so none separates them.
+    # A text field (brand, class/type, bottler, country) that was read and differs is clear evidence when every
+    # word was read at least this sure (synthetic wrong brand / country: 86 or more; with the next three rules
+    # this makes 35 of the 79 real MISMATCH false alarms on these fields unclear), ...
+    clear_min_conf: float = 70
+    # ... these on average (synthetic defects: 92 or more), ...
+    clear_mean_conf: float = 85
+    # ... upright, with at least this share of its characters letters or digits ("Pee 7, \ WHISKEY" is no
+    # reading) and at least this many of them ("ly" read for "SUNSHINY DAYDREAMS").
+    clear_plausible: float = 0.8
+    clear_min_chars: int = 3
+    # Something NOT FOUND (or a brand where nothing resembled it) is a clear absence only on a label read well:
+    # at least this share of its upright words of 3+ letters read with unreadable_word_conf or more (every
+    # synthetic label: 0.933 or more) ...
+    clear_label_share: float = 0.9
+    # ... and at most this share of its upright marks read below 50, text that is there but unread (every
+    # synthetic label: 0.053 or less; 148 of the 187 real labels are above it). On the real labels this makes
+    # 16 of the 19 figures NOT FOUND although printed unclear, and also the 3 net contents that really are
+    # absent (0.10-0.15): the two kinds look the same to OCR.
+    clear_label_low_share: float = 0.06
+    # Government warning: "no warning found" is clear only on a label read well (above) on which fewer than this
+    # many of the statement's rarer words (WARNING_KEYWORDS) were read anywhere (synthetic labels without the
+    # warning: 0; the 6 real labels where it was not found although printed: 0-7, and all 6 not read well) ...
+    clear_warning_words: int = 2
+    # ... and a wording or capitals failure is clear only when the words inside the statement's box were read
+    # with at least this mean confidence (synthetic warning defects: 94.9 or more; real labels, all of which
+    # carry a correct warning: 34 such failures, 25 of them below 90).
+    clear_warning_conf: float = 90
+    # "Ask for a sharper image or the artwork file" when at least this many of the required checks (the four
+    # required fields and the warning) could not be read clearly: 11 of the 187 correct real labels, none of
+    # the synthetic ones (a majority, 3, would flag 2; one unclear check is common, 43 labels, and a look settles it).
+    poor_image_unclear: int = 2
 
 
 THRESHOLDS = Thresholds()

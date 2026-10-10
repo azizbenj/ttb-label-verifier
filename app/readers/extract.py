@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import statistics
 
 from ..config import RAPID_TRUST_CONF
 from ..matching import compare_alcohol, compare_country, compare_volume, locate_and_compare, not_found
 from ..models import Application, FieldResult, Verdict
-from ..normalize import normalize_loose, normalize_strict
+from ..normalize import alcohol_candidates, normalize_loose, normalize_strict, volume_candidates
 from .base import OCRResult, OCRWord, text_height, upright_box
 
 
@@ -172,3 +173,106 @@ def attach_boxes(ocr: OCRResult, fields: list[FieldResult]) -> None:
             continue
         rng = (f.lines[0], f.lines[1]) if f.lines else None
         f.box = word_box(words_for_text(ocr, f.found, rng), width, height, ocr.views)
+
+
+# --- evidence strength: how clearly a MISMATCH or NOT FOUND was read --------------------------------
+def _is_upright(w: OCRWord, views) -> bool:
+    """Read in the upright page (or a crop of it), not in a view turned 90 degrees."""
+    return not views or not (0 < w.view < len(views)) or views[w.view].rot == 0
+
+
+def label_signals(ocr: OCRResult, clear_conf: float) -> dict:
+    """How well the label as a whole was read: the words of three or more letters, how many of them
+    OCR was at least ``clear_conf`` sure of, and how much of the text was only read sideways."""
+    real = [w for w in ocr.words if sum(ch.isalpha() for ch in w.text) >= 3]
+    upright = [w for w in real if _is_upright(w, ocr.views)]
+    marks = [w for w in ocr.words if any(ch.isalnum() for ch in w.text) and _is_upright(w, ocr.views)]
+    text = normalize_loose(ocr.text)
+    return {
+        "words": len(real),
+        "clear_words": sum(w.conf >= clear_conf for w in real),
+        "clear_share": round(sum(w.conf >= clear_conf for w in upright) / len(upright), 3) if upright else 0.0,
+        "mean_conf": round(statistics.fmean(w.conf for w in upright), 1) if upright else None,
+        "sideways_words": sum(not _is_upright(w, ocr.views) for w in real),
+        # every upright mark OCR could not read with even middling confidence: text that is there but unread
+        "low_share": round(sum(w.conf < 50 for w in marks) / len(marks), 3) if marks else 0.0,
+        # words of the government warning read somewhere on the label, assembled into a statement or not
+        "warning_words": sum(1 for k in WARNING_KEYWORDS if k in text),
+    }
+
+
+# Words of the required statement that rarely occur elsewhere on a label: when some of them are read but no
+# statement could be assembled, the warning is probably printed and was not read well enough.
+WARNING_KEYWORDS = ("surgeon", "pregnancy", "birth defects", "machinery", "impairs", "consumption", "government warning",
+                    "operate", "health problems")
+
+
+def warning_conf(ocr: OCRResult, warning) -> float | None:
+    """Mean OCR confidence of the words whose centre lies inside the warning statement's box."""
+    if warning.box is None or ocr.ink is None:
+        return None
+    height, width = ocr.ink.shape
+    x0, y0 = warning.box[0] * width / 100, warning.box[1] * height / 100
+    x1, y1 = x0 + warning.box[2] * width / 100, y0 + warning.box[3] * height / 100
+    confs = []
+    for w in ocr.words:
+        if not any(ch.isalpha() for ch in w.text):
+            continue
+        left, top, bw, bh = upright_box(w, ocr.views)
+        if x0 <= left + bw / 2 <= x1 and y0 <= top + bh / 2 <= y1:
+            confs.append(w.conf)
+    return round(statistics.fmean(confs), 1) if confs else None
+
+
+_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def evidence_words(ocr: OCRResult, f: FieldResult) -> list[OCRWord]:
+    """The OCR words a field's found text was read from. The exact run of words first (as for the
+    evidence box); a figure statement is often spelled differently from its words ("12% by Volume" is
+    normalized as one phrase, "ALC/VOL" glued), so failing that, the words of the line that carries the
+    statement which hold its numbers or its words."""
+    rng = (f.lines[0], f.lines[1]) if f.lines else None
+    figure = f.key in ("alcohol_content", "net_contents")
+    parts = [p for p in (f.found or "").split("; ") if p] if figure else [f.found or ""]
+    out: list[OCRWord] = []
+    for part in parts:
+        words = words_for_text(ocr, part, rng)
+        if not words and figure:
+            numbers = _NUMBER_RE.findall(part)
+            key = normalize_loose(part)
+            lines = [i for i, line in enumerate(ocr.lines) if key and key in normalize_loose(line)] or \
+                [i for i, line in enumerate(ocr.lines) if numbers and all(n in line for n in numbers)]
+            if lines:
+                toks = set(key.split())
+                words = [w for w in ocr.words if w.line_index == lines[0] and
+                         (any(n in w.text for n in numbers) or set(normalize_loose(w.text).split()) & toks)]
+        out += [w for w in words if w not in out]
+    return out
+
+
+def field_signals(ocr: OCRResult, f: FieldResult) -> dict:
+    """What the found text of one field was read from: its words' confidences (RapidOCR words count
+    with their own score), whether they were read upright, from a closer crop or by RapidOCR, and how
+    much of the text is letters and digits at all ("Pee 7, \\ WHISKEY" is not a plausible reading)."""
+    out: dict = {"score": f.score}
+    if f.key == "brand_name" and f.verdict == Verdict.MISMATCH and f.lines is None:
+        out["fallback"] = True   # nothing resembled the brand: the largest line is shown instead
+    if f.found and f.verdict != Verdict.NOT_FOUND:
+        words = evidence_words(ocr, f)
+        chars = [ch for ch in f.found if not ch.isspace()]
+        out["plausible"] = round(sum(ch.isalnum() for ch in chars) / len(chars), 3) if chars else 0.0
+        if words:
+            confs = [w.conf for w in words]
+            out.update(n=len(words), mean_conf=round(statistics.fmean(confs), 1), min_conf=round(min(confs), 1),
+                       upright=all(_is_upright(w, ocr.views) for w in words),
+                       crop=any(0 < w.view < len(ocr.views) and ocr.views[w.view].scale != 1.0 for w in words),
+                       rapid=any(w.engine == "rapid" for w in words))
+            digits = [w.conf for w in words if any(ch.isdigit() for ch in w.text)]
+            if digits:
+                out["digit_conf"] = round(min(digits), 1)   # the least sure word that carries a digit
+    if f.key == "alcohol_content":
+        out["kind_on_label"] = bool(alcohol_candidates(ocr.text))
+    elif f.key == "net_contents":
+        out["kind_on_label"] = bool(volume_candidates(ocr.text))
+    return out

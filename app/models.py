@@ -51,6 +51,14 @@ class FieldResult(BaseModel):
     note: str = ""
     lines: list[int] | None = None   # OCR line range [first, last] the value was read from, when located
     box: list[float] | None = None   # where it sits on the label: [left, top, width, height] in % of the image
+    # How strong the evidence behind a MISMATCH or NOT FOUND is (app/pipeline.py ``judge_clarity``): True when
+    # the text was read clearly and is wrong (the label FAILs), False when it may be a misreading (the label
+    # asks for a look). None for every other verdict, and on readers that report no word confidences.
+    clear: bool | None = None
+    clear_note: str = ""             # why the evidence is unclear, in plain words (shown under the verdict's note)
+    read_conf: float | None = None   # mean OCR confidence (0-100) of the words the found text was read from
+    # The measurements ``clear`` was decided from, for the scorer's dumps; never sent to API clients.
+    signals: dict | None = Field(default=None, exclude=True)
 
 
 class DiffItem(BaseModel):
@@ -76,6 +84,10 @@ class WarningResult(BaseModel):
     bold_ratio: float | None = None
     overall: Status
     box: list[float] | None = None   # where the statement sits on the label, in % of the image
+    # A FAIL read clearly (True) fails the label; False: the statement was not found on a poorly read
+    # label, or failed on text read with low confidence, so the label asks for a look (app/pipeline.py).
+    clear: bool | None = None
+    clear_note: str = ""
 
 
 class Timings(BaseModel):
@@ -101,3 +113,7 @@ class VerificationResult(BaseModel):
     # API client that ignores this flag never takes the label as approved).
     unreadable: bool = False
     words_read: int | None = None          # words of 3+ letters read with confidence, when the reader reports it
+    signals: dict | None = Field(default=None, exclude=True)   # how well the label was read (scorer dumps only)
+    # Most of the required fields could not be read clearly: the result asks for a sharper image or the
+    # artwork file (app/pipeline.py ``poor_image``). The verdict stands; this is advice to the agent.
+    poor_image: bool = False
