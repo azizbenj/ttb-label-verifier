@@ -305,22 +305,115 @@ def locate_and_compare(key: str, expected: str, lines: list[str], *, fallback_fo
     return result
 
 
+# --- second reads of a figure line (app/readers/numbers.py) ----------------------------------------
+# Fragments of the notes below that mean "this figure rests on a doubtful reading"; the pipeline asks for
+# a second read of the figure's own crop when it sees one of them.
+NOTE_ALSO_READS = "but it also reads"
+NOTE_LOST_POINT = "the decimal point was not read clearly"
+NOTE_PROBABLE_MISREAD = "Probably a reading error"
+NOTE_PROOF_DISAGREES = "does not agree with its percentage"
+NOTE_APPLICATION_UNREADABLE = "The application value could not be read"
+NOTE_CONFIRMED = "A closer read of that line"
+NOTE_SECOND_READ_SAME = "A second read of that line says the same."
+NOTE_READ_ON_CROP = "read on a closer look at the line"
+
+
+def wants_second_read(f: FieldResult) -> str | None:
+    """The figure kind ("alcohol" or "volume") a second read of its own crop could settle for this field,
+    or None. Missing or different figures, and NEAR MATCHes that rest on a doubtful reading (readings
+    disagree, a decimal point was lost, a probable misread, proof and percentage disagree) qualify; a
+    percentage that is simply not marked as alcohol does not, since the crop would not mark it either."""
+    if f.key not in ("alcohol_content", "net_contents") or NOTE_APPLICATION_UNREADABLE in f.note:
+        return None
+    kind = "alcohol" if f.key == "alcohol_content" else "volume"
+    if f.verdict in (Verdict.NOT_FOUND, Verdict.MISMATCH):
+        return kind
+    if f.verdict == Verdict.NEAR_MATCH and any(n in f.note for n in
+                                               (NOTE_ALSO_READS, NOTE_LOST_POINT, NOTE_PROBABLE_MISREAD, NOTE_PROOF_DISAGREES)):
+        return kind
+    return None
+
+
+def _digits(text: str) -> str:
+    return re.sub(r"\D", "", text)
+
+
+def _supersede(cands: list, first: list, closer: list, *, agrees, harmless, figure, th: Thresholds) -> list[tuple[str, str]]:
+    """Set aside the page's readings of one line that a closer read of the same line corrected.
+
+    Every closer read must agree with the application (a closer read that disagrees, other than the
+    same figure with its decimal point lost, keeps every reading on the table), and a page reading is
+    set aside only when its digits are within ``number_reread_max_edits`` of the closer read's: a
+    dropped point ("15" for "1.5"), one digit ("790" for "750", "077" for "577"). Returns the pairs
+    (first reading, closer reading) that were set aside; ``cands`` is edited in place."""
+    good = [c for c in closer if agrees(c)]
+    if not good or any(not agrees(c) and not harmless(c) for c in closer):
+        return []
+    out = []
+    for c in first:
+        if agrees(c) or Levenshtein.distance(figure(c), figure(good[0])) > th.number_reread_max_edits:
+            continue
+        same = next((x for x in cands if x == c), None) or \
+            next((x for x in cands if figure(x) == figure(c) and not agrees(x)), None)
+        if same is not None:
+            cands.remove(same)
+        # A page reading that only the line on its own yields ("LSL" repaired to "15 L" when the whole
+        # text has an ordinary volume elsewhere) is not among ``cands``; it was still corrected.
+        out.append((c.text, good[0].text))
+    return out
+
+
+def _second_read_note(got, rereads: list[tuple[str, list[str]]], candidates, figure) -> str:
+    """When every closer read of the line the shown reading came from says the same figure, say so:
+    the agent then knows the reading was checked, not just taken from the page."""
+    for first, seconds in rereads:
+        if not any(figure(c) == figure(got) for c in candidates(first)):
+            continue
+        read = [c for s in seconds for c in candidates(s)]
+        if read and all(figure(c) == figure(got) for c in read):
+            return " " + NOTE_SECOND_READ_SAME
+    return ""
+
+
+def _from_second_read(got, rereads: list[tuple[str, list[str]]], candidates, figure) -> bool:
+    """The shown reading came only from a closer read, not from the page pass."""
+    in_page = any(figure(c) == figure(got) for first, _ in rereads for c in candidates(first))
+    in_crop = any(figure(c) == figure(got) for _, seconds in rereads for s in seconds for c in candidates(s))
+    return in_crop and not in_page
+
+
+def _abv_figure(c) -> str:
+    """The digits of an alcohol statement as printed: percentage, then proof when it stated one."""
+    return _digits(f"{c.abv:g}") + ("" if c.proof is None or c.abv_from_proof else _digits(f"{c.proof:g}"))
+
+
 def compare_alcohol(expected: str, label_text: str, *, statement: bool = False,
-                    th: Thresholds = THRESHOLDS) -> FieldResult:
+                    rereads: list[tuple[str, list[str]]] | None = None, th: Thresholds = THRESHOLDS) -> FieldResult:
     """Alcohol content compared as numbers, over every alcohol statement read on the label.
 
     ``statement``: ``label_text`` is already the alcohol statement (a vision model's field), so a bare
     "45%" in it counts. On OCR text a percentage only counts when "Alc./Vol.", "ABV" or a proof figure
     marks it as alcohol: "13.5% Petit Verdot" on a wine label whose real statement was not read must
     never match an application of 13.5%.
+    ``rereads``: for each line read again from its own crop, the page's reading and the closer reads
+    (see ``_supersede`` for what a closer read may correct).
     """
     key = "alcohol_content"
     exp = parse_alcohol(expected)
     if exp is None or exp.abv is None:
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=None, verdict=Verdict.NOT_FOUND,
-                           note="The application value could not be read as an alcohol content "
-                                "(try '45% Alc./Vol.' or '90 Proof').")
+                           note=NOTE_APPLICATION_UNREADABLE + " as an alcohol content (try '45% Alc./Vol.' or '90 Proof').")
     cands = alcohol_candidates(label_text)
+    rereads = rereads or []
+
+    def agrees(c) -> bool:
+        return abs(c.abv - exp.abv) <= th.abv_tolerance and not (
+            c.proof is not None and not c.abv_from_proof and abs(c.proof - 2 * c.abv) > th.proof_tolerance)
+
+    confirmed: list[tuple[str, str]] = []
+    for first, seconds in rereads:
+        confirmed += _supersede(cands, alcohol_candidates(first), [c for s in seconds for c in alcohol_candidates(s)],
+                                agrees=agrees, harmless=lambda c: False, figure=_abv_figure, th=th)
     if not cands:
         got = parse_alcohol(label_text)
         if got is not None and got.abv is not None and not statement:
@@ -339,16 +432,22 @@ def compare_alcohol(expected: str, label_text: str, *, statement: bool = False,
     matching = [c for c in cands if abs(c.abv - exp.abv) <= th.abv_tolerance]
     got = matching[0] if matching else cands[0]
     notes = []
+    if confirmed:
+        notes.append(f"{NOTE_CONFIRMED} confirms it: the page was first read as '{confirmed[0][0]}'.")
+    elif _from_second_read(got, rereads, alcohol_candidates, _abv_figure):
+        notes.append(f"The statement was {NOTE_READ_ON_CROP}.")
+    notes.append(_second_read_note(got, rereads, alcohol_candidates, _abv_figure).strip())
+    notes = [n for n in notes if n]
     if got.abv_from_proof:
         notes.append(f"Label states {got.proof:g} proof, which is {got.abv:g}% ABV.")
     inconsistent = got.proof is not None and not got.abv_from_proof and abs(got.proof - 2 * got.abv) > th.proof_tolerance
     if inconsistent:
-        notes.append(f"The label's proof ({got.proof:g}) does not agree with its percentage ({got.abv:g}%).")
+        notes.append(f"The label's proof ({got.proof:g}) {NOTE_PROOF_DISAGREES} ({got.abv:g}%).")
     others = sorted({round(c.abv, 2) for c in cands if abs(c.abv - exp.abv) > th.abv_tolerance})
     if matching and others:
         return FieldResult(key=key, label=_spec(key).label, expected=expected,
                            found="; ".join(dict.fromkeys(c.text for c in cands)), verdict=Verdict.NEAR_MATCH, score=80,
-                           note=f"{exp.abv:g}% ABV is on the label, but it also reads "
+                           note=f"{exp.abv:g}% ABV is on the label, {NOTE_ALSO_READS} "
                                 f"{', '.join(f'{v:g}%' for v in others)}. This may be a reading error or a second "
                                 "statement. Please confirm.")
     if matching:
@@ -375,16 +474,22 @@ def _one_digit_apart(a: int, b: int) -> bool:
     return len(sa) == len(sb) and sum(x != y for x, y in zip(sa, sb)) == 1
 
 
-def compare_volume(expected: str, label_text: str, *, th: Thresholds = THRESHOLDS) -> FieldResult:
-    """Net contents compared in millilitres, over every volume statement read on the label."""
+def _vol_figure(c) -> str:
+    return c.digits
+
+
+def compare_volume(expected: str, label_text: str, *, rereads: list[tuple[str, list[str]]] | None = None,
+                   th: Thresholds = THRESHOLDS) -> FieldResult:
+    """Net contents compared in millilitres, over every volume statement read on the label.
+    ``rereads``: for each line read again from its own crop, the page's reading and the closer reads
+    (see ``_supersede`` for what a closer read may correct)."""
     key = "net_contents"
     exp = parse_net_contents(expected)
     if exp is None:
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=None, verdict=Verdict.NOT_FOUND,
-                           note="The application value could not be read as a volume (try '750 mL' or '1.75 L').")
+                           note=NOTE_APPLICATION_UNREADABLE + " as a volume (try '750 mL' or '1.75 L').")
     cands = volume_candidates(label_text)
-    if not cands:
-        return not_found(key, expected, note="No net contents (e.g. '750 mL') was found on the label.")
+    rereads = rereads or []
 
     def same(c, e) -> bool:
         # A US customary figure beside a metric one is rounded ("750 mL / 25.4 FL OZ" is 751.2 mL): 0.5% is
@@ -392,6 +497,17 @@ def compare_volume(expected: str, label_text: str, *, th: Thresholds = THRESHOLD
         if (c.unit in _METRIC) != (e.unit in _METRIC):
             return abs(c.ml - e.ml) <= max(th.volume_tolerance_ml, 0.005 * e.ml)
         return abs(c.ml - e.ml) <= th.volume_tolerance_ml
+
+    def lost_point_of_expected(c) -> bool:
+        # The expected figure with its decimal point lost ("15L" for "1.5 L"): the same statement, misread.
+        return c.unit == exp.unit and c.digits == exp.digits and "." not in c.text
+
+    confirmed: list[tuple[str, str]] = []
+    for first, seconds in rereads:
+        confirmed += _supersede(cands, volume_candidates(first), [c for s in seconds for c in volume_candidates(s)],
+                                agrees=lambda c: same(c, exp), harmless=lost_point_of_expected, figure=_vol_figure, th=th)
+    if not cands:
+        return not_found(key, expected, note="No net contents (e.g. '750 mL') was found on the label.")
 
     matching = [c for c in cands if same(c, exp)]
     if matching:
@@ -405,24 +521,30 @@ def compare_volume(expected: str, label_text: str, *, th: Thresholds = THRESHOLD
         if others:
             return FieldResult(key=key, label=_spec(key).label, expected=expected,
                                found="; ".join(dict.fromkeys(c.text for c in cands)), verdict=Verdict.NEAR_MATCH,
-                               score=80, note=f"{exp.describe()} is on the label, but it also reads "
+                               score=80, note=f"{exp.describe()} is on the label, {NOTE_ALSO_READS} "
                                               f"{others[0].describe()}. This may be a reading error or a second "
                                               "statement. Please confirm.")
+        note = f"{exp.describe()} on both."
+        if confirmed:
+            note += f" {NOTE_CONFIRMED} confirms it: the page was first read as '{confirmed[0][0]}'."
+        elif _from_second_read(shown, rereads, volume_candidates, _vol_figure):
+            note += f" The statement was {NOTE_READ_ON_CROP}."
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=shown.text, verdict=Verdict.MATCH,
-                           score=100, note=f"{exp.describe()} on both.")
+                           score=100, note=note)
     got = next((c for c in cands if c.unit in _METRIC), cands[0])
-    if got.unit == exp.unit and got.digits == exp.digits and "." not in got.text:
+    checked = _second_read_note(got, rereads, volume_candidates, _vol_figure)
+    if lost_point_of_expected(got):
         # Same digits and unit, but the label read has no decimal point ("L5L" for "1.5 L"): the
         # point was probably lost by OCR. Never silently accept it; ask the agent to look.
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.NEAR_MATCH,
-                           score=90, note=f"Reads like {expected} but the decimal point was not read clearly. Please confirm.")
+                           score=90, note=f"Reads like {expected} but {NOTE_LOST_POINT}.{checked} Please confirm.")
     if round(exp.ml) in _STANDARD_ML and round(got.ml) not in _STANDARD_ML and _one_digit_apart(round(got.ml), round(exp.ml)):
         # "760 mL" is not a size anyone fills; "750 mL" is, and it is one digit away: most likely a misread.
         return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.NEAR_MATCH,
                            score=85, note=f"Reads {got.describe()}, which is not a standard size; the application's "
-                                          f"{exp.describe()} is one digit away. Probably a reading error. Please confirm.")
+                                          f"{exp.describe()} is one digit away. {NOTE_PROBABLE_MISREAD}.{checked} Please confirm.")
     return FieldResult(key=key, label=_spec(key).label, expected=expected, found=got.text, verdict=Verdict.MISMATCH,
-                       score=0, note=f"Label says {got.describe()}, application says {exp.describe()}.")
+                       score=0, note=f"Label says {got.describe()}, application says {exp.describe()}.{checked}")
 
 
 # "Product of Scotland", "Imported from Mexico", "Distilled in Ireland": the country runs to the next

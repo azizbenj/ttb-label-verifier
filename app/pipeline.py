@@ -9,6 +9,7 @@ from PIL import Image
 from .config import FIELD_BY_KEY, THRESHOLDS
 from .models import Application, FieldResult, Status, Timings, VerificationResult, Verdict, WarningResult
 from .readers.base import LabelReader
+from .matching import wants_second_read
 from .readers.extract import attach_boxes, compare_from_fields, extract_and_compare
 from .warning import check_warning
 
@@ -60,6 +61,15 @@ def verify(app: Application, image: Image.Image, reader: LabelReader, image_name
     else:
         fields = extract_and_compare(app, ocr)
         warning = check_warning(ocr.lines, ocr.words, ocr.ink, views=ocr.views)
+        # A figure read wrong is the one error this check cannot afford. When the alcohol content or the
+        # net contents is missing, different or doubtful, the lines that carry a figure are cut out,
+        # scaled to a size Tesseract reads well and read again on their own before anything else is
+        # tried (app/readers/numbers.py).
+        kinds = {k for k in (wants_second_read(f) for f in fields) if k}
+        reread = getattr(reader, "reread_numbers", None)
+        if kinds and reread is not None and reread(reading, kinds):
+            t_read = perf_counter()
+            fields = extract_and_compare(app, ocr)
         # Something missing or different: read the label again turned sideways and inverted before
         # concluding (warnings and bottler lines on cans are often printed at 90 degrees).
         missing = any(f.verdict in (Verdict.NOT_FOUND, Verdict.MISMATCH) for f in fields) or \

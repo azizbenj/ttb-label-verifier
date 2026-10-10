@@ -185,13 +185,13 @@ def parse_alcohol(text: str) -> AlcoholValue | None:
         elif not (len(proofs) == 1 and len(percents) == 1):
             proof_val = None
         # Show the whole statement ("45% Alc./Vol.", "ALC. 14.5% BY VOL.") rather than the bare number.
-        left = t[max(0, start - 14):start]
+        left = t[max(0, start - 14):start].rsplit("\n", 1)[-1]   # the statement does not cross a line break
         m_left = None
         for m in _ABV_RE.finditer(left):
             m_left = m
         if m_left and not left[m_left.end():].strip():
             start = max(0, start - 14) + m_left.start()
-        right = t[end:end + 25]
+        right = t[end:end + 25].split("\n", 1)[0]
         m_right = _ABV_RE.match(right.lstrip())
         if m_right:
             end += (len(right) - len(right.lstrip())) + m_right.end()
