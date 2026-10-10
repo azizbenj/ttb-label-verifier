@@ -195,3 +195,211 @@ def test_words_left_out_as_beside_text_are_always_quoted():
     lines[1] = lines[1].replace("drink", "drlnk")
     r = check_warning(lines, bold_hint=True)
     assert r.wording != Status.PASS and "ENJOY OUR BEER RESPONSIBLY WITH FRIENDS" in r.wording_note
+
+
+# --- layout: word boxes decide what belongs to the statement ----------------------------------
+from app.readers.base import View  # noqa: E402
+from app.warning import join_hyphenated, sentence_structure  # noqa: E402
+
+S1 = "(1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects."
+S2 = "(2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems."
+STATEMENT_ROWS = [
+    "GOVERNMENT WARNING: (1) According to the Surgeon General,",
+    "women should not drink alcoholic beverages during pregnancy",
+    "because of the risk of birth defects. (2) Consumption of",
+    "alcoholic beverages impairs your ability to drive a car or",
+    "operate machinery, and may cause health problems.",
+]
+
+
+def _typeset(rows, size: int = 22, heading_bold: bool = True, gap: float = 0.4):
+    """Render rows of text segments the way a label prints them and return (ink, lines, words).
+
+    ``rows`` is a list of rows; each row is a list of (text, x) segments drawn on that row, or a
+    (text, x, view) segment. All words of a row share one OCR line, as Tesseract reads across columns.
+    "GOVERNMENT" and "WARNING:" are set bold when heading_bold is True; everything else regular."""
+    reg = ImageFont.truetype(str(FONTS / "DejaVuSans.ttf"), size)
+    bold = ImageFont.truetype(str(FONTS / "DejaVuSans-Bold.ttf"), size)
+    img = Image.new("L", (size * 60, int(size * 1.6 * (len(rows) + 1))), 255)
+    draw = ImageDraw.Draw(img)
+    lines, words = [], []
+    for row_no, segments in enumerate(rows):
+        y = 10 + int(row_no * size * 1.6)
+        texts = []
+        for seg in segments:
+            text, x = seg[0], seg[1]
+            view = seg[2] if len(seg) > 2 else 0
+            for token in text.split():
+                font = bold if heading_bold and token in ("GOVERNMENT", "WARNING:") else reg
+                draw.text((x, y), token, font=font, fill=0)
+                l, t, r, b = draw.textbbox((x, y), token, font=font)
+                words.append(OCRWord(text=token, left=l, top=t, width=r - l, height=b - t, conf=95,
+                                     line_index=row_no, view=view))
+                texts.append(token)
+                x = r + int(size * gap)
+        lines.append(" ".join(texts))
+    return np.array(img) < 128, lines, words
+
+
+def _right_edge(words, rows):
+    return max(w.right for w in words if w.line_index in rows)
+
+
+def test_neighbouring_column_is_set_aside_by_its_boxes_and_quoted():
+    # A keg collar: the statement in one column, "ATTENTION-READ BEFORE TAPPING" in the next, a normal
+    # word gap apart; Tesseract reads each row across both columns.
+    _, _, probe = _typeset([[(r, 10)] for r in STATEMENT_ROWS])
+    x_col = _right_edge(probe, range(5)) + 9
+    other = ["ATTENTION-READ BEFORE TAPPING", "THIS KEG MAY RUPTURE", "FOR SALE ONLY IN OHIO", "", "KEEP COLD"]
+    ink, lines, words = _typeset([[(r, 10), (o, x_col)] for r, o in zip(STATEMENT_ROWS, other)])
+    r = check_warning(lines, words, ink)
+    assert r.wording == Status.PASS, (r.wording, r.wording_note, r.diff)
+    assert "ATTENTION-READ BEFORE TAPPING" in r.wording_note and "KEEP COLD" in r.wording_note
+    assert r.heading_caps == Status.PASS and r.heading_bold == Status.PASS and r.overall == Status.PASS
+    # The same rows without boxes: wording alone cannot place the words, so a look is still asked for.
+    r = check_warning(lines, bold_hint=True)
+    assert r.wording == Status.REVIEW and "KEEP COLD" in r.wording_note
+
+
+def test_a_column_on_the_left_is_set_aside_too():
+    ink, lines, words = _typeset([[("12 FL OZ" if i in (1, 3) else "", 10), (r, 200)] for i, r in enumerate(STATEMENT_ROWS)])
+    r = check_warning(lines, words, ink)
+    assert r.wording == Status.PASS and "FL OZ" in r.wording_note, (r.wording_note, r.diff)
+
+
+def test_words_sticking_out_on_a_single_line_are_judged_as_wording():
+    # Only one row carries words beyond the statement's extent: they may be words added to the statement.
+    _, _, probe = _typeset([[(r, 10)] for r in STATEMENT_ROWS])
+    x_col = _right_edge(probe, range(5)) + 9
+    ink, lines, words = _typeset([[(r, 10)] + ([("SAFELY", x_col)] if i == 3 else []) for i, r in enumerate(STATEMENT_ROWS)])
+    r = check_warning(lines, words, ink)
+    assert r.wording != Status.PASS
+    assert any("SAFELY" in d.found for d in r.diff) or "SAFELY" in r.wording_note
+
+
+def test_a_stray_mark_beyond_the_column_is_dropped_silently():
+    # A real can: "4" read at the left of one row, outside the statement's left edge.
+    ink, lines, words = _typeset([[("4" if i == 2 else "", 10), (r, 60)] for i, r in enumerate(STATEMENT_ROWS)])
+    r = check_warning(lines, words, ink)
+    assert r.wording == Status.PASS and "left out" not in r.wording_note, (r.wording_note, r.diff)
+
+
+def _reread(words, row, new_line, garble=None, conf=60):
+    """Another OCR reading of ``row`` on the same boxes, as the sparse pass produces."""
+    return [OCRWord(text=garble.get(w.text, w.text) if garble else w.text, left=w.left, top=w.top, width=w.width,
+                    height=w.height, conf=conf, line_index=new_line) for w in words if w.line_index == row]
+
+
+def test_two_readings_of_one_printed_line_are_never_both_taken():
+    ink, lines, words = _typeset([[(r, 10)] for r in STATEMENT_ROWS])
+    # The sparse pass read row 1 again with one word garbled; its words sit on the same boxes.
+    second = _reread(words, 1, 5, {"drink": "DRlNK"})
+    r = check_warning(lines + [" ".join(w.text for w in second)], words + second, ink)
+    assert r.wording == Status.PASS and r.overall == Status.PASS, (r.wording_note, r.diff)
+    # The order the lines come in does not matter: the garbled reading first, the clean one second.
+    garbled_first = _reread(words, 1, 1, {"drink": "DRlNK"}) + _reread(words, 1, 5, None, 95)
+    rest = [w for w in words if w.line_index != 1]
+    lines3 = list(lines)
+    lines3[1] = " ".join(w.text for w in garbled_first if w.line_index == 1)
+    lines3.append(" ".join(w.text for w in garbled_first if w.line_index == 5))
+    r = check_warning(lines3, rest + garbled_first, ink)
+    assert r.wording == Status.PASS, (r.wording_note, r.diff)
+    # An identical second reading does not make a sentence appear twice.
+    same = _reread(words, 2, 5)
+    r = check_warning(lines + [" ".join(w.text for w in same)], words + same, ink)
+    assert r.wording == Status.PASS, (r.wording_note, r.diff)
+
+
+def test_a_surer_reading_that_disagrees_asks_for_a_look():
+    # A misread that happens to agree with the mandated text must not hide a misprint the other reading
+    # saw. Here OCR was surer of "DRINX" than of "drink".
+    ink, lines, words = _typeset([[(r, 10)] for r in STATEMENT_ROWS])
+    second = _reread(words, 1, 5, {"drink": "DRINX"}, conf=99)
+    r = check_warning(lines + [" ".join(w.text for w in second)], words + second, ink)
+    assert r.wording == Status.REVIEW and "DRINX" in r.wording_note, (r.wording, r.wording_note)
+
+
+def test_heading_split_over_two_lines_is_one_heading():
+    lines = LABEL_LINES + ["GOVERNMENT", "WARNING: (1) According to the Surgeon General, women"] + WARNING_LINES[1:]
+    r = check_warning(lines, bold_hint=True)
+    assert r.heading_caps == Status.PASS and r.wording == Status.PASS and r.overall == Status.PASS, r.heading_caps_note
+    lines = LABEL_LINES + ["Government", "Warning: (1) According to the Surgeon General, women"] + WARNING_LINES[1:]
+    r = check_warning(lines, bold_hint=True)
+    assert r.heading_caps == Status.FAIL and r.overall == Status.FAIL
+
+
+@pytest.mark.parametrize("heading_bold", [True, False])
+def test_split_heading_is_measured_over_both_words(heading_bold):
+    rows = [[("GOVERNMENT", 10)], [("WARNING: " + STATEMENT_ROWS[0].split(": ")[1], 10)]] + [[(r, 10)] for r in STATEMENT_ROWS[1:]]
+    ink, lines, words = _typeset(rows, heading_bold=heading_bold)
+    r = check_warning(lines, words, ink)
+    assert r.heading_caps == Status.PASS and r.wording == Status.PASS
+    assert r.heading_bold == (Status.PASS if heading_bold else Status.REVIEW), (r.heading_bold_note, r.bold_ratio)
+
+
+@pytest.mark.parametrize("heading_bold", [True, False])
+def test_heading_on_the_same_line_as_the_body_is_measured(heading_bold):
+    ink, lines, words = _typeset([[(r, 10)] for r in STATEMENT_ROWS], heading_bold=heading_bold)
+    r = check_warning(lines, words, ink)
+    assert r.heading_caps == Status.PASS and r.wording == Status.PASS
+    assert r.heading_bold == (Status.PASS if heading_bold else Status.REVIEW), (r.heading_bold_note, r.bold_ratio)
+
+
+def test_misread_heading_words_are_still_the_ones_measured():
+    # Light text cut at the image edge: the heading reads "ERNMENT WARMING:"; those boxes are the heading's.
+    ink, lines, words = _typeset([[(r, 10)] for r in STATEMENT_ROWS])
+    for w in words:
+        if w.text == "GOVERNMENT":
+            w.text = "ERNMENT"
+        elif w.text == "WARNING:":
+            w.text = "WARMING:"
+    lines[0] = " ".join(w.text for w in words if w.line_index == 0)
+    r = check_warning(lines, words, ink)
+    assert r.heading_caps == Status.REVIEW and r.heading_bold == Status.PASS, (r.heading_caps_note, r.heading_bold_note)
+
+
+def test_heading_and_body_read_in_two_views_of_one_frame_make_one_statement():
+    # The contrast pass reads the body differently from the upright pass, which keeps only the heading line.
+    ink, lines, words = _typeset([[(STATEMENT_ROWS[0], 10)]] + [[(r, 10, 1)] for r in STATEMENT_ROWS[1:]])
+    size = (ink.shape[1], ink.shape[0])
+    views = [View(rot=0, inverted=False, ink=ink, size=size), View(rot=0, inverted=False, ink=ink, size=size)]
+    r = check_warning(lines, words, ink, views=views)
+    assert r.wording == Status.PASS and r.heading_caps == Status.PASS and r.heading_bold == Status.PASS, r.wording_note
+    # A turned view is its own frame: its lines cannot join the upright heading.
+    views[1] = View(rot=90, inverted=False, ink=ink, size=(size[1], size[0]))
+    assert check_warning(lines, words, ink, views=views).overall == Status.FAIL
+
+
+def test_a_sentence_printed_twice_is_a_wording_difference():
+    s1, s2 = S1.split(), S2.split()
+    first = ["GOVERNMENT WARNING: " + " ".join(s1[:9]), " ".join(s1[9:])]
+    second = [" ".join(s2[:9]), " ".join(s2[9:])]
+    r = check_warning(LABEL_LINES + first + second + ["Bottled by Old Tom"] + first, bold_hint=True)
+    assert r.wording == Status.REVIEW and "sentence (1) is printed again" in r.wording_note, r.wording_note
+    assert any("Surgeon" in d.found for d in r.diff)
+    # Sentence (1) twice and sentence (2) never: a failure, never a pass.
+    r = check_warning(LABEL_LINES + first + ["Bottled by Old Tom"] + first, bold_hint=True)
+    assert r.wording == Status.FAIL and r.overall == Status.FAIL
+    # The statement printed whole a second time (front and back label) is not a wording problem.
+    r = check_warning(LABEL_LINES + first + second + ["Bottled by Old Tom"] + first + second, bold_hint=True)
+    assert r.wording == Status.PASS, r.wording_note
+
+
+def test_sentence_structure_inside_the_statement():
+    assert sentence_structure(MANDATED_WARNING) == []
+    twice = MANDATED_WARNING.replace("(2)", S1 + " (2)")
+    assert check_wording(twice)[0] == Status.FAIL and "appears 2 times" in check_wording(twice)[2]
+    swapped = "GOVERNMENT WARNING: " + S2 + " " + S1
+    assert check_wording(swapped)[0] == Status.FAIL and "before sentence (1)" in check_wording(swapped)[2]
+
+
+def test_hyphenated_word_over_a_line_break_is_rejoined():
+    assert join_hyphenated(["ACCORDING TO THE SUR-", "GEON GENERAL, WOMEN"]) == ["ACCORDING TO THE SURGEON", "GENERAL, WOMEN"]
+    assert join_hyphenated(["ALCOHOLIC BEVER-", "[AGES IMPAIRS"]) == ["ALCOHOLIC BEVERAGES", "IMPAIRS"]
+    assert join_hyphenated(["SUR-", "GEOM GENERAL"]) == ["SUR-", "GEOM GENERAL"]   # not a word of the statement
+    lines = ["GOVERNMENT WARNING: (1) According to the Sur-", "geon General, women should not drink alcoholic bever-",
+             "ages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic",
+             "beverages impairs your ability to drive a car or operate machinery, and may cause health problems."]
+    assert check_warning(lines, bold_hint=True).wording == Status.PASS
+    lines[0] = lines[0].replace("Sur-", "Sor-")
+    assert check_warning(lines, bold_hint=True).wording != Status.PASS
