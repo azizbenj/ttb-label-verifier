@@ -266,8 +266,9 @@ def sample_specs() -> list[tuple[str, Spec]]:
         expected_overall="FAIL", expected_issue="net_contents")
     add("wrong_brand", "river", app={**b["river"].app, "brand_name": "COPPER KETTLE BREWING CO."},
         variant="wrong_brand", expected_overall="FAIL", expected_issue="brand_name")
+    # "can cause" for "may cause" changes what the warning says: a FAIL, not a look (README, wording check).
     add("warning_text_altered", "glen", warning_text=MANDATED_WARNING.replace("may cause", "can cause"),
-        variant="warning_text_altered", expected_overall="REVIEW", expected_issue="warning")
+        variant="warning_text_altered", expected_overall="FAIL", expected_issue="warning")
     add("warning_truncated", "stones", warning_text=MANDATED_WARNING.split(" (2)")[0],
         variant="warning_truncated", expected_overall="FAIL", expected_issue="warning")
     add("missing_net_contents", "river", volume_text=None, variant="missing_net_contents",
@@ -386,8 +387,10 @@ def apply_variant(spec: Spec, variant: str, rng: random.Random) -> Spec:
         spec.expected_issue = "brand_name"
         spec.app["brand_name"] = f"{rng.choice(ADJ)} {rng.choice(NOUN)} {spec.brand.split()[-1]}".upper()
     elif variant == "warning_text_altered":
-        spec.expected_issue, spec.expected_overall = "warning", "REVIEW"
         old = rng.choice(["may cause", "should not", "impairs"])
+        # A modal replaced changes the warning's meaning (FAIL); "impair" for "impairs" breaks the fixed text
+        # without changing what it says (a look).
+        spec.expected_issue, spec.expected_overall = "warning", "REVIEW" if old == "impairs" else "FAIL"
         spec.warning_text = MANDATED_WARNING.replace(old, {"may cause": "can cause", "should not": "must not",
                                                            "impairs": "impair"}[old])
     elif variant == "missing_net_contents":

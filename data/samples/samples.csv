@@ -10,7 +10,7 @@ warning_not_bold.png,SAMPLE-0008,OLD TOM DISTILLERY,Kentucky Straight Bourbon Wh
 brand_case.png,SAMPLE-0009,STONE'S THROW CELLARS,Napa Valley Cabernet Sauvignon,14.5% Alc./Vol.,750 mL,"Stone's Throw Cellars, St. Helena, CA 94574",,brand_case,REVIEW,brand_name
 wrong_net_contents.png,SAMPLE-0010,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,"Old Tom Distillery, Bardstown, Kentucky 40004",,wrong_net_contents,FAIL,net_contents
 wrong_brand.png,SAMPLE-0011,COPPER KETTLE BREWING CO.,India Pale Ale,6.8% ABV,12 fl oz,"River Bend Brewing Co., Portland, OR 97209",,wrong_brand,FAIL,brand_name
-warning_text_altered.png,SAMPLE-0012,GLEN MORAR,Single Malt Scotch Whisky,86 Proof,700 mL,"Highland Imports, Inc., New York, NY 10001",Scotland,warning_text_altered,REVIEW,warning
+warning_text_altered.png,SAMPLE-0012,GLEN MORAR,Single Malt Scotch Whisky,86 Proof,700 mL,"Highland Imports, Inc., New York, NY 10001",Scotland,warning_text_altered,FAIL,warning
 warning_truncated.png,SAMPLE-0013,STONE'S THROW CELLARS,Napa Valley Cabernet Sauvignon,14.5% Alc./Vol.,750 mL,"Stone's Throw Cellars, St. Helena, CA 94574",,warning_truncated,FAIL,warning
 missing_net_contents.png,SAMPLE-0014,RIVER BEND BREWING CO.,India Pale Ale,6.8% ABV,12 fl oz,"River Bend Brewing Co., Portland, OR 97209",,missing_net_contents,FAIL,net_contents
 wrong_country.png,SAMPLE-0015,GLEN MORAR,Single Malt Scotch Whisky,86 Proof,700 mL,"Highland Imports, Inc., New York, NY 10001",Scotland,wrong_country,FAIL,country_of_origin
