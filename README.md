@@ -626,6 +626,46 @@ labels in parallel) or against a deployed URL (`--url`).
 
 ## Measured results
 
+### The current build at a glance (10 October 2026)
+
+Measured locally on the build that ships (Tesseract 5.5.3 with the RapidOCR escalation, the default 5-second
+budget, one label at a time), with the commands below. The real sets are approved labels from the public registry,
+transcribed as printed (`scripts/real_labels.csv`, `scripts/calibration_labels.csv`); every one carries a correct
+government warning, and `--defects` re-runs every label with a wrong alcohol content and a wrong net contents filed.
+
+| Set | Result | Wrong label passed | Time per label |
+|---|---|---|---|
+| Samples, 15 synthetic labels, one per failure type | 15/15 expected verdicts | 0 | median 1.8 s, max 2.1 s |
+| Batch, 250 synthetic labels (202 clean, 48 planted) | 249/250 expected verdicts (the miss asks for a look) | 0 of 48 | median 0.4 s, max 2.0 s |
+| Real, 20 hand-checked labels, 104 fields | 62/104 fields as expected, 12 false alarms; correct labels 0 PASS / 16 REVIEW / 4 FAIL | 0 of 40 planted | median 2.3 s, max 4.0 s |
+| Calibration, 167 real labels, 913 fields | 576/913 fields as expected, 109 false alarms; correct labels 6 PASS / 107 REVIEW / 54 FAIL | 0 of 330 planted | median 2.4 s, max 6.2 s (4 over 5 s) |
+| Stress test, 24 typefaces and image conditions x 15 | 22 of 24 conditions at 13/15 or better; Didot 8/15, Herculanum 12/15 (clean labels flagged) | 1 (Copperplate draws lowercase as small capitals, so the planted case change disappears) | median 2.3-3.3 s |
+
+What changed on the 167 real labels since they were first measured on 9 October (same labels, same scorer):
+
+| | 9 October (Tesseract only) | 10 October |
+|---|---|---|
+| Fields with the expected verdict | 518/913 | 576/913 |
+| False alarms (MISMATCH or NOT FOUND for text that is printed) | 175 | 109 |
+| Correct real labels (both sets, 187) that FAIL | 101 (54%), measured on 10 October just before the evidence-strength rule; not counted on 9 October | 58 (31%) |
+| Government warning, correct statements: pass / review / fail | 26 / 72 / 69 | 47 / 83 / 37 |
+| Planted wrong figures taken as a MATCH | 2 of 330 | 0 of 330 |
+| Planted meaning-changing warning edits ("should drink", "can cause", "men", "improves") that FAIL | none: the independent evaluation found them all REVIEW | 33 of 34 |
+
+Read it as a first pass for an agent, not an approver: almost no correct real label passes untouched, but a FAIL
+now means something was read clearly and is wrong, everything else asks for a look with the reason and the place on
+the label, and no wrong value got through on any set. The sections below record how each number was reached.
+
+```bash
+python scripts/bench.py --fail-under 1.0
+python scripts/bench.py --set batch --fail-under 0.95
+python scripts/real_labels.py -j 1 --defects
+python scripts/real_labels.py -j 1 --defects --csv scripts/calibration_labels.csv
+python scripts/stress_test.py
+```
+
+### How the numbers got here
+
 All numbers from `scripts/bench.py` against the Railway deployment (shared vCPU, one container), so they include
 HTTP overhead; local runs on a laptop are faster. "Expected verdict" means the overall PASS / REVIEW / FAIL the
 generator recorded for that label.
