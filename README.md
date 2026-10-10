@@ -646,6 +646,15 @@ government warning, and `--defects` re-runs every label with a wrong alcohol con
 | Calibration, 167 real labels, 913 fields | 576/913 fields as expected, 109 false alarms; correct labels 6 PASS / 107 REVIEW / 54 FAIL | 0 of 330 planted | median 2.4 s, max 6.2 s (4 over 5 s) |
 | Stress test, 24 typefaces and image conditions x 15 | 22 of 24 conditions at 13/15 or better; Didot 8/15, Herculanum 12/15 (clean labels flagged) | 1 (Copperplate draws lowercase as small capitals, so the planted case change disappears) | median 2.3-3.3 s |
 
+**On the live site** (Railway deployment `600ab234`, Tesseract 5.5.0, `scripts/bench.py --url ...` and the 20 real labels
+posted one at a time to `/api/verify`, so the times include HTTP):
+
+| Set | Result | Wrong label passed | Time per label |
+|---|---|---|---|
+| Samples (15) | 15/15 | 0 | median 1.7 s, max 2.0 s |
+| Batch (250) | 248/250; both misses are clean labels that ask for a look (a brand in title case, a litre volume read without its decimal point) | 0 of 48 | median 0.5 s, max 2.0 s |
+| Real, 20 labels | correct labels 0 PASS / 16 REVIEW / 4 FAIL, the same as locally | not run on the live site | median 2.4 s, max 4.2 s, none over 5 s |
+
 What changed on the 167 real labels since they were first measured on 9 October (same labels, same scorer):
 
 | | 9 October (Tesseract only) | 10 October |
