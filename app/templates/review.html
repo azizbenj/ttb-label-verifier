@@ -67,7 +67,7 @@
         </table>
         <div class="why">{{ prompt.why }}</div>
         {{ decide(prompt, job.id, index, item.answers.get(prompt.key, ''), pile=pile) }}
-        <span class="fine">Each answer moves you to the next question, then to the next label once every question on this one has an answer. Answers are kept with the batch and go into the export ("decision" and "answers" columns); nothing is sent anywhere.</span>
+        <span class="fine">Each answer moves you to the next question, then to the next label once every question on this one has an answer. In the export, answers are the "decision" and "answers" columns.</span>
       </div>
       {% endif %}
       <details class="rest"><summary>All {{ r.fields|selectattr('verdict.value', 'ne', 'SKIPPED')|list|length }} fields and the other warning checks</summary>
