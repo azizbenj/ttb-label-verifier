@@ -665,7 +665,7 @@ What changed on the 167 real labels since they were first measured on 9 October 
 | Correct real labels (both sets, 187) that FAIL | 101 (54%), measured on 10 October just before the evidence-strength rule; not counted on 9 October | 58 (31%) |
 | Government warning, correct statements: pass / review / fail | 26 / 72 / 69 | 47 / 83 / 37 |
 | Planted wrong figures taken as a MATCH | 2 of 330 | 0 of 330 |
-| Planted meaning-changing warning edits ("should drink", "can cause", "men", "improves") that FAIL | none: the independent evaluation found them all REVIEW | 33 of 34 |
+| Planted meaning-changing warning edits ("should drink", "can cause", "men", "improves") that FAIL | none: an earlier evaluation (not in the repository) found them all REVIEW | 33 of 34 |
 
 Read it as a first pass for an agent, not an approver: almost no correct real label passes untouched, but a FAIL
 now means something was read clearly and is wrong, everything else asks for a look with the reason and the place on
@@ -999,7 +999,7 @@ stays a REVIEW). (The field counts on the calibration set moved on four labels b
 two net contents and a class/type, by which optional OCR passes fit the time budget on a loaded machine; the
 warning rule cannot reach the fields.)
 
-**Planted edits on real labels.** `prompts/06-evaluation-data/tools/edit_warning.py` erases words using
+**Planted edits on real labels.** A development script that is not in the repository erases words using
 Tesseract's word boxes and paints the replacement in their place, closed up from the left. Nine labels with a
 clear warning (wording PASS before), four edits each and an unedited control re-saved the same way; the
 replacement was set in DejaVu Sans, as close as the tool's fonts come to these labels' sans-serif warnings, and
@@ -1033,7 +1033,7 @@ lowered the confidence of the painted word (52-78), which is why the run above m
 
 ### Evidence strength: FAIL only on what was read clearly (October 2026, local)
 
-Before is `main` at `eab19e9` (with the meaning-changing warning rule), after is this branch, each a git archive
+Before is `main` at `eab19e9` (with the meaning-changing warning rule), after is the same code with the evidence-strength rule, each a git archive
 run outside the synced folder, the two sides interleaved set by set on the same machine (Tesseract 5.5.3,
 RapidOCR escalation on), real labels one at a time. Other sessions were loading this machine heavily (at one
 point a load average above 100), and under load the 5-second budget skips the RapidOCR escalation, which changes
@@ -1063,7 +1063,7 @@ LABEL_TIME_BUDGET_S=0 python scripts/stress_test.py --verbose
 | Stress test (24 conditions × 15) | 0 planted defects passed | 0; Didot 11/15 → 8/15, third resolution 14/15 → 13/15, every other row the same |
 | Time per real label, median / max (budget off) | 2.36 s / 4.23 s (20), 2.55 s / 7.33 s (167) | 2.38 s / 4.22 s, 2.53 s / 7.37 s |
 
-The evaluation of the live build measured 1 / 21 / 23 on its 45 correct labels; on the 187 here the FAIL share
+An earlier evaluation of the live build (not in the repository) measured 1 / 21 / 23 PASS / REVIEW / FAIL on its 45 correct labels; on the 187 here the FAIL share
 falls from 54% to 31%. What still fails a correct label is evidence the rule cannot see as unclear: a matcher
 that took a partial or wrong span of clearly read text (50 text MISMATCHes read at 60+ / 80+), a misread figure
 (always clear, by measurement), and 9 warning statements read at 90+ that still fail as wording.
@@ -1098,7 +1098,7 @@ serifs; the label as a whole read with 86-90% confident words) `missing_warning`
 values tried, had moved 8; the looser 60 / 80 and 10% cost 2 more correct real labels that FAIL (58 against 56).
 
 **Planted warning edits on real labels.** The 34 edits of the run above (9 labels; "should drink", "can cause",
-"men", "improves") give the same verdict on this branch as on `main`, 33 FAIL and the one REVIEW: a
+"men", "improves") give the same verdict with this rule as without it, 33 FAIL and the one REVIEW: a
 meaning-changing difference that `check_warning` fails is always clear, because it already requires the words
 that make it to be read confidently one by one. Without that exception the statement-confidence floor sent all
 four edits of 12048001000331 (statement read at 84-87) and one of 26209001000730 to REVIEW.
