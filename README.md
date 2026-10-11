@@ -46,10 +46,9 @@ docker run --rm -p 8000:8000 label-check
 
 The image is `python:3.12-slim` plus the Debian `tesseract-ocr` package (about 30 MB) and the RapidOCR
 reader (ONNX Runtime, headless OpenCV and three bundled models, about 200 MB more; no apt package is
-needed for them). It makes no network calls at runtime, so it can run inside the agency network. Docker
-was not running on the machine this was written on, so the image has not been rebuilt since RapidOCR was
-added: the wheels exist for Linux x86_64 / Python 3.12 and the Dockerfile imports them as a build check,
-but do build it once before relying on it.
+needed for them). It makes no network calls at runtime, so it can run inside the agency network. CI
+(`.github/workflows/ci.yml`) builds this image on every push and waits for a healthy `/healthz` from it, and
+the live demo runs the same Dockerfile; the Dockerfile imports RapidOCR as a build check.
 
 ## Deploy (Railway)
 
