@@ -10,7 +10,9 @@ government health warning.
 - **Source:** https://github.com/azizbenj/ttb-label-verifier
 
 **Tools used.** Python 3.12, FastAPI and Jinja; Tesseract 5 and RapidOCR (PP-OCRv4 on ONNX Runtime) for local OCR;
-Pillow and NumPy for images; pytest. Developed with Claude Code (Anthropic) as a coding assistant. The ground truth
+rapidfuzz for the fuzzy matching; Pillow and NumPy for images; the Anthropic SDK for the optional cloud reader (off
+unless `ANTHROPIC_API_KEY` is set); pytest; Docker, Railway and GitHub Actions. Developed with Claude Code
+(Anthropic) as a coding assistant. The ground truth
 for the real-label sets was transcribed from the label images with an AI vision model; it was not verified by a
 person.
 
