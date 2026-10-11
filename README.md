@@ -581,7 +581,8 @@ Synthetic labels only prove the tool reads its own generator. To test it on what
 applications: 6 domestic spirits, 4 imports, 5 wines and 5 beers, chosen to be hard (light text over photos,
 sideways warnings, curved display type, a handwritten keg collar, colored panels). The images belong to the
 brand owners, so they are not in the repository; `scripts/fetch_registry_labels.py` downloads them into the
-gitignored `data/real/`. `scripts/real_labels.csv` records what each label really says, so every field should come
+gitignored `data/real/`. `scripts/real_labels.csv` records what each label says, as transcribed from the images by
+an AI vision model (not verified by a person), so every field should come
 back MATCH unless its `expect` column says otherwise (4 fields are legitimate NEAR MATCHes, 3 are not on the
 label). `--defects` also checks every label against a wrong alcohol content and a wrong net contents, which must
 never come back MATCH.
@@ -634,7 +635,8 @@ labels in parallel) or against a deployed URL (`--url`).
 
 Measured locally on the build that ships (Tesseract 5.5.3 with the RapidOCR escalation, the default 5-second
 budget, one label at a time), with the commands below. The real sets are approved labels from the public registry,
-transcribed as printed (`scripts/real_labels.csv`, `scripts/calibration_labels.csv`); every one carries a correct
+transcribed as printed by an AI vision model and not verified by a person (`scripts/real_labels.csv`,
+`scripts/calibration_labels.csv`), so the field counts may include that model's own mistakes; every one carries a correct
 government warning, and `--defects` re-runs every label with a wrong alcohol content and a wrong net contents filed.
 
 | Set | Result | Wrong label passed | Time per label |
