@@ -21,5 +21,6 @@
       <p class="detail">{{ message }}</p>
     {% endif %}
     {% if retry %}<button class="btn small retry" type="button" data-act="retry">Try again</button>{% endif %}
+    {% if action %}<a class="btn small retry" href="{{ action[1] }}">{{ action[0] }}</a>{% endif %}
   </div>
 </div>

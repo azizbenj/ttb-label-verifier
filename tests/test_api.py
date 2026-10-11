@@ -73,7 +73,7 @@ def test_batch_missing_columns_is_friendly():
 
 def test_unknown_batch_is_friendly():
     r = client.get("/batch/nope")
-    assert r.status_code == 404 and "no longer available" in r.text
+    assert r.status_code == 404 and "no longer on the server" in r.text
 
 
 @requires_tesseract

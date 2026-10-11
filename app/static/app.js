@@ -489,7 +489,7 @@
     const sort = $(".sort", batchSlot);
     const tbody = batchSlot.querySelector("table.batch tbody");
     const foot = batchSlot.querySelector("[data-foot] td");
-    const detail = $(".detail", batchSlot);
+    const detail = $("aside.detail", batchSlot);
     const bulkbar = $(".bulkbar", batchSlot);
     const overlay = $("[data-overlay]", batchSlot);
     const word = { PASS: "Pass", REVIEW: "Review", FAIL: "Fail" };

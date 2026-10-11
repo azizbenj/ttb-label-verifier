@@ -402,8 +402,12 @@ def _index_context() -> dict:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", _index_context())
+def index(request: Request, tab: str = ""):
+    """The page; ``?tab=batch`` opens it on the batch tab (the way back from an expired batch)."""
+    ctx = _index_context()
+    if tab == "batch":
+        ctx["open_tab"] = "batch"
+    return templates.TemplateResponse(request, "index.html", ctx)
 
 
 @app.get("/healthz")
@@ -536,7 +540,9 @@ def batch_sample_zip():
                     headers={"Content-Disposition": "attachment; filename=sample_batch.zip"})
 
 
-_BATCH_GONE = "That batch is no longer available (the server may have restarted). Please run it again."
+_BATCH_GONE = ("That batch is no longer on the server. Batches are kept in memory only, so they are lost when the "
+               "server restarts, for example after an update. Please run it again.")
+_NEW_BATCH = ("Start a new batch", "/?tab=batch")
 
 
 @app.get("/batch/{job_id}", response_class=HTMLResponse)
@@ -545,7 +551,7 @@ def batch_status(request: Request, job_id: str):
     queue) gets the whole page with the batch tab open."""
     job = batchmod.JOBS.get(job_id)
     if job is None:
-        return error_response(request, _BATCH_GONE, 404)
+        return error_response(request, _BATCH_GONE, 404, title="This batch has expired.", action=_NEW_BATCH)
     if is_partial(request):
         return _batch_status_response(request, job)
     card = templates.get_template("partials/batch_status.html").render(
@@ -595,7 +601,7 @@ def batch_review(request: Request, job_id: str, n: int = 1, pile: str = "review"
     the answers are forms."""
     job = batchmod.JOBS.get(job_id)
     if job is None:
-        return error_response(request, _BATCH_GONE, 404)
+        return error_response(request, _BATCH_GONE, 404, title="This batch has expired.", action=_NEW_BATCH)
     pile = "fail" if pile == "fail" else "review"
     queue = job.review_queue(pile)
     pos = min(max(n, 1), max(len(queue), 1))
@@ -619,7 +625,7 @@ def batch_report(request: Request, job_id: str, ids: str = "", status: str = "")
     """Printable reports: one page per label for the case file, same scope options as the CSV."""
     job = batchmod.JOBS.get(job_id)
     if job is None:
-        return error_response(request, _BATCH_GONE, 404)
+        return error_response(request, _BATCH_GONE, 404, title="This batch has expired.", action=_NEW_BATCH)
     id_set, status_set = _scope(ids, status)
     cards = []
     for index, it in enumerate(job.items):

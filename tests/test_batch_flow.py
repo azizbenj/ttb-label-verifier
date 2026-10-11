@@ -220,3 +220,20 @@ def test_problem_count_includes_the_warning(monkeypatch):
     r = client.post("/verify", data={**OLD_TOM, "alcohol_content": "40% Alc./Vol.", "sample": "old_tom_clean"},
                     headers={"X-Partial": "1"})
     assert "2 problems:" in r.text and "government warning" in r.text
+
+
+def test_an_expired_batch_says_why_and_offers_a_new_one():
+    r = client.get("/batch/0000000000", headers={"X-Partial": "1"})
+    assert r.status_code == 404
+    assert "This batch has expired." in r.text and "kept in memory only" in r.text
+    assert 'href="/?tab=batch"' in r.text and "Start a new batch" in r.text
+    assert '<p class="detail">' in r.text
+    page = client.get("/?tab=batch").text
+    assert 'data-open-tab="batch"' in page
+
+
+def test_error_text_is_not_styled_as_the_batch_side_panel():
+    css = (Path(__file__).resolve().parents[1] / "app" / "static" / "style.css").read_text()
+    import re as _re
+    assert not _re.search(r"(?m)^\.detail\s*\{", css)          # the panel rule is scoped to aside.detail
+    assert "aside.detail {" in css and ".alert .detail {" in css
